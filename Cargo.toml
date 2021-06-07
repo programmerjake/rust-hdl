@@ -9,3 +9,4 @@ license = "LGPL-3.0-or-later"
 
 [dependencies]
 num-bigint = { version = "0.4", default-features = false }
+num-traits = { version = "0.2.14", default-features = false }
