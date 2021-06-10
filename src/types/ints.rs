@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use super::ValueType;
+use super::{Value, ValueType};
+use crate::{
+    context::{ContextRef, Interned},
+    ir::types::IrValueType,
+};
 use core::{
     convert::identity,
     fmt,
@@ -13,7 +17,7 @@ use core::{
 use num_bigint::BigInt;
 use num_traits::{One, ToPrimitive, Zero};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct IntShape {
     pub bit_count: u32,
     pub signed: bool,
@@ -29,7 +33,7 @@ impl fmt::Display for IntShape {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct ConstIntShape<const BIT_COUNT: u32, const SIGNED: bool>;
 
 pub trait IntShapeTrait: Copy + fmt::Debug {
@@ -236,12 +240,14 @@ impl<Shape: IntShapeTrait> Int<Shape> {
             value: self.value,
             shape: self.shape.to_unsigned(),
         }
+        .wrap_move()
     }
     pub fn wrap_to_signed(self) -> Int<Shape::SignedShape> {
         Int {
             value: self.value,
             shape: self.shape.to_signed(),
         }
+        .wrap_move()
     }
     pub fn max_value_with_shape(shape: Shape) -> Self {
         let IntShape { bit_count, signed } = shape.shape();
@@ -564,7 +570,7 @@ pub type Int64 = Int<I64Shape>;
 pub type UInt128 = Int<U128Shape>;
 pub type Int128 = Int<I128Shape>;
 
-impl<Shape: IntShapeTrait> ValueType for Int<Shape> {}
+impl<Shape: IntShapeTrait> Value for Int<Shape> {}
 
 #[cfg(test)]
 mod tests {
