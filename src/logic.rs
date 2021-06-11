@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use crate::{context::Context, types::ValueType};
+use crate::context::Context;
 use once_cell::unsync::OnceCell;
 
 mod sealed {

@@ -2,12 +2,13 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Interned},
-    ir::types::IrValueType,
-    types::ints::{Int, IntShape, IntShapeTrait},
+    context::{ContextRef, Internable, Interned},
+    ir::types::{IrValueType, IrValueTypeRef},
+    values::ints::{Int, IntShape, IntShapeTrait},
 };
 use core::{convert::TryInto, fmt};
 use num_bigint::BigUint;
+use num_traits::Zero;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct LiteralBits {
@@ -33,9 +34,30 @@ impl fmt::Debug for LiteralBits {
 }
 
 impl LiteralBits {
+    pub fn new() -> Self {
+        Self {
+            bit_count: 0,
+            value: BigUint::zero(),
+        }
+    }
     pub fn to_int(self, signed: bool) -> Int {
         let LiteralBits { value, bit_count } = self;
         Int::unchecked_new_with_shape(value, IntShape { bit_count, signed })
+    }
+    pub fn value(&self) -> &BigUint {
+        &self.value
+    }
+    pub fn into_value(self) -> BigUint {
+        self.value
+    }
+    pub fn bit_count(&self) -> u32 {
+        self.bit_count
+    }
+}
+
+impl Default for LiteralBits {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -48,25 +70,73 @@ impl<Shape: IntShapeTrait> From<Int<Shape>> for LiteralBits {
     }
 }
 
-impl From<LiteralBits> for IrValue {
+impl From<LiteralBits> for IrValue<'_> {
     fn from(v: LiteralBits) -> Self {
         Self::LiteralBits(v)
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Hash)]
-pub enum IrValue {
-    LiteralBits(LiteralBits),
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub struct LiteralArray<'ctx> {
+    element_type: IrValueTypeRef<'ctx>,
+    elements: Interned<'ctx, [IrValueRef<'ctx>]>,
 }
 
-impl fmt::Debug for IrValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IrValue::LiteralBits(v) => v.fmt(f),
+impl<'ctx> LiteralArray<'ctx> {
+    pub fn new(
+        ctx: ContextRef<'ctx>,
+        element_type: IrValueTypeRef<'ctx>,
+        elements: impl AsRef<[IrValueRef<'ctx>]>,
+    ) -> Self {
+        let elements = elements.as_ref();
+        for element in elements {
+            assert_eq!(element.get_type(ctx), element_type);
         }
+        let elements = elements.intern_clone(ctx);
+        Self {
+            element_type,
+            elements,
+        }
+    }
+    pub fn element_type(&self) -> IrValueTypeRef<'ctx> {
+        self.element_type
+    }
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    pub fn elements(&self) -> Interned<'ctx, [IrValueRef<'ctx>]> {
+        self.elements
     }
 }
 
-impl IrValue {
-    pub fn get_type<'ctx>(&self, ctx: ContextRef<'ctx>) -> Interned<'ctx, IrValueType> {}
+impl<'ctx> From<LiteralArray<'ctx>> for IrValue<'ctx> {
+    fn from(v: LiteralArray<'ctx>) -> Self {
+        Self::LiteralArray(v)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub enum IrValue<'ctx> {
+    LiteralBits(LiteralBits),
+    LiteralArray(LiteralArray<'ctx>),
+}
+
+pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
+
+impl<'ctx> IrValue<'ctx> {
+    pub fn get_type(&self, ctx: ContextRef<'ctx>) -> IrValueTypeRef<'ctx> {
+        match self {
+            IrValue::LiteralBits(LiteralBits { bit_count, .. }) => {
+                IrValueType::BitVector { bit_count }.intern(ctx)
+            }
+            IrValue::LiteralArray(v) => IrValueType::Array {
+                element: v.element_type(),
+                length: v.len(),
+            }
+            .intern(ctx),
+        }
+    }
 }

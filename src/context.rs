@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use crate::ir::types::IrValueType;
+use crate::ir::{
+    types::IrValueType,
+    values::{IrValue, IrValueRef},
+};
 use alloc::{
     borrow::{Cow, ToOwned},
     vec::Vec,
@@ -16,43 +19,43 @@ use core::{
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use typed_arena::Arena;
 
-pub trait Internable: Hash + Eq + ToOwned {
-    fn intern_clone<'ctx>(&self, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
+pub trait Internable<'ctx>: Hash + Eq + ToOwned {
+    fn intern_clone(&self, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
         Self::intern_cow(Cow::Borrowed(self), ctx)
     }
-    fn intern<'ctx>(self, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self>
+    fn intern(self, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self>
     where
         Self: Sized,
     {
         Self::intern_cow(Cow::Owned(self), ctx)
     }
-    fn intern_cow<'ctx>(value: Cow<'_, Self>, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self>;
+    fn intern_cow(value: Cow<'_, Self>, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self>;
 }
 
 #[derive(Debug, Eq)]
-pub struct Interned<'a, T: Internable + ?Sized>(&'a T);
+pub struct Interned<'ctx, T: Internable<'ctx> + ?Sized>(&'ctx T);
 
-impl<'a, T: Internable + ?Sized> Copy for Interned<'a, T> {}
+impl<'ctx, T: Internable<'ctx> + ?Sized> Copy for Interned<'ctx, T> {}
 
-impl<'a, T: Internable + ?Sized> Clone for Interned<'a, T> {
+impl<'ctx, T: Internable<'ctx> + ?Sized> Clone for Interned<'ctx, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'a, T: Internable + ?Sized> PartialEq for Interned<'a, T> {
+impl<'ctx, T: Internable<'ctx> + ?Sized> PartialEq for Interned<'ctx, T> {
     fn eq(&self, other: &Self) -> bool {
         ptr::eq(self.0, other.0)
     }
 }
 
-impl<'a, T: Internable + ?Sized> Hash for Interned<'a, T> {
+impl<'ctx, T: Internable<'ctx> + ?Sized> Hash for Interned<'ctx, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (self.0 as *const T).hash(state)
     }
 }
 
-impl<'a, T: Internable + ?Sized> Deref for Interned<'a, T> {
+impl<'ctx, T: Internable<'ctx> + ?Sized> Deref for Interned<'ctx, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -60,33 +63,44 @@ impl<'a, T: Internable + ?Sized> Deref for Interned<'a, T> {
     }
 }
 
-trait InternableImpl: Internable + ToOwned {
-    type Arena: Default;
-    fn allocate<'ctx>(arena: &'ctx Self::Arena, value: Cow<'_, Self>) -> &'ctx Self;
+trait InternableImpl<'ctx>: Internable<'ctx> + ToOwned {
+    type Arena: Default + 'ctx;
+    fn allocate(arena: &'ctx Self::Arena, value: Cow<'_, Self>) -> &'ctx Self;
 }
 
-impl InternableImpl for str {
+impl<'ctx> InternableImpl<'ctx> for str {
     type Arena = Arena<u8>;
 
-    fn allocate<'ctx>(arena: &'ctx Self::Arena, value: Cow<'_, Self>) -> &'ctx Self {
+    fn allocate(arena: &'ctx Self::Arena, value: Cow<'_, Self>) -> &'ctx Self {
         arena.alloc_str(value)
     }
 }
 
-impl<T: Internable + ToOwned + Sized> InternableImpl for T {
+impl<'ctx, T: Internable<'ctx> + ToOwned + Sized> InternableImpl<'ctx> for T {
     type Arena = Arena<T>;
 
-    fn allocate<'ctx>(arena: &'ctx Self::Arena, value: Cow<'_, Self>) -> &'ctx Self {
+    fn allocate(arena: &'ctx Self::Arena, value: Cow<'_, Self>) -> &'ctx Self {
         arena.alloc(value.into_owned())
     }
 }
 
-struct Interner<'ctx, T: InternableImpl + ?Sized> {
+impl<'ctx, T: Internable<'ctx> + Clone> InternableImpl<'ctx> for [T] {
+    type Arena = Arena<T>;
+
+    fn allocate(arena: &'ctx Self::Arena, value: Cow<'_, Self>) -> &'ctx Self {
+        match value {
+            Cow::Borrowed(value) => arena.alloc_extend(value.iter().cloned()),
+            Cow::Owned(value) => arena.alloc_extend(value),
+        }
+    }
+}
+
+struct Interner<'ctx, T: InternableImpl<'ctx> + ?Sized> {
     arena: T::Arena,
     hash_table: RefCell<HashMap<&'ctx T, ()>>,
 }
 
-impl<'ctx, T: InternableImpl + ?Sized> Default for Interner<'ctx, T> {
+impl<'ctx, T: InternableImpl<'ctx> + ?Sized> Default for Interner<'ctx, T> {
     fn default() -> Self {
         Self {
             arena: Default::default(),
@@ -95,7 +109,7 @@ impl<'ctx, T: InternableImpl + ?Sized> Default for Interner<'ctx, T> {
     }
 }
 
-impl<'ctx, T: InternableImpl + ?Sized> Interner<'ctx, T> {
+impl<'ctx, T: InternableImpl<'ctx> + ?Sized> Interner<'ctx, T> {
     fn intern(&'ctx self, value: Cow<'_, T>) -> Interned<'ctx, T> {
         let mut hash_table = self.hash_table.borrow_mut();
         let hasher = hash_table.hasher().build_hasher();
@@ -118,18 +132,20 @@ impl<'ctx, T: InternableImpl + ?Sized> Interner<'ctx, T> {
 pub struct Context<'ctx> {
     modules: RefCell<Vec<&'ctx Module<'ctx>>>,
     string_interner: Interner<'ctx, str>,
-    value_type_interner: Interner<'ctx, IrValueType>,
+    value_type_interner: Interner<'ctx, IrValue<'ctx>>,
+    value_interner: Interner<'ctx, IrValue<'ctx>>,
+    value_ref_interner: Interner<'ctx, [IrValueRef<'ctx>]>,
     modules_arena: Arena<Module<'ctx>>,
 }
 
-impl Internable for str {
-    fn intern_cow<'ctx>(value: Cow<'_, Self>, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
+impl<'ctx> Internable<'ctx> for str {
+    fn intern_cow(value: Cow<'_, Self>, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
         ctx.string_interner.intern(value)
     }
 }
 
-impl Internable for IrValueType {
-    fn intern_cow<'ctx>(value: Cow<'_, Self>, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
+impl<'ctx> Internable<'ctx> for IrValueType<'ctx> {
+    fn intern_cow(value: Cow<'_, Self>, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
         ctx.value_type_interner.intern(value)
     }
 }
