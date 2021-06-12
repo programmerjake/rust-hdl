@@ -19,13 +19,13 @@ use core::{
 use hashbrown::{hash_map::RawEntryMut, HashMap};
 use typed_arena::Arena;
 
-pub trait Internable<'ctx>: Hash + Eq + ToOwned {
+pub trait Internable<'ctx>: Hash + Eq + ToOwned + 'ctx {
     fn intern_clone(&self, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
         Self::intern_cow(Cow::Borrowed(self), ctx)
     }
     fn intern(self, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self>
     where
-        Self: Sized,
+        Self: Sized + ToOwned<Owned = Self>,
     {
         Self::intern_cow(Cow::Owned(self), ctx)
     }
@@ -72,7 +72,7 @@ impl<'ctx> InternableImpl<'ctx> for str {
     type Arena = Arena<u8>;
 
     fn allocate(arena: &'ctx Self::Arena, value: Cow<'_, Self>) -> &'ctx Self {
-        arena.alloc_str(value)
+        arena.alloc_str(&value)
     }
 }
 
@@ -84,13 +84,16 @@ impl<'ctx, T: Internable<'ctx> + ToOwned + Sized> InternableImpl<'ctx> for T {
     }
 }
 
-impl<'ctx, T: Internable<'ctx> + Clone> InternableImpl<'ctx> for [T] {
+impl<'ctx, T: Clone> InternableImpl<'ctx> for [T]
+where
+    Self: Internable<'ctx>,
+{
     type Arena = Arena<T>;
 
     fn allocate(arena: &'ctx Self::Arena, value: Cow<'_, Self>) -> &'ctx Self {
         match value {
             Cow::Borrowed(value) => arena.alloc_extend(value.iter().cloned()),
-            Cow::Owned(value) => arena.alloc_extend(value),
+            Cow::Owned(value) => arena.alloc_extend(value.into_iter()),
         }
     }
 }
@@ -147,6 +150,18 @@ impl<'ctx> Internable<'ctx> for str {
 impl<'ctx> Internable<'ctx> for IrValueType<'ctx> {
     fn intern_cow(value: Cow<'_, Self>, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
         ctx.value_type_interner.intern(value)
+    }
+}
+
+impl<'ctx> Internable<'ctx> for IrValue<'ctx> {
+    fn intern_cow(value: Cow<'_, Self>, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
+        ctx.value_interner.intern(value)
+    }
+}
+
+impl<'ctx> Internable<'ctx> for [IrValueRef<'ctx>] {
+    fn intern_cow(value: Cow<'_, Self>, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
+        ctx.value_ref_interner.intern(value)
     }
 }
 

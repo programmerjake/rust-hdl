@@ -4,11 +4,13 @@
 use crate::{
     context::{ContextRef, Internable, Interned},
     ir::types::{IrValueType, IrValueTypeRef},
-    values::ints::{Int, IntShape, IntShapeTrait},
+    value::integer::{Int, IntShape, IntShapeTrait},
 };
 use core::{convert::TryInto, fmt};
 use num_bigint::BigUint;
 use num_traits::Zero;
+
+use super::logic::IrWireValue;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct LiteralBits {
@@ -23,12 +25,12 @@ impl fmt::Debug for LiteralBits {
         }
         impl fmt::Debug for DebugAsHex<'_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{:#x}", self.this.0)
+                write!(f, "{:#x}", self.this.value)
             }
         }
         f.debug_struct("LiteralBits")
             .field("bit_count", &self.bit_count)
-            .field("value", DebugAsHex { this: self })
+            .field("value", &DebugAsHex { this: self })
             .finish()
     }
 }
@@ -64,7 +66,7 @@ impl Default for LiteralBits {
 impl<Shape: IntShapeTrait> From<Int<Shape>> for LiteralBits {
     fn from(value: Int<Shape>) -> Self {
         let value = value.wrap_to_unsigned();
-        let IntShape { bit_count, .. } = value.shape();
+        let IntShape { bit_count, .. } = value.shape().shape();
         let value = value.into_value().try_into().unwrap();
         Self { value, bit_count }
     }
@@ -118,18 +120,31 @@ impl<'ctx> From<LiteralArray<'ctx>> for IrValue<'ctx> {
     }
 }
 
+impl<'ctx> From<IrWireValue<'ctx>> for IrValue<'ctx> {
+    fn from(v: IrWireValue<'ctx>) -> Self {
+        Self::WireValue(v)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum IrValue<'ctx> {
     LiteralBits(LiteralBits),
     LiteralArray(LiteralArray<'ctx>),
+    WireValue(IrWireValue<'ctx>),
 }
 
 pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
 
+fn assert_copyable<T: Copy>() {}
+
+fn check_types() {
+    assert_copyable::<IrValueRef<'static>>();
+}
+
 impl<'ctx> IrValue<'ctx> {
     pub fn get_type(&self, ctx: ContextRef<'ctx>) -> IrValueTypeRef<'ctx> {
         match self {
-            IrValue::LiteralBits(LiteralBits { bit_count, .. }) => {
+            &IrValue::LiteralBits(LiteralBits { bit_count, .. }) => {
                 IrValueType::BitVector { bit_count }.intern(ctx)
             }
             IrValue::LiteralArray(v) => IrValueType::Array {
@@ -137,6 +152,7 @@ impl<'ctx> IrValue<'ctx> {
                 length: v.len(),
             }
             .intern(ctx),
+            IrValue::WireValue(wire_value) => wire_value.0.value_type(),
         }
     }
 }

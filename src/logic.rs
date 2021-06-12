@@ -1,32 +1,31 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use crate::context::Context;
-use once_cell::unsync::OnceCell;
+use core::ops::Deref;
 
-mod sealed {
-    use super::*;
+use crate::{
+    context::ModuleRef,
+    value::{Value, ValueType, ValueTypeTrait},
+};
 
-    pub trait ValueImplSealed {}
-
-    impl<T: ValueType> ValueImplSealed for WireValue<'_, T> {}
+pub struct Wire<'ctx, T: ValueTypeTrait<'ctx>> {
+    value: Value<'ctx, T>,
 }
 
-pub trait ValueImpl<T: ValueType>: sealed::ValueImplSealed {}
-
-#[derive(Clone)]
-pub struct Value<'ctx, T: ValueType>(&'ctx dyn ValueImpl<T>);
-
-pub(crate) trait WireTrait<'ctx> {}
-
-pub(crate) struct WireValue<'ctx, T: ValueType> {
-    assigned_value: OnceCell<Value<'ctx, T>>,
+impl<'ctx, T: ValueTypeTrait<'ctx>> Wire<'ctx, T> {
+    pub fn new(module: ModuleRef<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
+        todo!()
+    }
+    pub fn assign(self, rhs: Value<'ctx, T>) -> Value<'ctx, T> {
+        assert_eq!(self.value_type(), rhs.value_type());
+        todo!()
+    }
 }
 
-impl<'ctx, T: ValueType> ValueImpl<T> for WireValue<'ctx, T> {}
+impl<'ctx, T: ValueTypeTrait<'ctx>> Deref for Wire<'ctx, T> {
+    type Target = Value<'ctx, T>;
 
-pub struct Wire<'ctx, T: ValueType>(&'ctx WireValue<'ctx, T>);
-
-impl<'ctx, T: ValueType> Wire<'ctx, T> {
-    pub fn new(ctx: &'ctx Context) -> Self {}
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }

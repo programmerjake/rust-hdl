@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use crate::{
-    context::ContextRef,
-    ir::types::{IrValueType, IrValueTypeRef},
-    values::Value,
-};
 use core::{
     convert::identity,
     fmt,
@@ -569,14 +564,6 @@ pub type UInt64 = Int<U64Shape>;
 pub type Int64 = Int<I64Shape>;
 pub type UInt128 = Int<U128Shape>;
 pub type Int128 = Int<I128Shape>;
-
-impl<Shape: IntShapeTrait> Value for Int<Shape> {
-    fn get_ir<'ctx>(&self, ctx: ContextRef<'ctx>) -> IrValueTypeRef<'ctx> {
-        IrValueType::BitVector {
-            bit_count: self.shape.shape().bit_count,
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

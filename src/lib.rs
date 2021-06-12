@@ -10,4 +10,4 @@ extern crate std;
 pub mod context;
 pub mod ir;
 pub mod logic;
-pub mod values;
+pub mod value;
