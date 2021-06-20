@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Internable, Interned},
+    context::{ContextRef, Intern, Interned},
     ir::types::{IrValueType, IrValueTypeRef},
     value::integer::{Int, IntShape, IntShapeTrait},
 };
@@ -94,7 +94,7 @@ impl<'ctx> LiteralArray<'ctx> {
         for element in elements {
             assert_eq!(element.get_type(ctx), element_type);
         }
-        let elements = elements.intern_clone(ctx);
+        let elements = elements.intern(ctx);
         Self {
             element_type,
             elements,

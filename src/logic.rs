@@ -16,16 +16,12 @@ impl<'ctx, T: ValueTypeTrait<'ctx>> Wire<'ctx, T> {
     pub fn new(module: ModuleRef<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
         todo!()
     }
-    pub fn assign(self, rhs: Value<'ctx, T>) -> Value<'ctx, T> {
-        assert_eq!(self.value_type(), rhs.value_type());
-        todo!()
-    }
 }
 
 impl<'ctx, T: ValueTypeTrait<'ctx>> Deref for Wire<'ctx, T> {
     type Target = Value<'ctx, T>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.value
     }
 }
