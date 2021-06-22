@@ -3,14 +3,15 @@
 
 use crate::{
     context::{ContextRef, Intern, Interned},
-    ir::types::{IrValueType, IrValueTypeRef},
+    ir::{
+        logic::IrWireValue,
+        types::{IrValueType, IrValueTypeRef},
+    },
     values::integer::{Int, IntShape, IntShapeTrait},
 };
 use core::{convert::TryInto, fmt};
 use num_bigint::BigUint;
 use num_traits::Zero;
-
-use super::logic::IrWireValue;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct LiteralBits {
