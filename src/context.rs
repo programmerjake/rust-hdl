@@ -2,6 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::ir::{
+    logic::{IrWire, IrWireValue},
     types::IrValueType,
     values::{IrValue, IrValueRef},
 };
@@ -191,6 +192,7 @@ pub struct Context<'ctx> {
     value_interner: Interner<'ctx, IrValue<'ctx>>,
     value_ref_interner: Interner<'ctx, [IrValueRef<'ctx>]>,
     modules_arena: Arena<Module<'ctx>>,
+    wires_arena: Arena<IrWire<'ctx>>,
 }
 
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for str {
@@ -219,22 +221,38 @@ impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrValueRef<
 
 pub type ContextRef<'ctx> = &'ctx Context<'ctx>;
 
-#[derive(Debug)]
 pub struct Module<'ctx> {
     ctx: ContextRef<'ctx>,
+    id: usize,
+    wires: RefCell<Vec<IrWireValue<'ctx>>>,
 }
 
 pub type ModuleRef<'ctx> = &'ctx Module<'ctx>;
 
 impl<'ctx> Module<'ctx> {
     pub fn new(ctx: ContextRef<'ctx>) -> ModuleRef<'ctx> {
-        let module = ctx.modules_arena.alloc(Module { ctx });
+        let module = ctx.modules_arena.alloc(Module {
+            ctx,
+            id: ctx.modules.borrow().len(),
+            wires: RefCell::default(),
+        });
         ctx.modules.borrow_mut().push(module);
         module
     }
     pub fn ctx(&self) -> ContextRef<'ctx> {
         self.ctx
     }
+    pub fn id(&self) -> impl fmt::Debug + 'static {
+        self.id
+    }
+}
+
+pub(crate) fn create_ir_wire_impl<'ctx>(mut wire: IrWire<'ctx>) -> IrWireValue<'ctx> {
+    let module = wire.module();
+    wire.id = module.wires.borrow().len();
+    let retval = IrWireValue(module.ctx().wires_arena.alloc(wire));
+    module.wires.borrow_mut().push(retval);
+    retval
 }
 
 impl fmt::Debug for Context<'_> {

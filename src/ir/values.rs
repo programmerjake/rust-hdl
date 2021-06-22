@@ -4,7 +4,7 @@
 use crate::{
     context::{ContextRef, Intern, Interned},
     ir::types::{IrValueType, IrValueTypeRef},
-    value::integer::{Int, IntShape, IntShapeTrait},
+    values::integer::{Int, IntShape, IntShapeTrait},
 };
 use core::{convert::TryInto, fmt};
 use num_bigint::BigUint;
@@ -137,6 +137,7 @@ pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
 
 fn assert_copyable<T: Copy>() {}
 
+#[allow(dead_code)]
 fn check_types() {
     assert_copyable::<IrValueRef<'static>>();
 }
