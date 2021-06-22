@@ -13,9 +13,10 @@ use core::{
     fmt,
     hash::{BuildHasher, Hash, Hasher},
     ops::Deref,
-    ptr,
+    ptr::{self, NonNull},
+    slice,
 };
-use hashbrown::{hash_map::RawEntryMut, HashMap};
+use hashbrown::{hash_map::DefaultHashBuilder, raw::RawTable};
 use typed_arena::Arena;
 
 pub trait Internable<'ctx>: ArenaAllocatable<'ctx> + HasArena<'ctx> + Hash + Eq {}
@@ -44,8 +45,14 @@ impl<'ctx, T: InternImpl<'ctx, T>> Internable<'ctx> for T {}
 
 impl<'ctx, T> Internable<'ctx> for [T] where [T]: InternImpl<'ctx, Vec<T>> {}
 
-#[derive(Debug, Eq)]
+#[derive(Eq)]
 pub struct Interned<'ctx, T: Internable<'ctx> + ?Sized>(&'ctx T);
+
+impl<'ctx, T: Internable<'ctx> + ?Sized + fmt::Debug> fmt::Debug for Interned<'ctx, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        T::fmt(self, f)
+    }
+}
 
 impl<'ctx, T: Internable<'ctx> + ?Sized> Copy for Interned<'ctx, T> {}
 
@@ -150,41 +157,81 @@ impl<'ctx, T: 'ctx + Clone> ArenaAllocatable<'ctx, [T]> for &'_ [T] {
     }
 }
 
-struct Interner<'ctx, T: Internable<'ctx> + ?Sized> {
-    arena: T::Arena,
-    hash_table: RefCell<HashMap<&'ctx T, ()>>,
+unsafe trait HasNonNullPtr {
+    type NonNullPtr: Copy + 'static;
+    unsafe fn from_ptr<'a>(ptr: Self::NonNullPtr) -> &'a Self;
+    fn to_ptr(&self) -> Self::NonNullPtr;
 }
 
-impl<'ctx, T: Internable<'ctx> + ?Sized> Default for Interner<'ctx, T> {
+unsafe impl<T> HasNonNullPtr for T {
+    type NonNullPtr = NonNull<()>;
+    unsafe fn from_ptr<'a>(ptr: Self::NonNullPtr) -> &'a Self {
+        unsafe { &*(ptr.as_ptr() as *const Self) }
+    }
+    fn to_ptr(&self) -> Self::NonNullPtr {
+        unsafe { NonNull::new_unchecked(self as *const Self as *mut ()) }
+    }
+}
+
+unsafe impl HasNonNullPtr for str {
+    type NonNullPtr = NonNull<str>;
+    unsafe fn from_ptr<'a>(ptr: Self::NonNullPtr) -> &'a Self {
+        unsafe { &*ptr.as_ptr() }
+    }
+    fn to_ptr(&self) -> Self::NonNullPtr {
+        NonNull::from(self)
+    }
+}
+
+unsafe impl<T> HasNonNullPtr for [T] {
+    type NonNullPtr = (NonNull<()>, usize);
+    unsafe fn from_ptr<'a>(ptr: Self::NonNullPtr) -> &'a Self {
+        unsafe { slice::from_raw_parts(ptr.0.as_ptr() as *const T, ptr.1) }
+    }
+    fn to_ptr(&self) -> Self::NonNullPtr {
+        unsafe { (NonNull::new_unchecked(self.as_ptr() as *mut ()), self.len()) }
+    }
+}
+
+struct Interner<'ctx, T: Internable<'ctx> + HasNonNullPtr + ?Sized> {
+    arena: T::Arena,
+    hash_table: RefCell<RawTable<T::NonNullPtr>>,
+    hasher: DefaultHashBuilder,
+}
+
+impl<'ctx, T: Internable<'ctx> + HasNonNullPtr + ?Sized> Default for Interner<'ctx, T> {
     fn default() -> Self {
         Self {
             arena: Default::default(),
             hash_table: Default::default(),
+            hasher: Default::default(),
         }
     }
 }
 
-impl<'ctx, T: Internable<'ctx> + ?Sized> Interner<'ctx, T> {
+impl<'ctx, T: Internable<'ctx> + HasNonNullPtr + ?Sized> Interner<'ctx, T> {
     #[must_use]
     fn intern_impl<V: ArenaAllocatable<'ctx, T>>(&'ctx self, value: V) -> Interned<'ctx, T> {
         let mut hash_table = self.hash_table.borrow_mut();
-        let mut hasher = hash_table.hasher().build_hasher();
-        <&T>::hash(&value.borrow(), &mut hasher);
-        match hash_table
-            .raw_entry_mut()
-            .from_hash(hasher.finish(), |v| *v == value.borrow())
-        {
-            RawEntryMut::Occupied(entry) => Interned(*entry.key()),
-            RawEntryMut::Vacant(entry) => {
-                let allocated = V::allocate(&self.arena, value);
-                entry.insert(allocated, ());
-                Interned(allocated)
-            }
+        let hash_fn = |value: &T| {
+            let mut hasher = self.hasher.build_hasher();
+            value.hash(&mut hasher);
+            hasher.finish()
+        };
+        let value_ref = value.borrow();
+        let hash = hash_fn(value_ref);
+        if let Some(interned) = hash_table.get(hash, |v| unsafe { T::from_ptr(*v) == value_ref }) {
+            Interned(unsafe { T::from_ptr(*interned) })
+        } else {
+            let allocated = V::allocate(&self.arena, value);
+            hash_table.insert(hash, allocated.to_ptr(), |v| unsafe {
+                hash_fn(T::from_ptr(*v))
+            });
+            Interned(allocated)
         }
     }
 }
 
-#[derive(Default)]
 pub struct Context<'ctx> {
     modules: RefCell<Vec<ModuleRef<'ctx>>>,
     string_interner: Interner<'ctx, str>,
@@ -193,6 +240,21 @@ pub struct Context<'ctx> {
     value_ref_interner: Interner<'ctx, [IrValueRef<'ctx>]>,
     modules_arena: Arena<Module<'ctx>>,
     wires_arena: Arena<IrWire<'ctx>>,
+}
+
+impl Context<'_> {
+    pub fn with<F: for<'ctx> FnOnce(ContextRef<'ctx>) -> R, R>(f: F) -> R {
+        let context = Context {
+            modules: RefCell::default(),
+            string_interner: Interner::default(),
+            value_type_interner: Interner::default(),
+            value_interner: Interner::default(),
+            value_ref_interner: Interner::default(),
+            modules_arena: Arena::default(),
+            wires_arena: Arena::default(),
+        };
+        f(&context)
+    }
 }
 
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for str {
@@ -244,6 +306,25 @@ impl<'ctx> Module<'ctx> {
     }
     pub fn id(&self) -> impl fmt::Debug + 'static {
         self.id
+    }
+}
+
+impl fmt::Debug for Module<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct DebugWires<'a, 'ctx>(&'a [IrWireValue<'ctx>]);
+        impl fmt::Debug for DebugWires<'_, '_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let mut debug_list = f.debug_map();
+                for wire in self.0 {
+                    debug_list.entry(&wire.0.id(), &wire.0.debug_fmt_without_id());
+                }
+                debug_list.finish()
+            }
+        }
+        f.debug_struct("Module")
+            .field("id", &self.id())
+            .field("wires", &DebugWires(&self.wires.borrow()))
+            .finish_non_exhaustive()
     }
 }
 

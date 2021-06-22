@@ -19,14 +19,21 @@ pub struct Wire<'ctx, T: ValueTrait<'ctx>> {
 }
 
 impl<'ctx, T: ValueTrait<'ctx>> Wire<'ctx, T> {
-    pub fn new(module: ModuleRef<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
+    pub fn with_type(module: ModuleRef<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
         let wire = IrWire::new(module, value_type.ir());
         let value =
             Value::from_ir_unchecked(module.ctx(), IrValue::from(wire).intern(module.ctx()));
         Self { wire, value }
     }
+    pub fn new(module: ModuleRef<'ctx>) -> Self
+    where
+        T: Default,
+    {
+        Self::with_type(module, ValueTrait::default_value_type(module.ctx()))
+    }
     pub fn assign(self, assigned_value: Value<'ctx, T>) {
         assert_eq!(self.value_type(), assigned_value.value_type());
+        self.wire.0.assign(assigned_value.ir());
     }
     pub fn ir(&self) -> IrWireValue<'ctx> {
         self.wire

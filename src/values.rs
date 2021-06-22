@@ -24,6 +24,12 @@ pub trait ValueTrait<'ctx>: Sized {
         let _ = ctx;
         None
     }
+    fn default_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self>
+    where
+        Self: Default,
+    {
+        Self::static_value_type(ctx).unwrap_or_else(|| Self::default().get_value_type(ctx))
+    }
 }
 
 impl<'ctx> ValueTrait<'ctx> for () {

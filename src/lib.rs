@@ -2,6 +2,7 @@
 // See Notices.txt for copyright information
 #![no_std]
 #![deny(elided_lifetimes_in_paths)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
 #[cfg(test)]

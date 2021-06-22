@@ -68,6 +68,28 @@ impl<'ctx> IrWire<'ctx> {
             panic!("Wire already assigned");
         }
     }
+    pub fn debug_fmt_without_id<'a: 'ctx>(&'a self) -> impl fmt::Debug + 'a {
+        struct FormatAsNone;
+        impl fmt::Debug for FormatAsNone {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("<None>")
+            }
+        }
+        struct FmtWithoutId<'a, 'ctx>(&'a IrWire<'ctx>);
+        impl fmt::Debug for FmtWithoutId<'_, '_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let mut debug_struct = f.debug_struct("IrWire");
+                debug_struct.field("value_type", &self.0.value_type());
+                if let Some(assigned_value) = self.0.assigned_value.get() {
+                    debug_struct.field("assigned_value", assigned_value);
+                } else {
+                    debug_struct.field("assigned_value", &FormatAsNone);
+                }
+                debug_struct.finish_non_exhaustive()
+            }
+        }
+        FmtWithoutId(self)
+    }
 }
 
 #[derive(Clone, Copy)]
