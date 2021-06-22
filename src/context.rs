@@ -186,7 +186,7 @@ impl<'ctx, T: Internable<'ctx> + ?Sized> Interner<'ctx, T> {
 
 #[derive(Default)]
 pub struct Context<'ctx> {
-    modules: RefCell<Vec<&'ctx Module<'ctx>>>,
+    modules: RefCell<Vec<ModuleRef<'ctx>>>,
     string_interner: Interner<'ctx, str>,
     value_type_interner: Interner<'ctx, IrValueType<'ctx>>,
     value_interner: Interner<'ctx, IrValue<'ctx>>,
