@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use core::fmt;
+use core::{cell::Cell, fmt};
 
 pub(crate) struct FormatAsNone;
 
@@ -36,5 +36,28 @@ pub(crate) fn debug_format_option_as_value_or_invalid<T: fmt::Debug>(
         v
     } else {
         &FormatAsInvalid
+    }
+}
+
+pub(crate) struct NestedDebugTracking<'a> {
+    cell: &'a Cell<bool>,
+    nested: bool,
+}
+
+impl<'a> NestedDebugTracking<'a> {
+    pub(crate) fn new(cell: &'a Cell<bool>) -> Self {
+        Self {
+            cell,
+            nested: cell.replace(true),
+        }
+    }
+    pub(crate) fn nested(&self) -> bool {
+        self.nested
+    }
+}
+
+impl<'a> Drop for NestedDebugTracking<'a> {
+    fn drop(&mut self) {
+        self.cell.set(self.nested);
     }
 }

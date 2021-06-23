@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    fmt_utils::debug_format_option_as_value_or_none,
+    fmt_utils::{debug_format_option_as_value_or_none, NestedDebugTracking},
     io::IOTrait,
     ir::{
         io::{IrIOMutRef, IrOutputReadData, IrOutputReadDataRef, IO},
@@ -14,7 +14,7 @@ use crate::{
 use alloc::{string::String, vec::Vec};
 use core::{
     borrow::Borrow,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     convert::Infallible,
     fmt,
     hash::{BuildHasher, Hash, Hasher},
@@ -298,6 +298,7 @@ pub struct IrModule<'ctx> {
     interface_types: Vec<IO<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>>,
     interface_write_ends: OnceCell<Vec<IO<IrValueRef<'ctx>, IrWireRef<'ctx>>>>,
     wires: RefCell<Vec<IrWireRef<'ctx>>>,
+    debug_formatting: Cell<bool>,
 }
 
 impl Eq for IrModule<'_> {}
@@ -327,6 +328,7 @@ impl<'ctx> IrModule<'ctx> {
             interface_types,
             interface_write_ends: OnceCell::new(),
             wires: RefCell::default(),
+            debug_formatting: Cell::new(false),
         });
         ctx.modules.borrow_mut().push(module);
         module
@@ -408,6 +410,13 @@ impl<'ctx> IrModule<'ctx> {
 
 impl fmt::Debug for IrModule<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let nested_debug_tracking = NestedDebugTracking::new(&self.debug_formatting);
+        if nested_debug_tracking.nested() {
+            return f
+                .debug_struct("IrModule")
+                .field("id", &self.id())
+                .finish_non_exhaustive();
+        }
         struct DebugWires<'a, 'ctx>(&'a [IrWireRef<'ctx>]);
         impl fmt::Debug for DebugWires<'_, '_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

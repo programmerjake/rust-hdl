@@ -3,7 +3,7 @@
 
 use crate::{
     context::{create_ir_output_read_data_impl, Intern, IrModuleRef},
-    fmt_utils::debug_format_option_as_value_or_invalid,
+    fmt_utils::{debug_format_option_as_value_or_invalid, debug_format_option_as_value_or_none},
     ir::{
         logic::{IrWire, IrWireRef},
         types::IrValueTypeRef,
@@ -95,7 +95,6 @@ impl<'ctx> IrInput<'ctx> {
     }
 }
 
-#[derive(Debug)]
 pub struct IrOutputWriteData<'ctx> {
     writing_module: IrModuleRef<'ctx>,
     index: usize,
@@ -110,11 +109,32 @@ impl<'ctx> IrOutputWriteData<'ctx> {
     }
 }
 
-#[derive(Debug)]
+impl fmt::Debug for IrOutputWriteData<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IrOutputWriteData")
+            .field("writing_module", &self.writing_module().id())
+            .field("index", &self.index)
+            .finish()
+    }
+}
+
 pub struct IrOutputReadData<'ctx> {
     module: IrModuleRef<'ctx>,
     value_type: IrValueTypeRef<'ctx>,
     write_data: OnceCell<IrOutputWriteData<'ctx>>,
+}
+
+impl fmt::Debug for IrOutputReadData<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IrOutputReadData")
+            .field("module", &self.module().id())
+            .field("value_type", &self.value_type())
+            .field(
+                "write_data",
+                debug_format_option_as_value_or_none(self.write_data.get()),
+            )
+            .finish()
+    }
 }
 
 impl<'ctx> IrOutputReadData<'ctx> {

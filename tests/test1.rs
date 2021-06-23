@@ -16,9 +16,9 @@ macro_rules! assert_formats_to {
 #[test]
 fn test1() {
     Context::with(|ctx| {
-        let mod0 = IrModule::new(ctx, |_, _| {}, &mut ());
+        let top = IrModule::new(ctx, |_, _| {}, &mut ());
         assert_formats_to!(
-            mod0,
+            top,
             r"
 IrModule {
     id: 0,
@@ -28,9 +28,9 @@ IrModule {
     ..
 }"
         );
-        let wire = Wire::<[bool; 4]>::new(mod0);
+        let wire = Wire::<[bool; 4]>::new(top);
         assert_formats_to!(
-            mod0,
+            top,
             r"
 IrModule {
     id: 0,
@@ -53,7 +53,7 @@ IrModule {
         );
         wire.assign([true, false, true, true].get_value(ctx));
         assert_formats_to!(
-            mod0,
+            top,
             r"
 IrModule {
     id: 0,
@@ -181,7 +181,7 @@ IrModule {
                 value_type: BitVector {
                     bit_count: 32,
                 },
-                assigned_value: OnceCell(Uninit),
+                assigned_value: <None>,
                 ..
             },
         ),
@@ -243,7 +243,7 @@ Output {
             value_type: BitVector {
                 bit_count: 32,
             },
-            assigned_value: OnceCell(Uninit),
+            assigned_value: <None>,
             ..
         },
     ),
@@ -315,12 +315,10 @@ IrModule {
                 value_type: BitVector {
                     bit_count: 32,
                 },
-                assigned_value: OnceCell(
-                    LiteralBits {
-                        bit_count: 32,
-                        value: 0xdeadbeef,
-                    },
-                ),
+                assigned_value: LiteralBits {
+                    bit_count: 32,
+                    value: 0xdeadbeef,
+                },
                 ..
             },
         ),
@@ -347,6 +345,283 @@ IrModule {
             assigned_value: LiteralBits {
                 bit_count: 32,
                 value: 0xdeadbeef,
+            },
+            ..
+        },
+    },
+    ..
+}"
+        );
+    });
+}
+
+#[test]
+fn test_sub_submodule() {
+    Context::with(|ctx| {
+        let top = IrModule::new(ctx, |_, _| {}, &mut ());
+        assert_formats_to!(
+            top,
+            r"
+IrModule {
+    id: 0,
+    interface_types: [],
+    interface_write_ends: [],
+    wires: {},
+    ..
+}"
+        );
+        let mut submodule_interface = (Input::from(true.get_value(ctx)), Output::<bool>::new(top));
+        assert_formats_to!(
+            top,
+            r"
+IrModule {
+    id: 0,
+    interface_types: [],
+    interface_write_ends: [],
+    wires: {},
+    ..
+}"
+        );
+        let submodule = IrModule::new(ctx, |_, _| {}, &mut submodule_interface);
+        assert_formats_to!(
+            top,
+            r"
+IrModule {
+    id: 0,
+    interface_types: [],
+    interface_write_ends: [],
+    wires: {},
+    ..
+}"
+        );
+        assert_formats_to!(
+            submodule,
+            r"
+IrModule {
+    id: 1,
+    interface_types: [
+        Input(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+        Output(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+    ],
+    interface_write_ends: [
+        Input(
+            LiteralBits {
+                bit_count: 1,
+                value: 0x1,
+            },
+        ),
+        Output(
+            IrWire {
+                id: 1.0,
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+                assigned_value: <None>,
+                ..
+            },
+        ),
+    ],
+    wires: {
+        1.0: IrWire {
+            value_type: BitVector {
+                bit_count: 1,
+            },
+            assigned_value: <None>,
+            ..
+        },
+    },
+    ..
+}"
+        );
+        let sub_submodule = IrModule::new(ctx, |_, _| {}, &mut submodule_interface);
+        assert_formats_to!(
+            top,
+            r"
+IrModule {
+    id: 0,
+    interface_types: [],
+    interface_write_ends: [],
+    wires: {},
+    ..
+}"
+        );
+        assert_formats_to!(
+            submodule,
+            r"
+IrModule {
+    id: 1,
+    interface_types: [
+        Input(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+        Output(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+    ],
+    interface_write_ends: [
+        Input(
+            LiteralBits {
+                bit_count: 1,
+                value: 0x1,
+            },
+        ),
+        Output(
+            IrWire {
+                id: 1.0,
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+                assigned_value: IrOutputRead(
+                    IrOutputReadData {
+                        module: 1,
+                        value_type: BitVector {
+                            bit_count: 1,
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: 2,
+                            index: 1,
+                        },
+                    },
+                ),
+                ..
+            },
+        ),
+    ],
+    wires: {
+        1.0: IrWire {
+            value_type: BitVector {
+                bit_count: 1,
+            },
+            assigned_value: IrOutputRead(
+                IrOutputReadData {
+                    module: 1,
+                    value_type: BitVector {
+                        bit_count: 1,
+                    },
+                    write_data: IrOutputWriteData {
+                        writing_module: 2,
+                        index: 1,
+                    },
+                },
+            ),
+            ..
+        },
+    },
+    ..
+}"
+        );
+        assert_formats_to!(
+            sub_submodule,
+            r"
+IrModule {
+    id: 2,
+    interface_types: [
+        Input(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+        Output(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+    ],
+    interface_write_ends: [
+        Input(
+            IrModuleInput {
+                module: 1,
+                index: 0,
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+            },
+        ),
+        Output(
+            IrWire {
+                id: 2.0,
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+                assigned_value: <None>,
+                ..
+            },
+        ),
+    ],
+    wires: {
+        2.0: IrWire {
+            value_type: BitVector {
+                bit_count: 1,
+            },
+            assigned_value: <None>,
+            ..
+        },
+    },
+    ..
+}"
+        );
+        submodule_interface.1.assign(false.get_value(ctx));
+        assert_formats_to!(
+            sub_submodule,
+            r"
+IrModule {
+    id: 2,
+    interface_types: [
+        Input(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+        Output(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+    ],
+    interface_write_ends: [
+        Input(
+            IrModuleInput {
+                module: 1,
+                index: 0,
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+            },
+        ),
+        Output(
+            IrWire {
+                id: 2.0,
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+                assigned_value: LiteralBits {
+                    bit_count: 1,
+                    value: 0x0,
+                },
+                ..
+            },
+        ),
+    ],
+    wires: {
+        2.0: IrWire {
+            value_type: BitVector {
+                bit_count: 1,
+            },
+            assigned_value: LiteralBits {
+                bit_count: 1,
+                value: 0x0,
             },
             ..
         },

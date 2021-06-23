@@ -30,7 +30,10 @@ impl fmt::Debug for IrWire<'_> {
         f.debug_struct("IrWire")
             .field("id", &self.id())
             .field("value_type", &self.value_type())
-            .field("assigned_value", &self.assigned_value)
+            .field(
+                "assigned_value",
+                debug_format_option_as_value_or_none(self.assigned_value.get()),
+            )
             .finish_non_exhaustive()
     }
 }
