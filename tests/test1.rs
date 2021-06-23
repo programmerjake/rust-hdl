@@ -1,6 +1,7 @@
 use rust_hdl::{
-    context::{Context, IrModule},
+    context::Context,
     io::{Input, Output},
+    ir::module::IrModule,
     logic::Wire,
     values::{Int8, UInt32, ValueTrait},
 };

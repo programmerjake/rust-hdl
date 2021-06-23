@@ -2,9 +2,10 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{Intern, IrModuleRef},
+    context::Intern,
     ir::{
         logic::{IrWire, IrWireRead, IrWireRef},
+        module::IrModuleRef,
         values::{IrValue, IrValueRef},
     },
     values::{Value, ValueTrait, ValueType},

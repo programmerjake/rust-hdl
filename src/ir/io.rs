@@ -2,10 +2,11 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{create_ir_output_read_data_impl, Intern, IrModuleRef},
+    context::Intern,
     fmt_utils::{debug_format_option_as_value_or_invalid, debug_format_option_as_value_or_none},
     ir::{
         logic::{IrWire, IrWireRef},
+        module::IrModuleRef,
         types::IrValueTypeRef,
         values::{IrValue, IrValueRef},
     },
@@ -162,7 +163,7 @@ impl<'ctx> IrOutputRead<'ctx> {
         self.0.read()
     }
     pub fn new(module: IrModuleRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
-        IrOutputRead(create_ir_output_read_data_impl(IrOutputReadData {
+        IrOutputRead(module.ctx().output_read_data_arena.alloc(IrOutputReadData {
             module,
             value_type,
             write_data: OnceCell::new(),

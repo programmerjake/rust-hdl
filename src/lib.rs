@@ -13,4 +13,5 @@ mod fmt_utils;
 pub mod io;
 pub mod ir;
 pub mod logic;
+pub mod module;
 pub mod values;

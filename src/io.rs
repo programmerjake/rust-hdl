@@ -2,8 +2,10 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::IrModuleRef,
-    ir::io::{IrIOTraitCallback, IrInput, IrOutput, IO},
+    ir::{
+        io::{IrIOTraitCallback, IrInput, IrOutput, IO},
+        module::IrModuleRef,
+    },
     values::{Value, ValueTrait, ValueType},
 };
 use alloc::{boxed::Box, vec::Vec};

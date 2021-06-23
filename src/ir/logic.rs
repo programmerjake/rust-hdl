@@ -2,9 +2,10 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{create_ir_wire_impl, Intern, IrModuleRef},
+    context::Intern,
     fmt_utils::debug_format_option_as_value_or_none,
     ir::{
+        module::IrModuleRef,
         types::IrValueTypeRef,
         values::{IrValue, IrValueRef},
     },
@@ -63,12 +64,15 @@ impl<'ctx> IrWire<'ctx> {
         self.value_type
     }
     pub fn new(module: IrModuleRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> IrWireRef<'ctx> {
-        create_ir_wire_impl(Self {
+        let id = module.wires.borrow().len();
+        let retval = module.ctx().wires_arena.alloc(Self {
             module,
-            id: 0,
+            id,
             value_type,
             assigned_value: OnceCell::new(),
-        })
+        });
+        module.wires.borrow_mut().push(retval);
+        retval
     }
     pub fn read(&'ctx self) -> IrValueRef<'ctx> {
         IrValue::WireRead(IrWireRead(self)).intern(self.module().ctx())

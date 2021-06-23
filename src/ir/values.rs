@@ -2,10 +2,11 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Intern, Interned, IrModuleRef},
+    context::{ContextRef, Intern, Interned},
     ir::{
         io::{IrModuleInput, IrOutputRead},
         logic::IrWireRead,
+        module::IrModuleRef,
         types::{IrValueType, IrValueTypeRef},
     },
     values::integer::{Int, IntShape, IntShapeTrait},
