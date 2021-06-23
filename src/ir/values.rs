@@ -2,9 +2,10 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Intern, Interned},
+    context::{ContextRef, Intern, Interned, IrModuleRef},
     ir::{
-        logic::IrWireValue,
+        io::{IrModuleInput, IrOutputRead},
+        logic::IrWireRead,
         types::{IrValueType, IrValueTypeRef},
     },
     values::integer::{Int, IntShape, IntShapeTrait},
@@ -79,9 +80,10 @@ impl From<LiteralBits> for IrValue<'_> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct LiteralArray<'ctx> {
     element_type: IrValueTypeRef<'ctx>,
+    owning_module: Option<IrModuleRef<'ctx>>,
     elements: Interned<'ctx, [IrValueRef<'ctx>]>,
 }
 
@@ -92,25 +94,36 @@ impl<'ctx> LiteralArray<'ctx> {
         elements: impl AsRef<[IrValueRef<'ctx>]>,
     ) -> Self {
         let elements = elements.as_ref();
+        let mut owning_module = None;
         for element in elements {
             assert_eq!(element.get_type(ctx), element_type);
+            if let Some(element_owning_module) = element.owning_module() {
+                match owning_module {
+                    Some(owning_module) => assert_eq!(element_owning_module, owning_module),
+                    None => owning_module = Some(element_owning_module),
+                }
+            }
         }
         let elements = elements.intern(ctx);
         Self {
             element_type,
+            owning_module,
             elements,
         }
     }
-    pub fn element_type(&self) -> IrValueTypeRef<'ctx> {
+    pub fn element_type(self) -> IrValueTypeRef<'ctx> {
         self.element_type
     }
-    pub fn len(&self) -> usize {
+    pub fn owning_module(self) -> Option<IrModuleRef<'ctx>> {
+        self.owning_module
+    }
+    pub fn len(self) -> usize {
         self.elements.len()
     }
-    pub fn is_empty(&self) -> bool {
+    pub fn is_empty(self) -> bool {
         self.len() == 0
     }
-    pub fn elements(&self) -> Interned<'ctx, [IrValueRef<'ctx>]> {
+    pub fn elements(self) -> Interned<'ctx, [IrValueRef<'ctx>]> {
         self.elements
     }
 }
@@ -121,17 +134,19 @@ impl<'ctx> From<LiteralArray<'ctx>> for IrValue<'ctx> {
     }
 }
 
-impl<'ctx> From<IrWireValue<'ctx>> for IrValue<'ctx> {
-    fn from(v: IrWireValue<'ctx>) -> Self {
-        Self::WireValue(v)
+impl<'ctx> From<IrWireRead<'ctx>> for IrValue<'ctx> {
+    fn from(v: IrWireRead<'ctx>) -> Self {
+        Self::WireRead(v)
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(PartialEq, Eq, Clone, Hash)]
 pub enum IrValue<'ctx> {
     LiteralBits(LiteralBits),
     LiteralArray(LiteralArray<'ctx>),
-    WireValue(IrWireValue<'ctx>),
+    WireRead(IrWireRead<'ctx>),
+    Input(IrModuleInput<'ctx>),
+    OutputRead(IrOutputRead<'ctx>),
 }
 
 pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
@@ -154,7 +169,30 @@ impl<'ctx> IrValue<'ctx> {
                 length: v.len(),
             }
             .intern(ctx),
-            IrValue::WireValue(wire_value) => wire_value.0.value_type(),
+            IrValue::WireRead(v) => v.0.value_type(),
+            IrValue::Input(v) => v.value_type(),
+            IrValue::OutputRead(v) => v.0.value_type(),
+        }
+    }
+    pub fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        match self {
+            IrValue::LiteralBits(_) => None,
+            IrValue::LiteralArray(array) => array.owning_module(),
+            IrValue::WireRead(wire) => Some(wire.0.module()),
+            IrValue::Input(input) => Some(input.module()),
+            IrValue::OutputRead(output) => Some(output.0.module()),
+        }
+    }
+}
+
+impl fmt::Debug for IrValue<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IrValue::LiteralBits(v) => v.fmt(f),
+            IrValue::LiteralArray(v) => v.fmt(f),
+            IrValue::WireRead(v) => v.fmt(f),
+            IrValue::Input(v) => v.fmt(f),
+            IrValue::OutputRead(v) => v.fmt(f),
         }
     }
 }

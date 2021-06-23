@@ -1,15 +1,21 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use crate::ir::{
-    logic::{IrWire, IrWireValue},
-    types::IrValueType,
-    values::{IrValue, IrValueRef},
+use crate::{
+    fmt_utils::debug_format_option_as_value_or_none,
+    io::IOTrait,
+    ir::{
+        io::{IrIOMutRef, IrOutputReadData, IrOutputReadDataRef, IO},
+        logic::{IrWire, IrWireRef},
+        types::{IrValueType, IrValueTypeRef},
+        values::{IrValue, IrValueRef},
+    },
 };
 use alloc::{string::String, vec::Vec};
 use core::{
     borrow::Borrow,
     cell::RefCell,
+    convert::Infallible,
     fmt,
     hash::{BuildHasher, Hash, Hasher},
     ops::Deref,
@@ -17,6 +23,7 @@ use core::{
     slice,
 };
 use hashbrown::{hash_map::DefaultHashBuilder, raw::RawTable};
+use once_cell::unsync::OnceCell;
 use typed_arena::Arena;
 
 pub trait Internable<'ctx>: ArenaAllocatable<'ctx> + HasArena<'ctx> + Hash + Eq {}
@@ -233,13 +240,14 @@ impl<'ctx, T: Internable<'ctx> + HasNonNullPtr + ?Sized> Interner<'ctx, T> {
 }
 
 pub struct Context<'ctx> {
-    modules: RefCell<Vec<ModuleRef<'ctx>>>,
+    modules: RefCell<Vec<IrModuleRef<'ctx>>>,
     string_interner: Interner<'ctx, str>,
     value_type_interner: Interner<'ctx, IrValueType<'ctx>>,
     value_interner: Interner<'ctx, IrValue<'ctx>>,
     value_ref_interner: Interner<'ctx, [IrValueRef<'ctx>]>,
-    modules_arena: Arena<Module<'ctx>>,
+    modules_arena: Arena<IrModule<'ctx>>,
     wires_arena: Arena<IrWire<'ctx>>,
+    output_read_data_arena: Arena<IrOutputReadData<'ctx>>,
 }
 
 impl Context<'_> {
@@ -252,6 +260,7 @@ impl Context<'_> {
             value_ref_interner: Interner::default(),
             modules_arena: Arena::default(),
             wires_arena: Arena::default(),
+            output_read_data_arena: Arena::default(),
         };
         f(&context)
     }
@@ -283,23 +292,108 @@ impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrValueRef<
 
 pub type ContextRef<'ctx> = &'ctx Context<'ctx>;
 
-pub struct Module<'ctx> {
+pub struct IrModule<'ctx> {
     ctx: ContextRef<'ctx>,
     id: usize,
-    wires: RefCell<Vec<IrWireValue<'ctx>>>,
+    interface_types: Vec<IO<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>>,
+    interface_write_ends: OnceCell<Vec<IO<IrValueRef<'ctx>, IrWireRef<'ctx>>>>,
+    wires: RefCell<Vec<IrWireRef<'ctx>>>,
 }
 
-pub type ModuleRef<'ctx> = &'ctx Module<'ctx>;
+impl Eq for IrModule<'_> {}
 
-impl<'ctx> Module<'ctx> {
-    pub fn new(ctx: ContextRef<'ctx>) -> ModuleRef<'ctx> {
-        let module = ctx.modules_arena.alloc(Module {
+impl Hash for IrModule<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl PartialEq for IrModule<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+pub type IrModuleRef<'ctx> = &'ctx IrModule<'ctx>;
+
+impl<'ctx> IrModule<'ctx> {
+    pub fn new_without_interface(
+        ctx: ContextRef<'ctx>,
+        interface_types: Vec<IO<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>>,
+    ) -> IrModuleRef<'ctx> {
+        let module = ctx.modules_arena.alloc(IrModule {
             ctx,
             id: ctx.modules.borrow().len(),
+            interface_types,
+            interface_write_ends: OnceCell::new(),
             wires: RefCell::default(),
         });
         ctx.modules.borrow_mut().push(module);
         module
+    }
+    pub fn try_new<
+        T: IOTrait<'ctx> + ?Sized,
+        F: FnOnce(IrModuleRef<'ctx>, &mut T) -> Result<(), E>,
+        E,
+    >(
+        ctx: ContextRef<'ctx>,
+        before_map_interface: F,
+        external_interface: &mut T,
+    ) -> Result<IrModuleRef<'ctx>, E> {
+        let mut interface_types = Vec::new();
+        external_interface
+            .visit_ir_ports(&mut |io| {
+                interface_types
+                    .push(io.map(|v| v.get_wrapped_value().get_type(ctx), |v| v.value_type()));
+                Ok(())
+            })
+            .unwrap();
+        let module = Self::new_without_interface(ctx, interface_types);
+        before_map_interface(module, external_interface)?;
+        module.map_and_set_interface(external_interface);
+        Ok(module)
+    }
+    pub fn new<T: IOTrait<'ctx> + ?Sized, F: FnOnce(IrModuleRef<'ctx>, &mut T)>(
+        ctx: ContextRef<'ctx>,
+        before_map_interface: F,
+        external_interface: &mut T,
+    ) -> IrModuleRef<'ctx> {
+        let retval: Result<_, Infallible> = Self::try_new(
+            ctx,
+            |module, interface| {
+                before_map_interface(module, interface);
+                Ok(())
+            },
+            external_interface,
+        );
+        match retval {
+            Ok(module) => module,
+            Err(v) => match v {},
+        }
+    }
+    pub fn map_and_set_interface<T: IOTrait<'ctx> + ?Sized>(
+        &'ctx self,
+        external_interface: &mut T,
+    ) {
+        let mut interface_write_ends = Vec::with_capacity(self.interface_types().len());
+        external_interface
+            .visit_ir_ports(&mut |io: IrIOMutRef<'_, 'ctx>| {
+                let index = interface_write_ends.len();
+                assert!(index < self.interface_types().len());
+                let write_end = io.map(
+                    |v| v.map_to_module_internal(self, index),
+                    |v| v.map_to_module_internal(self, index),
+                );
+                interface_write_ends.push(write_end);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(interface_write_ends.len(), self.interface_types().len());
+        let was_empty = self.interface_write_ends.set(interface_write_ends).is_ok();
+        assert!(was_empty);
+    }
+    pub fn interface_write_ends(&self) -> Option<&[IO<IrValueRef<'ctx>, IrWireRef<'ctx>>]> {
+        self.interface_write_ends.get().map(Deref::deref)
     }
     pub fn ctx(&self) -> ContextRef<'ctx> {
         self.ctx
@@ -307,33 +401,51 @@ impl<'ctx> Module<'ctx> {
     pub fn id(&self) -> impl fmt::Debug + 'static {
         self.id
     }
+    pub fn interface_types(&self) -> &[IO<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>] {
+        &self.interface_types
+    }
 }
 
-impl fmt::Debug for Module<'_> {
+impl fmt::Debug for IrModule<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct DebugWires<'a, 'ctx>(&'a [IrWireValue<'ctx>]);
+        struct DebugWires<'a, 'ctx>(&'a [IrWireRef<'ctx>]);
         impl fmt::Debug for DebugWires<'_, '_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let mut debug_list = f.debug_map();
                 for wire in self.0 {
-                    debug_list.entry(&wire.0.id(), &wire.0.debug_fmt_without_id());
+                    debug_list.entry(&wire.id(), &wire.debug_fmt_without_id());
                 }
                 debug_list.finish()
             }
         }
-        f.debug_struct("Module")
+        f.debug_struct("IrModule")
             .field("id", &self.id())
+            .field("interface_types", &self.interface_types())
+            .field(
+                "interface_write_ends",
+                debug_format_option_as_value_or_none(self.interface_write_ends().as_ref()),
+            )
             .field("wires", &DebugWires(&self.wires.borrow()))
             .finish_non_exhaustive()
     }
 }
 
-pub(crate) fn create_ir_wire_impl<'ctx>(mut wire: IrWire<'ctx>) -> IrWireValue<'ctx> {
+pub(crate) fn create_ir_wire_impl<'ctx>(mut wire: IrWire<'ctx>) -> IrWireRef<'ctx> {
     let module = wire.module();
     wire.id = module.wires.borrow().len();
-    let retval = IrWireValue(module.ctx().wires_arena.alloc(wire));
+    let retval = module.ctx().wires_arena.alloc(wire);
     module.wires.borrow_mut().push(retval);
     retval
+}
+
+pub(crate) fn create_ir_output_read_data_impl<'ctx>(
+    output_read_data: IrOutputReadData<'ctx>,
+) -> IrOutputReadDataRef<'ctx> {
+    output_read_data
+        .module()
+        .ctx()
+        .output_read_data_arena
+        .alloc(output_read_data)
 }
 
 impl fmt::Debug for Context<'_> {

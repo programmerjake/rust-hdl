@@ -119,6 +119,12 @@ impl<'ctx, T: ValueTrait<'ctx>> Value<'ctx, T> {
         };
         Self { ir, value_type }
     }
+    pub(crate) fn from_ir_and_type_unchecked(
+        ir: IrValueRef<'ctx>,
+        value_type: ValueType<'ctx, T>,
+    ) -> Self {
+        Self { ir, value_type }
+    }
     pub fn value_type(self) -> ValueType<'ctx, T> {
         self.value_type
     }
@@ -137,7 +143,7 @@ impl<'ctx, T: ValueTrait<'ctx>> Clone for Value<'ctx, T> {
 
 pub struct ValueType<'ctx, T: ValueTrait<'ctx>> {
     ir: IrValueTypeRef<'ctx>,
-    _phantom: PhantomData<T>,
+    _phantom: PhantomData<fn(T) -> T>,
 }
 
 impl<'ctx, T: ValueTrait<'ctx>> ValueType<'ctx, T> {

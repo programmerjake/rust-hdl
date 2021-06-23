@@ -9,6 +9,8 @@ extern crate alloc;
 extern crate std;
 
 pub mod context;
+mod fmt_utils;
+pub mod io;
 pub mod ir;
 pub mod logic;
 pub mod values;

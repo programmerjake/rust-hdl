@@ -2,8 +2,12 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{create_ir_wire_impl, ModuleRef},
-    ir::{types::IrValueTypeRef, values::IrValueRef},
+    context::{create_ir_wire_impl, Intern, IrModuleRef},
+    fmt_utils::debug_format_option_as_value_or_none,
+    ir::{
+        types::IrValueTypeRef,
+        values::{IrValue, IrValueRef},
+    },
 };
 use core::{
     fmt,
@@ -13,11 +17,13 @@ use core::{
 use once_cell::unsync::OnceCell;
 
 pub struct IrWire<'ctx> {
-    module: ModuleRef<'ctx>,
+    module: IrModuleRef<'ctx>,
     pub(crate) id: usize,
     value_type: IrValueTypeRef<'ctx>,
     assigned_value: OnceCell<IrValueRef<'ctx>>,
 }
+
+pub type IrWireRef<'ctx> = &'ctx IrWire<'ctx>;
 
 impl fmt::Debug for IrWire<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -41,7 +47,7 @@ impl<ModuleId: fmt::Debug> fmt::Debug for WireIdDebug<ModuleId> {
 }
 
 impl<'ctx> IrWire<'ctx> {
-    pub fn module(&self) -> ModuleRef<'ctx> {
+    pub fn module(&self) -> IrModuleRef<'ctx> {
         self.module
     }
     pub fn id(&self) -> impl fmt::Debug + 'static {
@@ -53,7 +59,7 @@ impl<'ctx> IrWire<'ctx> {
     pub fn value_type(&self) -> IrValueTypeRef<'ctx> {
         self.value_type
     }
-    pub fn new(module: ModuleRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> IrWireValue<'ctx> {
+    pub fn new(module: IrModuleRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> IrWireRef<'ctx> {
         create_ir_wire_impl(Self {
             module,
             id: 0,
@@ -61,31 +67,30 @@ impl<'ctx> IrWire<'ctx> {
             assigned_value: OnceCell::new(),
         })
     }
+    pub fn read(&'ctx self) -> IrValueRef<'ctx> {
+        IrValue::WireRead(IrWireRead(self)).intern(self.module().ctx())
+    }
     pub fn assign(&self, value: IrValueRef<'ctx>) {
         let value_type = value.get_type(self.module.ctx());
+        if let Some(owning_module) = value.owning_module() {
+            assert_eq!(self.module(), owning_module);
+        }
         assert_eq!(self.value_type, value_type);
         if let Err(_) = self.assigned_value.set(value) {
             panic!("Wire already assigned");
         }
     }
     pub fn debug_fmt_without_id<'a: 'ctx>(&'a self) -> impl fmt::Debug + 'a {
-        struct FormatAsNone;
-        impl fmt::Debug for FormatAsNone {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("<None>")
-            }
-        }
         struct FmtWithoutId<'a, 'ctx>(&'a IrWire<'ctx>);
         impl fmt::Debug for FmtWithoutId<'_, '_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                let mut debug_struct = f.debug_struct("IrWire");
-                debug_struct.field("value_type", &self.0.value_type());
-                if let Some(assigned_value) = self.0.assigned_value.get() {
-                    debug_struct.field("assigned_value", assigned_value);
-                } else {
-                    debug_struct.field("assigned_value", &FormatAsNone);
-                }
-                debug_struct.finish_non_exhaustive()
+                f.debug_struct("IrWire")
+                    .field("value_type", &self.0.value_type())
+                    .field(
+                        "assigned_value",
+                        debug_format_option_as_value_or_none(self.0.assigned_value.get()),
+                    )
+                    .finish_non_exhaustive()
             }
         }
         FmtWithoutId(self)
@@ -93,26 +98,26 @@ impl<'ctx> IrWire<'ctx> {
 }
 
 #[derive(Clone, Copy)]
-pub struct IrWireValue<'ctx>(pub &'ctx IrWire<'ctx>);
+pub struct IrWireRead<'ctx>(pub IrWireRef<'ctx>);
 
-impl fmt::Debug for IrWireValue<'_> {
+impl fmt::Debug for IrWireRead<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IrWireValue")
+        f.debug_struct("IrWireRead")
             .field("id", &self.0.id())
             .field("value_type", &self.0.value_type())
             .finish_non_exhaustive()
     }
 }
 
-impl<'ctx> Eq for IrWireValue<'ctx> {}
+impl<'ctx> Eq for IrWireRead<'ctx> {}
 
-impl<'ctx> PartialEq for IrWireValue<'ctx> {
+impl<'ctx> PartialEq for IrWireRead<'ctx> {
     fn eq(&self, other: &Self) -> bool {
         ptr::eq(self.0, other.0)
     }
 }
 
-impl<'ctx> Hash for IrWireValue<'ctx> {
+impl<'ctx> Hash for IrWireRead<'ctx> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (self.0 as *const IrWire<'ctx>).hash(state)
     }
