@@ -17,6 +17,7 @@ pub mod io;
 pub mod ir;
 pub mod logic;
 pub mod module;
+pub mod prelude;
 pub mod values;
 
 #[macro_export]

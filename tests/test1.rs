@@ -1,11 +1,4 @@
-use rust_hdl::{
-    context::{Context, ContextRef},
-    io::{Input, Output},
-    logic::Wire,
-    named,
-    values::{Int8, UInt32, Value},
-    Value, IO,
-};
+use rust_hdl::prelude::*;
 
 #[derive(Value, IO, Default)]
 struct EmptyType;
