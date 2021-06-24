@@ -7,10 +7,11 @@ use crate::{
         io::{IrModuleInput, IrOutputRead},
         logic::IrWireRead,
         module::IrModuleRef,
-        types::{IrValueType, IrValueTypeRef},
+        types::{IrStructFieldType, IrStructType, IrValueType, IrValueTypeRef},
     },
     values::integer::{Int, IntShape, IntShapeTrait},
 };
+use alloc::vec::Vec;
 use core::{convert::TryInto, fmt};
 use num_bigint::BigUint;
 use num_traits::Zero;
@@ -135,6 +136,64 @@ impl<'ctx> From<LiteralArray<'ctx>> for IrValue<'ctx> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct LiteralStructField<'ctx> {
+    pub name: Interned<'ctx, str>,
+    pub value: IrValueRef<'ctx>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct LiteralStruct<'ctx> {
+    ty: IrStructType<'ctx>,
+    owning_module: Option<IrModuleRef<'ctx>>,
+    fields: Interned<'ctx, [LiteralStructField<'ctx>]>,
+}
+
+impl<'ctx> LiteralStruct<'ctx> {
+    pub fn new(ctx: ContextRef<'ctx>, fields: impl AsRef<[LiteralStructField<'ctx>]>) -> Self {
+        let fields = fields.as_ref();
+        let mut field_types = Vec::with_capacity(fields.len());
+        let mut owning_module = None;
+        for field in fields {
+            let field_type = IrStructFieldType {
+                name: field.name,
+                ty: field.value.get_type(ctx),
+            };
+            field_types.push(field_type);
+            if let Some(element_owning_module) = field.value.owning_module() {
+                match owning_module {
+                    Some(owning_module) => assert_eq!(element_owning_module, owning_module),
+                    None => owning_module = Some(element_owning_module),
+                }
+            }
+        }
+        let fields = fields.intern(ctx);
+        let field_types = field_types.intern(ctx);
+        Self {
+            ty: IrStructType {
+                fields: field_types,
+            },
+            owning_module,
+            fields,
+        }
+    }
+    pub fn ty(self) -> IrStructType<'ctx> {
+        self.ty
+    }
+    pub fn owning_module(self) -> Option<IrModuleRef<'ctx>> {
+        self.owning_module
+    }
+    pub fn fields(self) -> Interned<'ctx, [LiteralStructField<'ctx>]> {
+        self.fields
+    }
+}
+
+impl<'ctx> From<LiteralStruct<'ctx>> for IrValue<'ctx> {
+    fn from(v: LiteralStruct<'ctx>) -> Self {
+        Self::LiteralStruct(v)
+    }
+}
+
 impl<'ctx> From<IrWireRead<'ctx>> for IrValue<'ctx> {
     fn from(v: IrWireRead<'ctx>) -> Self {
         Self::WireRead(v)
@@ -145,6 +204,7 @@ impl<'ctx> From<IrWireRead<'ctx>> for IrValue<'ctx> {
 pub enum IrValue<'ctx> {
     LiteralBits(LiteralBits),
     LiteralArray(LiteralArray<'ctx>),
+    LiteralStruct(LiteralStruct<'ctx>),
     WireRead(IrWireRead<'ctx>),
     Input(IrModuleInput<'ctx>),
     OutputRead(IrOutputRead<'ctx>),
@@ -170,6 +230,7 @@ impl<'ctx> IrValue<'ctx> {
                 length: v.len(),
             }
             .intern(ctx),
+            IrValue::LiteralStruct(v) => IrValueType::from(v.ty()).intern(ctx),
             IrValue::WireRead(v) => v.0.value_type(),
             IrValue::Input(v) => v.value_type(),
             IrValue::OutputRead(v) => v.0.value_type(),
@@ -179,6 +240,7 @@ impl<'ctx> IrValue<'ctx> {
         match self {
             IrValue::LiteralBits(_) => None,
             IrValue::LiteralArray(array) => array.owning_module(),
+            IrValue::LiteralStruct(s) => s.owning_module(),
             IrValue::WireRead(wire) => Some(wire.0.module()),
             IrValue::Input(input) => Some(input.module()),
             IrValue::OutputRead(output) => Some(output.0.module()),
@@ -191,6 +253,7 @@ impl fmt::Debug for IrValue<'_> {
         match self {
             IrValue::LiteralBits(v) => v.fmt(f),
             IrValue::LiteralArray(v) => v.fmt(f),
+            IrValue::LiteralStruct(v) => v.fmt(f),
             IrValue::WireRead(v) => v.fmt(f),
             IrValue::Input(v) => v.fmt(f),
             IrValue::OutputRead(v) => v.fmt(f),

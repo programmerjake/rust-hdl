@@ -8,6 +8,9 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+pub use rust_hdl_macros::Value;
+
+pub mod clocking;
 pub mod context;
 mod fmt_utils;
 pub mod io;

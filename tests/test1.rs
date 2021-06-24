@@ -4,7 +4,21 @@ use rust_hdl::{
     logic::Wire,
     named,
     values::{Int8, UInt32, Value},
+    Value,
 };
+
+#[derive(Value, Default)]
+struct EmptyType;
+
+#[derive(Value, Default)]
+struct Struct {
+    a: bool,
+    b: EmptyType,
+    c: TupleStruct,
+}
+
+#[derive(Value, Default)]
+struct TupleStruct(bool, Int8);
 
 macro_rules! assert_formats_to {
     ($value:expr, $expected:literal) => {{
@@ -12,6 +26,66 @@ macro_rules! assert_formats_to {
         let expected: &str = $expected;
         assert!(value == expected, "doesn't match expected. value:{}", value);
     }};
+}
+
+#[test]
+fn test_structs() {
+    Context::with(|ctx| {
+        named!(let top = ctx.top_module());
+        named!(let _wire: Wire<Struct> = top.wire());
+        assert_formats_to!(
+            top,
+            r#"
+IrModule {
+    path: "top",
+    parent: <None>,
+    interface_types: [],
+    interface_write_ends: [],
+    wires: {
+        "_wire": IrWire {
+            value_type: IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "a",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "b",
+                        ty: IrStructType {
+                            fields: [],
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "c",
+                        ty: IrStructType {
+                            fields: [
+                                IrStructFieldType {
+                                    name: "0",
+                                    ty: BitVector {
+                                        bit_count: 1,
+                                    },
+                                },
+                                IrStructFieldType {
+                                    name: "1",
+                                    ty: BitVector {
+                                        bit_count: 8,
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+            assigned_value: <None>,
+            ..
+        },
+    },
+    ..
+}"#
+        );
+    });
 }
 
 #[test]

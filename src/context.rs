@@ -6,8 +6,8 @@ use crate::ir::{
     logic::IrWire,
     module::{IrModule, IrModuleRef},
     symbols::IrSymbolTable,
-    types::IrValueType,
-    values::{IrValue, IrValueRef},
+    types::{IrStructFieldType, IrValueType},
+    values::{IrValue, IrValueRef, LiteralStructField},
 };
 use alloc::{string::String, vec::Vec};
 use core::{
@@ -247,6 +247,8 @@ pub struct Context<'ctx> {
     pub(crate) root_symbol_table: IrSymbolTable<'ctx>,
     string_interner: Interner<'ctx, str>,
     value_type_interner: Interner<'ctx, IrValueType<'ctx>>,
+    struct_field_type_interner: Interner<'ctx, [IrStructFieldType<'ctx>]>,
+    literal_struct_field_interner: Interner<'ctx, [LiteralStructField<'ctx>]>,
     value_interner: Interner<'ctx, IrValue<'ctx>>,
     value_ref_interner: Interner<'ctx, [IrValueRef<'ctx>]>,
     pub(crate) modules_arena: Arena<IrModule<'ctx>>,
@@ -262,6 +264,8 @@ impl<'ctx> Context<'ctx> {
             root_symbol_table: IrSymbolTable::default(),
             string_interner: Interner::default(),
             value_type_interner: Interner::default(),
+            struct_field_type_interner: Interner::default(),
+            literal_struct_field_interner: Interner::default(),
             value_interner: Interner::default(),
             value_ref_interner: Interner::default(),
             modules_arena: Arena::default(),
@@ -297,6 +301,18 @@ impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for IrValue<'ctx
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrValueRef<'ctx>] {
     fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
         ctx.value_ref_interner.intern_impl(value)
+    }
+}
+
+impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrStructFieldType<'ctx>] {
+    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
+        ctx.struct_field_type_interner.intern_impl(value)
+    }
+}
+
+impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [LiteralStructField<'ctx>] {
+    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
+        ctx.literal_struct_field_interner.intern_impl(value)
     }
 }
 
