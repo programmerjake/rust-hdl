@@ -15,7 +15,7 @@ use core::{
     marker::PhantomData,
 };
 
-pub trait ValueTrait<'ctx>: Sized {
+pub trait Value<'ctx>: Sized {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self>;
     fn get_value_type(&self, ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
         Self::static_value_type(ctx).unwrap_or_else(|| self.get_value(ctx).value_type())
@@ -32,7 +32,7 @@ pub trait ValueTrait<'ctx>: Sized {
     }
 }
 
-impl<'ctx> ValueTrait<'ctx> for () {
+impl<'ctx> Value<'ctx> for () {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
         Val::from_ir_unchecked(ctx, IrValue::LiteralBits(LiteralBits::new()).intern(ctx))
     }
@@ -43,7 +43,7 @@ impl<'ctx> ValueTrait<'ctx> for () {
     }
 }
 
-impl<'ctx> ValueTrait<'ctx> for bool {
+impl<'ctx> Value<'ctx> for bool {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
         Val::from_ir_unchecked(
             ctx,
@@ -57,7 +57,7 @@ impl<'ctx> ValueTrait<'ctx> for bool {
     }
 }
 
-impl<'ctx, Shape: integer::IntShapeTrait> ValueTrait<'ctx> for Int<Shape> {
+impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
         Val::from_ir_unchecked(ctx, IrValue::LiteralBits(self.clone().into()).intern(ctx))
     }
@@ -71,7 +71,7 @@ impl<'ctx, Shape: integer::IntShapeTrait> ValueTrait<'ctx> for Int<Shape> {
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>, const N: usize> ValueTrait<'ctx> for [T; N] {
+impl<'ctx, T: Value<'ctx>, const N: usize> Value<'ctx> for [T; N] {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
         let mut element_type = T::static_value_type(ctx);
         let elements: Vec<_> = self
@@ -106,12 +106,12 @@ impl<'ctx, T: ValueTrait<'ctx>, const N: usize> ValueTrait<'ctx> for [T; N] {
     }
 }
 
-pub struct Val<'ctx, T: ValueTrait<'ctx>> {
+pub struct Val<'ctx, T: Value<'ctx>> {
     ir: IrValueRef<'ctx>,
     value_type: ValueType<'ctx, T>,
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> Val<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Val<'ctx, T> {
     pub(crate) fn from_ir_unchecked(ctx: ContextRef<'ctx>, ir: IrValueRef<'ctx>) -> Self {
         let value_type = ValueType {
             ir: ir.get_type(ctx),
@@ -133,20 +133,20 @@ impl<'ctx, T: ValueTrait<'ctx>> Val<'ctx, T> {
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> Copy for Val<'ctx, T> {}
+impl<'ctx, T: Value<'ctx>> Copy for Val<'ctx, T> {}
 
-impl<'ctx, T: ValueTrait<'ctx>> Clone for Val<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Clone for Val<'ctx, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-pub struct ValueType<'ctx, T: ValueTrait<'ctx>> {
+pub struct ValueType<'ctx, T: Value<'ctx>> {
     ir: IrValueTypeRef<'ctx>,
     _phantom: PhantomData<fn(T) -> T>,
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> ValueType<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> ValueType<'ctx, T> {
     pub(crate) fn from_ir_unchecked(ir: IrValueTypeRef<'ctx>) -> Self {
         ValueType {
             ir,
@@ -158,29 +158,29 @@ impl<'ctx, T: ValueTrait<'ctx>> ValueType<'ctx, T> {
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> fmt::Debug for ValueType<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> fmt::Debug for ValueType<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("ValueType").field(&self.ir).finish()
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> Copy for ValueType<'ctx, T> {}
+impl<'ctx, T: Value<'ctx>> Copy for ValueType<'ctx, T> {}
 
-impl<'ctx, T: ValueTrait<'ctx>> Clone for ValueType<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Clone for ValueType<'ctx, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> Eq for ValueType<'ctx, T> {}
+impl<'ctx, T: Value<'ctx>> Eq for ValueType<'ctx, T> {}
 
-impl<'ctx, T: ValueTrait<'ctx>> PartialEq for ValueType<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> PartialEq for ValueType<'ctx, T> {
     fn eq(&self, other: &Self) -> bool {
         self.ir == other.ir
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> Hash for ValueType<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Hash for ValueType<'ctx, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ir.hash(state)
     }

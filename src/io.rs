@@ -6,7 +6,7 @@ use crate::{
         io::{InOrOut, IrIOCallback, IrIOMutRef, IrInput, IrOutput},
         module::IrModuleRef,
     },
-    values::{Val, ValueTrait, ValueType},
+    values::{Val, Value, ValueType},
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
@@ -265,18 +265,18 @@ impl<'ctx, T> IO<'ctx> for NotIO<T> {
 }
 
 #[derive(Debug)]
-pub struct Input<'ctx, T: ValueTrait<'ctx>> {
+pub struct Input<'ctx, T: Value<'ctx>> {
     ir: IrInput<'ctx>,
     value_type: ValueType<'ctx, T>,
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> IO<'ctx> for Input<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> IO<'ctx> for Input<'ctx, T> {
     fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
         self.ir.visit_io(visitor)
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> From<Val<'ctx, T>> for Input<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> From<Val<'ctx, T>> for Input<'ctx, T> {
     fn from(value: Val<'ctx, T>) -> Self {
         Self {
             ir: IrInput::from(value.ir()),
@@ -285,7 +285,7 @@ impl<'ctx, T: ValueTrait<'ctx>> From<Val<'ctx, T>> for Input<'ctx, T> {
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> Input<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Input<'ctx, T> {
     pub fn get(&self) -> Val<'ctx, T> {
         Val::from_ir_and_type_unchecked(self.ir.get(), self.value_type)
     }
@@ -294,12 +294,12 @@ impl<'ctx, T: ValueTrait<'ctx>> Input<'ctx, T> {
     }
 }
 
-pub struct Output<'ctx, T: ValueTrait<'ctx>> {
+pub struct Output<'ctx, T: Value<'ctx>> {
     ir: IrOutput<'ctx>,
     _phantom: PhantomData<fn(T) -> T>,
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> fmt::Debug for Output<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> fmt::Debug for Output<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Output")
             .field("ir", &self.ir)
@@ -307,7 +307,7 @@ impl<'ctx, T: ValueTrait<'ctx>> fmt::Debug for Output<'ctx, T> {
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> Output<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Output<'ctx, T> {
     pub fn with_type(module: IrModuleRef<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
         Output {
             ir: IrOutput::new(module, value_type.ir()),
@@ -318,7 +318,7 @@ impl<'ctx, T: ValueTrait<'ctx>> Output<'ctx, T> {
     where
         T: Default,
     {
-        Self::with_type(module, ValueTrait::default_value_type(module.ctx()))
+        Self::with_type(module, Value::default_value_type(module.ctx()))
     }
     #[track_caller]
     pub fn assign(self, assigned_value: Val<'ctx, T>) {
@@ -335,7 +335,7 @@ impl<'ctx, T: ValueTrait<'ctx>> Output<'ctx, T> {
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> IO<'ctx> for Output<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> IO<'ctx> for Output<'ctx, T> {
     fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
         self.ir.visit_io(visitor)
     }

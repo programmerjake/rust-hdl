@@ -8,19 +8,19 @@ use crate::{
         module::IrModuleRef,
         values::{IrValue, IrValueRef},
     },
-    values::{Val, ValueTrait, ValueType},
+    values::{Val, Value, ValueType},
 };
 use alloc::borrow::Cow;
 use core::{fmt, marker::PhantomData};
 
 #[must_use]
-pub struct Wire<'ctx, T: ValueTrait<'ctx>> {
+pub struct Wire<'ctx, T: Value<'ctx>> {
     read_value: IrValueRef<'ctx>,
     ir: IrWireRef<'ctx>,
     _phantom: PhantomData<fn(T) -> T>,
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> fmt::Debug for Wire<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> fmt::Debug for Wire<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Wire")
             .field("ir", self.ir)
@@ -28,7 +28,7 @@ impl<'ctx, T: ValueTrait<'ctx>> fmt::Debug for Wire<'ctx, T> {
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> Wire<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
     pub fn with_type<'a, N: Into<Cow<'a, str>>>(
         module: IrModuleRef<'ctx>,
         name: N,
@@ -46,11 +46,7 @@ impl<'ctx, T: ValueTrait<'ctx>> Wire<'ctx, T> {
     where
         T: Default,
     {
-        Self::with_type(
-            module,
-            name.into(),
-            ValueTrait::default_value_type(module.ctx()),
-        )
+        Self::with_type(module, name.into(), Value::default_value_type(module.ctx()))
     }
     pub fn assign(self, assigned_value: Val<'ctx, T>) {
         self.ir.assign(assigned_value.ir());

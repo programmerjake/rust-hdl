@@ -3,7 +3,7 @@ use rust_hdl::{
     io::{Input, Output},
     ir::module::IrModule,
     logic::Wire,
-    values::{Int8, UInt32, ValueTrait},
+    values::{Int8, UInt32, Value},
 };
 
 macro_rules! assert_formats_to {
