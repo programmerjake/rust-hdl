@@ -2,16 +2,19 @@
 // See Notices.txt for copyright information
 
 use crate::{
+    context::ContextRef,
     ir::io::{InOrOut, IrIOCallback, IrIOMutRef, IrInput, IrOutput},
-    module::AsIrModule,
-    values::{Val, Value, ValueType},
+    module::{AsIrModule, Module},
+    values::{integer::IntShapeTrait, Int, Val, Value, ValueType},
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
+    convert::Infallible,
     fmt::{self, Write},
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
+use num_bigint::{BigInt, BigUint};
 
 #[must_use]
 pub struct IOVisitor<'visitor, 'ctx> {
@@ -167,6 +170,45 @@ impl<'ctx> IO<'ctx> for IrIOMutRef<'_, 'ctx> {
         }
     }
 }
+
+macro_rules! no_op_impl_io {
+    ([$ctx:lifetime $($generics:tt)*] $ty:ty) => {
+        impl<$ctx $($generics)*> IO<$ctx> for $ty {
+            fn visit_io(&mut self, visitor: IOVisitor<'_, $ctx>) {
+                visitor.visit_struct().finish()
+            }
+        }
+    };
+    ($ty:ty) => {
+        no_op_impl_io!(['ctx] $ty);
+    }
+}
+
+no_op_impl_io!(bool);
+no_op_impl_io!(char);
+no_op_impl_io!(f32);
+no_op_impl_io!(f64);
+no_op_impl_io!(i128);
+no_op_impl_io!(i16);
+no_op_impl_io!(i32);
+no_op_impl_io!(i64);
+no_op_impl_io!(i8);
+no_op_impl_io!(isize);
+no_op_impl_io!(str);
+no_op_impl_io!(u128);
+no_op_impl_io!(u16);
+no_op_impl_io!(u32);
+no_op_impl_io!(u64);
+no_op_impl_io!(u8);
+no_op_impl_io!(usize);
+no_op_impl_io!(Infallible);
+no_op_impl_io!(String);
+no_op_impl_io!(BigInt);
+no_op_impl_io!(BigUint);
+no_op_impl_io!(['ctx, Shape: IntShapeTrait] Int<Shape>);
+no_op_impl_io!(ContextRef<'_>);
+no_op_impl_io!(Module<'_>);
+no_op_impl_io!(&'_ str);
 
 impl<'ctx> IO<'ctx> for IrInput<'ctx> {
     fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
