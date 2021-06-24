@@ -4,10 +4,10 @@ use rust_hdl::{
     logic::Wire,
     named,
     values::{Int8, UInt32, Value},
-    Value,
+    Value, IO,
 };
 
-#[derive(Value, Default)]
+#[derive(Value, IO, Default)]
 struct EmptyType;
 
 #[derive(Value, Default)]
@@ -17,8 +17,19 @@ struct Struct {
     c: TupleStruct,
 }
 
+#[derive(IO)]
+struct IOStruct<'ctx> {
+    a: Input<'ctx, bool>,
+    b: Output<'ctx, bool>,
+    c: EmptyType,
+    d: IOTupleStruct<'ctx>,
+}
+
 #[derive(Value, Default)]
 struct TupleStruct(bool, Int8);
+
+#[derive(IO)]
+struct IOTupleStruct<'ctx>(Output<'ctx, Struct>);
 
 macro_rules! assert_formats_to {
     ($value:expr, $expected:literal) => {{
@@ -43,6 +54,231 @@ IrModule {
     interface_write_ends: [],
     wires: {
         "_wire": IrWire {
+            value_type: IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "a",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "b",
+                        ty: IrStructType {
+                            fields: [],
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "c",
+                        ty: IrStructType {
+                            fields: [
+                                IrStructFieldType {
+                                    name: "0",
+                                    ty: BitVector {
+                                        bit_count: 1,
+                                    },
+                                },
+                                IrStructFieldType {
+                                    name: "1",
+                                    ty: BitVector {
+                                        bit_count: 8,
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+            assigned_value: <None>,
+            ..
+        },
+    },
+    ..
+}"#
+        );
+        let io = IOStruct {
+            a: false.get_value(ctx).into(),
+            b: top.output(),
+            c: EmptyType,
+            d: IOTupleStruct(top.output()),
+        };
+        named!(let (submodule, _io) = top.submodule(io));
+        assert_formats_to!(
+            top,
+            r#"
+IrModule {
+    path: "top",
+    parent: <None>,
+    interface_types: [],
+    interface_write_ends: [],
+    wires: {
+        "_wire": IrWire {
+            value_type: IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "a",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "b",
+                        ty: IrStructType {
+                            fields: [],
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "c",
+                        ty: IrStructType {
+                            fields: [
+                                IrStructFieldType {
+                                    name: "0",
+                                    ty: BitVector {
+                                        bit_count: 1,
+                                    },
+                                },
+                                IrStructFieldType {
+                                    name: "1",
+                                    ty: BitVector {
+                                        bit_count: 8,
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+            assigned_value: <None>,
+            ..
+        },
+    },
+    ..
+}"#
+        );
+        assert_formats_to!(
+            submodule,
+            r#"
+IrModule {
+    path: "top"."submodule",
+    parent: "top",
+    interface_types: [
+        Input(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+        Output(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+        Output(
+            IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "a",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "b",
+                        ty: IrStructType {
+                            fields: [],
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "c",
+                        ty: IrStructType {
+                            fields: [
+                                IrStructFieldType {
+                                    name: "0",
+                                    ty: BitVector {
+                                        bit_count: 1,
+                                    },
+                                },
+                                IrStructFieldType {
+                                    name: "1",
+                                    ty: BitVector {
+                                        bit_count: 8,
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+        ),
+    ],
+    interface_write_ends: [
+        Input(
+            LiteralBits {
+                bit_count: 1,
+                value: 0x0,
+            },
+        ),
+        Output(
+            IrWire {
+                path: "top"."submodule"."io.b",
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+                assigned_value: <None>,
+                ..
+            },
+        ),
+        Output(
+            IrWire {
+                path: "top"."submodule"."io.d.0",
+                value_type: IrStructType {
+                    fields: [
+                        IrStructFieldType {
+                            name: "a",
+                            ty: BitVector {
+                                bit_count: 1,
+                            },
+                        },
+                        IrStructFieldType {
+                            name: "b",
+                            ty: IrStructType {
+                                fields: [],
+                            },
+                        },
+                        IrStructFieldType {
+                            name: "c",
+                            ty: IrStructType {
+                                fields: [
+                                    IrStructFieldType {
+                                        name: "0",
+                                        ty: BitVector {
+                                            bit_count: 1,
+                                        },
+                                    },
+                                    IrStructFieldType {
+                                        name: "1",
+                                        ty: BitVector {
+                                            bit_count: 8,
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+                assigned_value: <None>,
+                ..
+            },
+        ),
+    ],
+    wires: {
+        "io.b": IrWire {
+            value_type: BitVector {
+                bit_count: 1,
+            },
+            assigned_value: <None>,
+            ..
+        },
+        "io.d.0": IrWire {
             value_type: IrStructType {
                 fields: [
                     IrStructFieldType {
