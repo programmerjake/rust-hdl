@@ -5,9 +5,9 @@ use crate::{
     context::Intern,
     ir::{
         logic::{IrWire, IrWireRead, IrWireRef},
-        module::IrModuleRef,
         values::{IrValue, IrValueRef},
     },
+    module::AsIrModule,
     values::{Val, Value, ValueType},
 };
 use alloc::borrow::Cow;
@@ -29,11 +29,12 @@ impl<'ctx, T: Value<'ctx>> fmt::Debug for Wire<'ctx, T> {
 }
 
 impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
-    pub fn with_type<'a, N: Into<Cow<'a, str>>>(
-        module: IrModuleRef<'ctx>,
+    pub fn with_type<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
+        module: M,
         name: N,
         value_type: ValueType<'ctx, T>,
     ) -> Self {
+        let module = module.as_ir_module();
         let ir = IrWire::new(module, name.into(), value_type.ir());
         let read_value = IrValue::from(IrWireRead(ir)).intern(module.ctx());
         Self {
@@ -42,10 +43,11 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
             _phantom: PhantomData,
         }
     }
-    pub fn new<'a, N: Into<Cow<'a, str>>>(module: IrModuleRef<'ctx>, name: N) -> Self
+    pub fn new<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(module: M, name: N) -> Self
     where
         T: Default,
     {
+        let module = module.as_ir_module();
         Self::with_type(module, name.into(), Value::default_value_type(module.ctx()))
     }
     pub fn assign(self, assigned_value: Val<'ctx, T>) {

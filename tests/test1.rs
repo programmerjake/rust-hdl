@@ -1,8 +1,8 @@
 use rust_hdl::{
     context::Context,
     io::{Input, Output},
-    ir::module::IrModule,
     logic::Wire,
+    module::Module,
     values::{Int8, UInt32, Value},
 };
 
@@ -17,7 +17,7 @@ macro_rules! assert_formats_to {
 #[test]
 fn test1() {
     Context::with(|ctx| {
-        let top = IrModule::new_top_module(ctx, "top".into());
+        let top = Module::top(ctx, "top");
         assert_formats_to!(
             top,
             r#"
@@ -30,7 +30,7 @@ IrModule {
     ..
 }"#
         );
-        let wire = Wire::<[bool; 4]>::new(top, "wire");
+        let wire: Wire<[bool; 4]> = top.wire("wire");
         assert_formats_to!(
             top,
             r#"
@@ -107,7 +107,7 @@ IrModule {
 #[test]
 fn test_submodule() {
     Context::with(|ctx| {
-        let top = IrModule::new_top_module(ctx, "top".into());
+        let top = Module::top(ctx, "top");
         assert_formats_to!(
             top,
             r#"
@@ -120,10 +120,10 @@ IrModule {
     ..
 }"#
         );
-        let mut submodule_interface = (
-            Input::from(true.get_value(ctx)),
-            Output::<UInt32>::new(top),
-            Input::from([Int8::wrapping_new(0x23)].get_value(ctx)),
+        let submodule_io: (Input<bool>, Output<UInt32>, Input<[Int8; 1]>) = (
+            true.get_value(ctx).into(),
+            top.output(),
+            [Int8::wrapping_new(0x23)].get_value(ctx).into(),
         );
         assert_formats_to!(
             top,
@@ -137,7 +137,7 @@ IrModule {
     ..
 }"#
         );
-        let submodule = IrModule::new_submodule(top, "submodule".into(), &mut submodule_interface);
+        let (submodule, submodule_io) = top.submodule("submodule", submodule_io);
         assert_formats_to!(
             top,
             r#"
@@ -220,7 +220,7 @@ IrModule {
     ..
 }"#
         );
-        let (first_input, output, last_input) = submodule_interface;
+        let (first_input, output, last_input) = submodule_io;
         assert_formats_to!(
             first_input,
             r#"
@@ -369,7 +369,7 @@ IrModule {
 #[test]
 fn test_sub_submodule() {
     Context::with(|ctx| {
-        let top = IrModule::new_top_module(ctx, "top".into());
+        let top = Module::top(ctx, "top");
         assert_formats_to!(
             top,
             r#"
@@ -382,7 +382,7 @@ IrModule {
     ..
 }"#
         );
-        let mut submodule_interface = (Input::from(true.get_value(ctx)), Output::<bool>::new(top));
+        let submodule_io: (Input<bool>, Output<bool>) = (true.get_value(ctx).into(), top.output());
         assert_formats_to!(
             top,
             r#"
@@ -395,7 +395,7 @@ IrModule {
     ..
 }"#
         );
-        let submodule = IrModule::new_submodule(top, "submodule".into(), &mut submodule_interface);
+        let (submodule, submodule_io) = top.submodule("submodule", submodule_io);
         assert_formats_to!(
             top,
             r#"
@@ -456,8 +456,7 @@ IrModule {
     ..
 }"#
         );
-        let sub_submodule =
-            IrModule::new_submodule(submodule, "sub_submodule".into(), &mut submodule_interface);
+        let (sub_submodule, sub_submodule_io) = submodule.submodule("sub_submodule", submodule_io);
         assert_formats_to!(
             top,
             r#"
@@ -592,7 +591,7 @@ IrModule {
     ..
 }"#
         );
-        submodule_interface.1.assign(false.get_value(ctx));
+        sub_submodule_io.1.assign(false.get_value(ctx));
         assert_formats_to!(
             sub_submodule,
             r#"

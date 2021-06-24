@@ -2,10 +2,8 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    ir::{
-        io::{InOrOut, IrIOCallback, IrIOMutRef, IrInput, IrOutput},
-        module::IrModuleRef,
-    },
+    ir::io::{InOrOut, IrIOCallback, IrIOMutRef, IrInput, IrOutput},
+    module::AsIrModule,
     values::{Val, Value, ValueType},
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
@@ -308,16 +306,17 @@ impl<'ctx, T: Value<'ctx>> fmt::Debug for Output<'ctx, T> {
 }
 
 impl<'ctx, T: Value<'ctx>> Output<'ctx, T> {
-    pub fn with_type(module: IrModuleRef<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
+    pub fn with_type<M: AsIrModule<'ctx>>(module: M, value_type: ValueType<'ctx, T>) -> Self {
         Output {
-            ir: IrOutput::new(module, value_type.ir()),
+            ir: IrOutput::new(module.as_ir_module(), value_type.ir()),
             _phantom: PhantomData,
         }
     }
-    pub fn new(module: IrModuleRef<'ctx>) -> Self
+    pub fn new<M: AsIrModule<'ctx>>(module: M) -> Self
     where
         T: Default,
     {
+        let module = module.as_ir_module();
         Self::with_type(module, Value::default_value_type(module.ctx()))
     }
     #[track_caller]
