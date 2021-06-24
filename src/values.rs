@@ -16,7 +16,7 @@ use core::{
 };
 
 pub trait ValueTrait<'ctx>: Sized {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Value<'ctx, Self>;
+    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self>;
     fn get_value_type(&self, ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
         Self::static_value_type(ctx).unwrap_or_else(|| self.get_value(ctx).value_type())
     }
@@ -33,8 +33,8 @@ pub trait ValueTrait<'ctx>: Sized {
 }
 
 impl<'ctx> ValueTrait<'ctx> for () {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Value<'ctx, Self> {
-        Value::from_ir_unchecked(ctx, IrValue::LiteralBits(LiteralBits::new()).intern(ctx))
+    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
+        Val::from_ir_unchecked(ctx, IrValue::LiteralBits(LiteralBits::new()).intern(ctx))
     }
     fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
         Some(ValueType::from_ir_unchecked(
@@ -44,8 +44,8 @@ impl<'ctx> ValueTrait<'ctx> for () {
 }
 
 impl<'ctx> ValueTrait<'ctx> for bool {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Value<'ctx, Self> {
-        Value::from_ir_unchecked(
+    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
+        Val::from_ir_unchecked(
             ctx,
             IrValue::LiteralBits(UInt1::unchecked_new(*self as u8).into()).intern(ctx),
         )
@@ -58,8 +58,8 @@ impl<'ctx> ValueTrait<'ctx> for bool {
 }
 
 impl<'ctx, Shape: integer::IntShapeTrait> ValueTrait<'ctx> for Int<Shape> {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Value<'ctx, Self> {
-        Value::from_ir_unchecked(ctx, IrValue::LiteralBits(self.clone().into()).intern(ctx))
+    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
+        Val::from_ir_unchecked(ctx, IrValue::LiteralBits(self.clone().into()).intern(ctx))
     }
     fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
         Some(ValueType::from_ir_unchecked(
@@ -72,7 +72,7 @@ impl<'ctx, Shape: integer::IntShapeTrait> ValueTrait<'ctx> for Int<Shape> {
 }
 
 impl<'ctx, T: ValueTrait<'ctx>, const N: usize> ValueTrait<'ctx> for [T; N] {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Value<'ctx, Self> {
+    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
         let mut element_type = T::static_value_type(ctx);
         let elements: Vec<_> = self
             .iter()
@@ -89,7 +89,7 @@ impl<'ctx, T: ValueTrait<'ctx>, const N: usize> ValueTrait<'ctx> for [T; N] {
         let element_type = element_type
             .expect("can't calculate the value type for a zero-length array of a dynamic type")
             .ir();
-        Value::from_ir_unchecked(
+        Val::from_ir_unchecked(
             ctx,
             IrValue::LiteralArray(LiteralArray::new(ctx, element_type, elements)).intern(ctx),
         )
@@ -106,12 +106,12 @@ impl<'ctx, T: ValueTrait<'ctx>, const N: usize> ValueTrait<'ctx> for [T; N] {
     }
 }
 
-pub struct Value<'ctx, T: ValueTrait<'ctx>> {
+pub struct Val<'ctx, T: ValueTrait<'ctx>> {
     ir: IrValueRef<'ctx>,
     value_type: ValueType<'ctx, T>,
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> Value<'ctx, T> {
+impl<'ctx, T: ValueTrait<'ctx>> Val<'ctx, T> {
     pub(crate) fn from_ir_unchecked(ctx: ContextRef<'ctx>, ir: IrValueRef<'ctx>) -> Self {
         let value_type = ValueType {
             ir: ir.get_type(ctx),
@@ -133,9 +133,9 @@ impl<'ctx, T: ValueTrait<'ctx>> Value<'ctx, T> {
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> Copy for Value<'ctx, T> {}
+impl<'ctx, T: ValueTrait<'ctx>> Copy for Val<'ctx, T> {}
 
-impl<'ctx, T: ValueTrait<'ctx>> Clone for Value<'ctx, T> {
+impl<'ctx, T: ValueTrait<'ctx>> Clone for Val<'ctx, T> {
     fn clone(&self) -> Self {
         *self
     }

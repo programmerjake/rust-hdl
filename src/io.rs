@@ -6,7 +6,7 @@ use crate::{
         io::{InOrOut, IrIOCallback, IrIOMutRef, IrInput, IrOutput},
         module::IrModuleRef,
     },
-    values::{Value, ValueTrait, ValueType},
+    values::{Val, ValueTrait, ValueType},
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
@@ -276,8 +276,8 @@ impl<'ctx, T: ValueTrait<'ctx>> IO<'ctx> for Input<'ctx, T> {
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> From<Value<'ctx, T>> for Input<'ctx, T> {
-    fn from(value: Value<'ctx, T>) -> Self {
+impl<'ctx, T: ValueTrait<'ctx>> From<Val<'ctx, T>> for Input<'ctx, T> {
+    fn from(value: Val<'ctx, T>) -> Self {
         Self {
             ir: IrInput::from(value.ir()),
             value_type: value.value_type(),
@@ -286,8 +286,8 @@ impl<'ctx, T: ValueTrait<'ctx>> From<Value<'ctx, T>> for Input<'ctx, T> {
 }
 
 impl<'ctx, T: ValueTrait<'ctx>> Input<'ctx, T> {
-    pub fn get(&self) -> Value<'ctx, T> {
-        Value::from_ir_and_type_unchecked(self.ir.get(), self.value_type)
+    pub fn get(&self) -> Val<'ctx, T> {
+        Val::from_ir_and_type_unchecked(self.ir.get(), self.value_type)
     }
     pub fn ir(&self) -> &IrInput<'ctx> {
         &self.ir
@@ -321,14 +321,14 @@ impl<'ctx, T: ValueTrait<'ctx>> Output<'ctx, T> {
         Self::with_type(module, ValueTrait::default_value_type(module.ctx()))
     }
     #[track_caller]
-    pub fn assign(self, assigned_value: Value<'ctx, T>) {
+    pub fn assign(self, assigned_value: Val<'ctx, T>) {
         self.ir.assign(assigned_value.ir())
     }
     pub fn ir(&self) -> &IrOutput<'ctx> {
         &self.ir
     }
-    pub fn read(&self) -> Value<'ctx, T> {
-        Value::from_ir_and_type_unchecked(
+    pub fn read(&self) -> Val<'ctx, T> {
+        Val::from_ir_and_type_unchecked(
             self.ir.read(),
             ValueType::from_ir_unchecked(self.ir.value_type()),
         )

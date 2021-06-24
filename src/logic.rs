@@ -8,7 +8,7 @@ use crate::{
         module::IrModuleRef,
         values::{IrValue, IrValueRef},
     },
-    values::{Value, ValueTrait, ValueType},
+    values::{Val, ValueTrait, ValueType},
 };
 use alloc::borrow::Cow;
 use core::{fmt, marker::PhantomData};
@@ -52,14 +52,14 @@ impl<'ctx, T: ValueTrait<'ctx>> Wire<'ctx, T> {
             ValueTrait::default_value_type(module.ctx()),
         )
     }
-    pub fn assign(self, assigned_value: Value<'ctx, T>) {
+    pub fn assign(self, assigned_value: Val<'ctx, T>) {
         self.ir.assign(assigned_value.ir());
     }
     pub fn ir(&self) -> IrWireRef<'ctx> {
         self.ir
     }
-    pub fn read(&self) -> Value<'ctx, T> {
-        Value::from_ir_and_type_unchecked(
+    pub fn read(&self) -> Val<'ctx, T> {
+        Val::from_ir_and_type_unchecked(
             self.read_value,
             ValueType::from_ir_unchecked(self.ir.value_type()),
         )
