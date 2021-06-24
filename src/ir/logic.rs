@@ -6,10 +6,12 @@ use crate::{
     fmt_utils::debug_format_option_as_value_or_none,
     ir::{
         module::IrModuleRef,
+        symbols::IrSymbol,
         types::IrValueTypeRef,
         values::{IrValue, IrValueRef},
     },
 };
+use alloc::borrow::Cow;
 use core::{
     fmt,
     hash::{Hash, Hasher},
@@ -19,7 +21,7 @@ use once_cell::unsync::OnceCell;
 
 pub struct IrWire<'ctx> {
     module: IrModuleRef<'ctx>,
-    pub(crate) id: usize,
+    name: IrSymbol<'ctx>,
     value_type: IrValueTypeRef<'ctx>,
     assigned_value: OnceCell<IrValueRef<'ctx>>,
 }
@@ -29,7 +31,7 @@ pub type IrWireRef<'ctx> = &'ctx IrWire<'ctx>;
 impl fmt::Debug for IrWire<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IrWire")
-            .field("id", &self.id())
+            .field("path", &self.path())
             .field("value_type", &self.value_type())
             .field(
                 "assigned_value",
@@ -39,14 +41,11 @@ impl fmt::Debug for IrWire<'_> {
     }
 }
 
-struct WireIdDebug<ModuleId> {
-    module_id: ModuleId,
-    wire_id: usize,
-}
+pub struct IrWirePath<'a, 'ctx>(&'a IrWire<'ctx>);
 
-impl<ModuleId: fmt::Debug> fmt::Debug for WireIdDebug<ModuleId> {
+impl fmt::Debug for IrWirePath<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}.{}", self.module_id, self.wire_id)
+        write!(f, "{:?}.{:?}", self.0.module.path(), self.0.name)
     }
 }
 
@@ -54,20 +53,23 @@ impl<'ctx> IrWire<'ctx> {
     pub fn module(&self) -> IrModuleRef<'ctx> {
         self.module
     }
-    pub fn id(&self) -> impl fmt::Debug + 'static {
-        WireIdDebug {
-            module_id: self.module.id(),
-            wire_id: self.id,
-        }
+    pub fn path(&self) -> IrWirePath<'_, 'ctx> {
+        IrWirePath(self)
+    }
+    pub fn name(&self) -> IrSymbol<'ctx> {
+        self.name
     }
     pub fn value_type(&self) -> IrValueTypeRef<'ctx> {
         self.value_type
     }
-    pub fn new(module: IrModuleRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> IrWireRef<'ctx> {
-        let id = module.wires.borrow().len();
+    pub fn new(
+        module: IrModuleRef<'ctx>,
+        name: Cow<'_, str>,
+        value_type: IrValueTypeRef<'ctx>,
+    ) -> IrWireRef<'ctx> {
         let retval = module.ctx().wires_arena.alloc(Self {
             module,
-            id,
+            name: module.symbol_table().insert_uniquified(module.ctx(), name),
             value_type,
             assigned_value: OnceCell::new(),
         });
@@ -87,9 +89,9 @@ impl<'ctx> IrWire<'ctx> {
             panic!("Wire already assigned");
         }
     }
-    pub fn debug_fmt_without_id<'a: 'ctx>(&'a self) -> impl fmt::Debug + 'a {
-        struct FmtWithoutId<'a, 'ctx>(&'a IrWire<'ctx>);
-        impl fmt::Debug for FmtWithoutId<'_, '_> {
+    pub fn debug_fmt_without_name<'a: 'ctx>(&'a self) -> impl fmt::Debug + 'a {
+        struct FmtWithoutName<'a, 'ctx>(&'a IrWire<'ctx>);
+        impl fmt::Debug for FmtWithoutName<'_, '_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_struct("IrWire")
                     .field("value_type", &self.0.value_type())
@@ -100,7 +102,7 @@ impl<'ctx> IrWire<'ctx> {
                     .finish_non_exhaustive()
             }
         }
-        FmtWithoutId(self)
+        FmtWithoutName(self)
     }
 }
 
@@ -110,7 +112,7 @@ pub struct IrWireRead<'ctx>(pub IrWireRef<'ctx>);
 impl fmt::Debug for IrWireRead<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IrWireRead")
-            .field("id", &self.0.id())
+            .field("path", &self.0.path())
             .field("value_type", &self.0.value_type())
             .finish_non_exhaustive()
     }

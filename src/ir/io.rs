@@ -7,10 +7,12 @@ use crate::{
     ir::{
         logic::{IrWire, IrWireRef},
         module::IrModuleRef,
+        symbols::IrSymbol,
         types::IrValueTypeRef,
         values::{IrValue, IrValueRef},
     },
 };
+use alloc::borrow::Cow;
 use core::{
     fmt,
     hash::{Hash, Hasher},
@@ -22,13 +24,15 @@ use once_cell::unsync::OnceCell;
 pub struct IrModuleInput<'ctx> {
     module: IrModuleRef<'ctx>,
     index: usize,
+    path: IrSymbol<'ctx>,
 }
 
 impl fmt::Debug for IrModuleInput<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IrModuleInput")
-            .field("module", &self.module().id())
+            .field("module", &self.module().path())
             .field("index", &self.index())
+            .field("path", &self.path())
             .field(
                 "value_type",
                 debug_format_option_as_value_or_invalid(self.try_value_type().as_ref()),
@@ -51,6 +55,9 @@ impl<'ctx> IrModuleInput<'ctx> {
     }
     pub fn module(self) -> IrModuleRef<'ctx> {
         self.module
+    }
+    pub fn path(self) -> IrSymbol<'ctx> {
+        self.path
     }
 }
 
@@ -84,11 +91,20 @@ impl<'ctx> IrInput<'ctx> {
     /// returns the write end (the value from the external module)
     pub(crate) fn map_to_module_internal(
         &mut self,
+        parent_module: IrModuleRef<'ctx>,
         module: IrModuleRef<'ctx>,
         index: usize,
+        path: &str,
     ) -> IrValueRef<'ctx> {
-        let module_input = IrModuleInput { module, index };
+        let module_input = IrModuleInput {
+            module,
+            index,
+            path: module.symbol_table().insert_uniquified(module.ctx(), path),
+        };
         assert_eq!(self.value.get_type(module.ctx()), module_input.value_type());
+        if let Some(owning_module) = self.value.owning_module() {
+            assert_eq!(owning_module, parent_module);
+        }
         mem::replace(
             &mut self.value,
             IrValue::Input(module_input).intern(module.ctx()),
@@ -113,7 +129,7 @@ impl<'ctx> IrOutputWriteData<'ctx> {
 impl fmt::Debug for IrOutputWriteData<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IrOutputWriteData")
-            .field("writing_module", &self.writing_module().id())
+            .field("writing_module", &self.writing_module().path())
             .field("index", &self.index)
             .finish()
     }
@@ -128,7 +144,7 @@ pub struct IrOutputReadData<'ctx> {
 impl fmt::Debug for IrOutputReadData<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IrOutputReadData")
-            .field("module", &self.module().id())
+            .field("module", &self.module().path())
             .field("value_type", &self.value_type())
             .field(
                 "write_data",
@@ -219,8 +235,10 @@ impl<'ctx> IrOutput<'ctx> {
     /// returns the write end (the wire in the internal module)
     pub(crate) fn map_to_module_internal(
         &mut self,
+        parent_module: IrModuleRef<'ctx>,
         module: IrModuleRef<'ctx>,
         index: usize,
+        path: &str,
     ) -> IrWireRef<'ctx> {
         let expected_value_type = module.interface_types()[index]
             .output()
@@ -229,16 +247,17 @@ impl<'ctx> IrOutput<'ctx> {
         let read_end = match self {
             IrOutput::ReadEnd(read_end) => *read_end,
             IrOutput::WriteEnd(write_end) => {
-                // we're passing an IrOutput from an external module directly
-                // through an intermediate module to an internal module, adapt
-                // by creating a IrOutputRead in the intermediate module and
+                // we're passing an IrOutput from our grandparent module directly
+                // through parent_module to module, adapt
+                // by creating a IrOutputRead in parent_module and
                 // writing it to the wire there.
-                let intermediate_module = write_end.module();
-                let read_end = IrOutputRead::new(intermediate_module, write_end.value_type());
+                assert_eq!(parent_module, write_end.module());
+                let read_end = IrOutputRead::new(parent_module, write_end.value_type());
                 write_end.assign(read_end.read());
                 read_end
             }
         };
+        assert_eq!(read_end.0.module(), parent_module);
         let was_empty = read_end
             .0
             .write_data
@@ -248,23 +267,31 @@ impl<'ctx> IrOutput<'ctx> {
             })
             .is_ok();
         assert!(was_empty);
-        let wire = IrWire::new(module, read_end.0.value_type());
+        let wire = IrWire::new(module, Cow::Borrowed(path), read_end.0.value_type());
         *self = IrOutput::WriteEnd(wire);
         wire
     }
 }
 
-pub type IrIOMutRef<'a, 'ctx> = IO<&'a mut IrInput<'ctx>, &'a mut IrOutput<'ctx>>;
+pub type IrIOMutRef<'a, 'ctx> = InOrOut<&'a mut IrInput<'ctx>, &'a mut IrOutput<'ctx>>;
 
-pub type IrIOTraitCallback<'a, 'ctx> = &'a mut dyn FnMut(IrIOMutRef<'_, 'ctx>) -> Result<(), ()>;
+pub trait IrIOCallback<'ctx> {
+    fn callback(&mut self, io: IrIOMutRef<'_, 'ctx>, path: &str) -> Result<(), ()>;
+}
+
+impl<'ctx, T: FnMut(IrIOMutRef<'_, 'ctx>, &str) -> Result<(), ()>> IrIOCallback<'ctx> for T {
+    fn callback(&mut self, io: IrIOMutRef<'_, 'ctx>, path: &str) -> Result<(), ()> {
+        self(io, path)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum IO<I, O> {
+pub enum InOrOut<I, O> {
     Input(I),
     Output(O),
 }
 
-impl<I, O> IO<I, O> {
+impl<I, O> InOrOut<I, O> {
     pub fn input(self) -> Option<I> {
         if let Self::Input(v) = self {
             Some(v)
@@ -279,36 +306,36 @@ impl<I, O> IO<I, O> {
             None
         }
     }
-    pub fn as_ref(&self) -> IO<&I, &O> {
+    pub fn as_ref(&self) -> InOrOut<&I, &O> {
         match self {
-            Self::Input(v) => IO::Input(v),
-            Self::Output(v) => IO::Output(v),
+            Self::Input(v) => InOrOut::Input(v),
+            Self::Output(v) => InOrOut::Output(v),
         }
     }
-    pub fn as_mut(&mut self) -> IO<&mut I, &mut O> {
+    pub fn as_mut(&mut self) -> InOrOut<&mut I, &mut O> {
         match self {
-            Self::Input(v) => IO::Input(v),
-            Self::Output(v) => IO::Output(v),
+            Self::Input(v) => InOrOut::Input(v),
+            Self::Output(v) => InOrOut::Output(v),
         }
     }
     pub fn map<I2, O2, IFn: FnOnce(I) -> I2, OFn: FnOnce(O) -> O2>(
         self,
         i_fn: IFn,
         o_fn: OFn,
-    ) -> IO<I2, O2> {
+    ) -> InOrOut<I2, O2> {
         match self {
-            Self::Input(v) => IO::Input(i_fn(v)),
-            Self::Output(v) => IO::Output(o_fn(v)),
+            Self::Input(v) => InOrOut::Input(i_fn(v)),
+            Self::Output(v) => InOrOut::Output(o_fn(v)),
         }
     }
     pub fn try_map<I2, O2, E, IFn: FnOnce(I) -> Result<I2, E>, OFn: FnOnce(O) -> Result<O2, E>>(
         self,
         i_fn: IFn,
         o_fn: OFn,
-    ) -> Result<IO<I2, O2>, E> {
+    ) -> Result<InOrOut<I2, O2>, E> {
         Ok(match self {
-            Self::Input(v) => IO::Input(i_fn(v)?),
-            Self::Output(v) => IO::Output(o_fn(v)?),
+            Self::Input(v) => InOrOut::Input(i_fn(v)?),
+            Self::Output(v) => InOrOut::Output(o_fn(v)?),
         })
     }
 }

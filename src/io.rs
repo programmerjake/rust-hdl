@@ -3,93 +3,236 @@
 
 use crate::{
     ir::{
-        io::{IrIOTraitCallback, IrInput, IrOutput, IO},
+        io::{InOrOut, IrIOCallback, IrIOMutRef, IrInput, IrOutput},
         module::IrModuleRef,
     },
     values::{Value, ValueTrait, ValueType},
 };
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
-    fmt,
+    fmt::{self, Write},
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
 
-pub trait IOTrait<'ctx> {
-    fn visit_ir_ports(&mut self, callback: IrIOTraitCallback<'_, 'ctx>) -> Result<(), ()>;
+#[must_use]
+pub struct IOVisitor<'visitor, 'ctx> {
+    callback: &'visitor mut (dyn IrIOCallback<'ctx> + 'visitor),
+    status: &'visitor mut Result<(), ()>,
+    path: &'visitor mut String,
 }
 
-impl<'ctx, T: IOTrait<'ctx> + ?Sized> IOTrait<'ctx> for Box<T> {
-    fn visit_ir_ports(&mut self, callback: IrIOTraitCallback<'_, 'ctx>) -> Result<(), ()> {
-        T::visit_ir_ports(self, callback)
+impl<'visitor, 'ctx> IOVisitor<'visitor, 'ctx> {
+    pub fn is_early_exit(&self) -> bool {
+        self.status.is_err()
     }
-}
-
-impl<'ctx, T: IOTrait<'ctx>> IOTrait<'ctx> for Option<T> {
-    fn visit_ir_ports(&mut self, callback: IrIOTraitCallback<'_, 'ctx>) -> Result<(), ()> {
-        if let Some(v) = self {
-            v.visit_ir_ports(callback)?;
+    fn nest<T: ?Sized + IO<'ctx>>(&mut self, path_segment: impl fmt::Display, value: &mut T) {
+        if self.is_early_exit() {
+            return;
         }
-        Ok(())
+        let Self {
+            callback,
+            status,
+            path,
+        } = self;
+        let original_path_len = path.len();
+        write!(path, "{}", path_segment).unwrap();
+        value.visit_io(IOVisitor {
+            callback: &mut **callback,
+            status,
+            path: &mut **path,
+        });
+        path.truncate(original_path_len);
+    }
+    pub fn visit<T: ?Sized + IO<'ctx>, P: Into<String>>(
+        io: &mut T,
+        callback: &'visitor mut (dyn IrIOCallback<'ctx> + 'visitor),
+        path_prefix: P,
+    ) -> Result<(), ()> {
+        let mut path: String = path_prefix.into();
+        let mut status = Ok(());
+        io.visit_io(IOVisitor {
+            callback,
+            path: &mut path,
+            status: &mut status,
+        });
+        status
     }
 }
 
-impl<'ctx, T: IOTrait<'ctx>> IOTrait<'ctx> for Vec<T> {
-    fn visit_ir_ports(&mut self, callback: IrIOTraitCallback<'_, 'ctx>) -> Result<(), ()> {
-        self.iter_mut().try_for_each(|v| v.visit_ir_ports(callback))
+#[must_use]
+pub struct IOVisitorList<'visitor, 'ctx> {
+    visitor: IOVisitor<'visitor, 'ctx>,
+    index: usize,
+}
+
+impl<'ctx> IOVisitorList<'_, 'ctx> {
+    pub fn entry<T: ?Sized + IO<'ctx>>(mut self, entry: &mut T) -> Self {
+        self.visitor.nest(format_args!("[{}]", self.index), entry);
+        self.index += 1;
+        self
+    }
+    pub fn entries<'a, T: ?Sized + IO<'ctx> + 'a, I: IntoIterator<Item = &'a mut T>>(
+        mut self,
+        entries: I,
+    ) -> Self {
+        if self.visitor.is_early_exit() {
+            return self;
+        }
+        for entry in entries {
+            self = self.entry(entry);
+            if self.visitor.is_early_exit() {
+                break;
+            }
+        }
+        self
+    }
+    pub fn finish(self) {
+        let _ = self;
     }
 }
 
-impl<'ctx, T: IOTrait<'ctx>> IOTrait<'ctx> for [T] {
-    fn visit_ir_ports(&mut self, callback: IrIOTraitCallback<'_, 'ctx>) -> Result<(), ()> {
-        self.iter_mut().try_for_each(|v| v.visit_ir_ports(callback))
+#[must_use]
+pub struct IOVisitorStruct<'visitor, 'ctx> {
+    visitor: IOVisitor<'visitor, 'ctx>,
+}
+
+impl<'ctx> IOVisitorStruct<'_, 'ctx> {
+    pub fn field<'a, T: ?Sized + IO<'ctx> + 'a>(mut self, name: &str, value: &'a mut T) -> Self {
+        self.visitor.nest(format_args!(".{}", name), value);
+        self
+    }
+    pub fn finish(self) {
+        let _ = self;
     }
 }
 
-impl<'ctx, T: IOTrait<'ctx>, const N: usize> IOTrait<'ctx> for [T; N] {
-    fn visit_ir_ports(&mut self, callback: IrIOTraitCallback<'_, 'ctx>) -> Result<(), ()> {
-        self.iter_mut().try_for_each(|v| v.visit_ir_ports(callback))
+impl<'visitor, 'ctx> IOVisitor<'visitor, 'ctx> {
+    pub fn visit_list(self) -> IOVisitorList<'visitor, 'ctx> {
+        IOVisitorList {
+            visitor: self,
+            index: 0,
+        }
+    }
+    pub fn visit_struct(self) -> IOVisitorStruct<'visitor, 'ctx> {
+        IOVisitorStruct { visitor: self }
+    }
+}
+
+pub trait IO<'ctx> {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>);
+}
+
+impl<'ctx, T: IO<'ctx> + ?Sized> IO<'ctx> for Box<T> {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        T::visit_io(self, visitor)
+    }
+}
+
+impl<'ctx, T: IO<'ctx> + ?Sized> IO<'ctx> for &'_ mut T {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        T::visit_io(self, visitor)
+    }
+}
+
+impl<'ctx, T: IO<'ctx>> IO<'ctx> for Option<T> {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        if let Some(v) = self {
+            v.visit_io(visitor);
+        }
+    }
+}
+
+impl<'ctx, T: IO<'ctx>> IO<'ctx> for Vec<T> {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        visitor.visit_list().entries(self).finish()
+    }
+}
+
+impl<'ctx, T: IO<'ctx>> IO<'ctx> for [T] {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        visitor.visit_list().entries(self).finish()
+    }
+}
+
+impl<'ctx, T: IO<'ctx>, const N: usize> IO<'ctx> for [T; N] {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        visitor.visit_list().entries(self).finish()
+    }
+}
+
+impl<'ctx> IO<'ctx> for IrIOMutRef<'_, 'ctx> {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        match self {
+            InOrOut::Input(v) => v.visit_io(visitor),
+            InOrOut::Output(v) => v.visit_io(visitor),
+        }
+    }
+}
+
+impl<'ctx> IO<'ctx> for IrInput<'ctx> {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        if !visitor.is_early_exit() {
+            *visitor.status = visitor
+                .callback
+                .callback(InOrOut::Input(self), &visitor.path);
+        }
+    }
+}
+
+impl<'ctx> IO<'ctx> for IrOutput<'ctx> {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        if !visitor.is_early_exit() {
+            *visitor.status = visitor
+                .callback
+                .callback(InOrOut::Output(self), &visitor.path);
+        }
     }
 }
 
 macro_rules! impl_io_trait_for_tuples {
-    () => {
-        impl<'ctx> IOTrait<'ctx> for () {
-            fn visit_ir_ports<'a>(
-                &'a mut self,
-                _callback: IrIOTraitCallback<'_, 'ctx>,
-            ) -> Result<(), ()> {
-                Ok(())
-            }
-        }
-    };
-    ($first_v:ident: $FirstT:ident, $($v:ident: $T:ident,)*) => {
-        impl_io_trait_for_tuples!($($v: $T,)*);
-
-        impl<'ctx, $FirstT: IOTrait<'ctx>, $($T: IOTrait<'ctx>),*> IOTrait<'ctx> for ($FirstT, $($T,)*) {
-            fn visit_ir_ports(&mut self, callback: IrIOTraitCallback<'_, 'ctx>) -> Result<(), ()> {
-                let ($first_v, $($v),*) = self;
-                $first_v.visit_ir_ports(callback)?;
-                $($v.visit_ir_ports(callback)?;)*
-                Ok(())
+    ($($index:tt: $T:ident,)*) => {
+        impl<'ctx, $($T: IO<'ctx>),*> IO<'ctx> for ($($T,)*) {
+            fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+                visitor
+                    .visit_struct()
+                    $(.field(stringify!($index), &mut self.$index))*
+                    .finish()
             }
         }
     };
 }
 
-impl_io_trait_for_tuples!(
-    v1: T1,
-    v2: T2,
-    v3: T3,
-    v4: T4,
-    v5: T5,
-    v6: T6,
-    v7: T7,
-    v8: T8,
-    v9: T9,
-    v10: T10,
-    v11: T11,
-    v12: T12,
+macro_rules! impl_io_trait_for_tuples_reversed {
+    ([], [$($index:tt: $T:ident,)*]) => {
+        impl_io_trait_for_tuples!($($index: $T,)*);
+    };
+    ([$next_index:tt: $NextT:ident, $($rev_index:tt: $RevT:ident,)*], [$($index:tt: $T:ident,)*]) => {
+        impl_io_trait_for_tuples_reversed!([$($rev_index: $RevT,)*], [$next_index: $NextT, $($index: $T,)*]);
+    };
+    ($next_index:tt: $NextT:ident, $($rev_index:tt: $RevT:ident,)*) => {
+        impl_io_trait_for_tuples_reversed!($($rev_index: $RevT,)*);
+        impl_io_trait_for_tuples_reversed!([$($rev_index: $RevT,)*], [$next_index: $NextT,]);
+    };
+    () => {
+        impl_io_trait_for_tuples!();
+    };
+}
+
+impl_io_trait_for_tuples_reversed!(
+    12: T12,
+    11: T11,
+    10: T10,
+    9: T9,
+    8: T8,
+    7: T7,
+    6: T6,
+    5: T5,
+    4: T4,
+    3: T3,
+    2: T2,
+    1: T1,
+    0: T0,
 );
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -115,28 +258,28 @@ impl<T> DerefMut for NotIO<T> {
     }
 }
 
-impl<'ctx, T> IOTrait<'ctx> for NotIO<T> {
-    fn visit_ir_ports<'a>(&'a mut self, _callback: IrIOTraitCallback<'_, 'ctx>) -> Result<(), ()> {
-        Ok(())
+impl<'ctx, T> IO<'ctx> for NotIO<T> {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        visitor.visit_struct().finish()
     }
 }
 
 #[derive(Debug)]
 pub struct Input<'ctx, T: ValueTrait<'ctx>> {
-    ir_input: IrInput<'ctx>,
+    ir: IrInput<'ctx>,
     value_type: ValueType<'ctx, T>,
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> IOTrait<'ctx> for Input<'ctx, T> {
-    fn visit_ir_ports(&mut self, callback: IrIOTraitCallback<'_, 'ctx>) -> Result<(), ()> {
-        callback(IO::Input(&mut self.ir_input))
+impl<'ctx, T: ValueTrait<'ctx>> IO<'ctx> for Input<'ctx, T> {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        self.ir.visit_io(visitor)
     }
 }
 
 impl<'ctx, T: ValueTrait<'ctx>> From<Value<'ctx, T>> for Input<'ctx, T> {
     fn from(value: Value<'ctx, T>) -> Self {
         Self {
-            ir_input: IrInput::from(value.ir()),
+            ir: IrInput::from(value.ir()),
             value_type: value.value_type(),
         }
     }
@@ -144,7 +287,10 @@ impl<'ctx, T: ValueTrait<'ctx>> From<Value<'ctx, T>> for Input<'ctx, T> {
 
 impl<'ctx, T: ValueTrait<'ctx>> Input<'ctx, T> {
     pub fn get(&self) -> Value<'ctx, T> {
-        Value::from_ir_and_type_unchecked(self.ir_input.get(), self.value_type)
+        Value::from_ir_and_type_unchecked(self.ir.get(), self.value_type)
+    }
+    pub fn ir(&self) -> &IrInput<'ctx> {
+        &self.ir
     }
 }
 
@@ -189,8 +335,8 @@ impl<'ctx, T: ValueTrait<'ctx>> Output<'ctx, T> {
     }
 }
 
-impl<'ctx, T: ValueTrait<'ctx>> IOTrait<'ctx> for Output<'ctx, T> {
-    fn visit_ir_ports(&mut self, callback: IrIOTraitCallback<'_, 'ctx>) -> Result<(), ()> {
-        callback(IO::Output(&mut self.ir))
+impl<'ctx, T: ValueTrait<'ctx>> IO<'ctx> for Output<'ctx, T> {
+    fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
+        self.ir.visit_io(visitor)
     }
 }

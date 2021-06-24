@@ -10,35 +10,37 @@ macro_rules! assert_formats_to {
     ($value:expr, $expected:literal) => {{
         let value = format!("\n{:#?}", $value);
         let expected: &str = $expected;
-        assert!(value == expected, "value:{}\nexpected:{}", value, expected);
+        assert!(value == expected, "doesn't match expected. value:{}", value);
     }};
 }
 
 #[test]
 fn test1() {
     Context::with(|ctx| {
-        let top = IrModule::new(ctx, |_, _| {}, &mut ());
+        let top = IrModule::new_top_module(ctx, "top".into());
         assert_formats_to!(
             top,
-            r"
+            r#"
 IrModule {
-    id: 0,
+    path: "top",
+    parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {},
     ..
-}"
+}"#
         );
-        let wire = Wire::<[bool; 4]>::new(top);
+        let wire = Wire::<[bool; 4]>::new(top, "wire");
         assert_formats_to!(
             top,
-            r"
+            r#"
 IrModule {
-    id: 0,
+    path: "top",
+    parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {
-        0.0: IrWire {
+        "wire": IrWire {
             value_type: Array {
                 element: BitVector {
                     bit_count: 1,
@@ -50,18 +52,19 @@ IrModule {
         },
     },
     ..
-}"
+}"#
         );
         wire.assign([true, false, true, true].get_value(ctx));
         assert_formats_to!(
             top,
-            r"
+            r#"
 IrModule {
-    id: 0,
+    path: "top",
+    parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {
-        0.0: IrWire {
+        "wire": IrWire {
             value_type: Array {
                 element: BitVector {
                     bit_count: 1,
@@ -96,7 +99,7 @@ IrModule {
         },
     },
     ..
-}"
+}"#
         );
     });
 }
@@ -104,17 +107,18 @@ IrModule {
 #[test]
 fn test_submodule() {
     Context::with(|ctx| {
-        let top = IrModule::new(ctx, |_, _| {}, &mut ());
+        let top = IrModule::new_top_module(ctx, "top".into());
         assert_formats_to!(
             top,
-            r"
+            r#"
 IrModule {
-    id: 0,
+    path: "top",
+    parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {},
     ..
-}"
+}"#
         );
         let mut submodule_interface = (
             Input::from(true.get_value(ctx)),
@@ -123,32 +127,35 @@ IrModule {
         );
         assert_formats_to!(
             top,
-            r"
+            r#"
 IrModule {
-    id: 0,
+    path: "top",
+    parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {},
     ..
-}"
+}"#
         );
-        let submodule = IrModule::new(ctx, |_, _| {}, &mut submodule_interface);
+        let submodule = IrModule::new_submodule(top, "submodule".into(), &mut submodule_interface);
         assert_formats_to!(
             top,
-            r"
+            r#"
 IrModule {
-    id: 0,
+    path: "top",
+    parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {},
     ..
-}"
+}"#
         );
         assert_formats_to!(
             submodule,
-            r"
+            r#"
 IrModule {
-    id: 1,
+    path: "top"."submodule",
+    parent: "top",
     interface_types: [
         Input(
             BitVector {
@@ -178,7 +185,7 @@ IrModule {
         ),
         Output(
             IrWire {
-                id: 1.0,
+                path: "top"."submodule"."io.1",
                 value_type: BitVector {
                     bit_count: 32,
                 },
@@ -202,7 +209,7 @@ IrModule {
         ),
     ],
     wires: {
-        1.0: IrWire {
+        "io.1": IrWire {
             value_type: BitVector {
                 bit_count: 32,
             },
@@ -211,17 +218,18 @@ IrModule {
         },
     },
     ..
-}"
+}"#
         );
         let (first_input, output, last_input) = submodule_interface;
         assert_formats_to!(
             first_input,
-            r"
+            r#"
 Input {
-    ir_input: IrInput {
+    ir: IrInput {
         value: IrModuleInput {
-            module: 1,
+            module: "top"."submodule",
             index: 0,
+            path: "io.0",
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -232,15 +240,15 @@ Input {
             bit_count: 1,
         },
     ),
-}"
+}"#
         );
         assert_formats_to!(
             output,
-            r"
+            r#"
 Output {
     ir: WriteEnd(
         IrWire {
-            id: 1.0,
+            path: "top"."submodule"."io.1",
             value_type: BitVector {
                 bit_count: 32,
             },
@@ -249,16 +257,17 @@ Output {
         },
     ),
     ..
-}"
+}"#
         );
         assert_formats_to!(
             last_input,
-            r"
+            r#"
 Input {
-    ir_input: IrInput {
+    ir: IrInput {
         value: IrModuleInput {
-            module: 1,
+            module: "top"."submodule",
             index: 2,
+            path: "io.2",
             value_type: Array {
                 element: BitVector {
                     bit_count: 8,
@@ -275,14 +284,15 @@ Input {
             length: 1,
         },
     ),
-}"
+}"#
         );
         output.assign(UInt32::wrapping_new(0xDEADBEEFu32).get_value(ctx));
         assert_formats_to!(
             submodule,
-            r"
+            r#"
 IrModule {
-    id: 1,
+    path: "top"."submodule",
+    parent: "top",
     interface_types: [
         Input(
             BitVector {
@@ -312,7 +322,7 @@ IrModule {
         ),
         Output(
             IrWire {
-                id: 1.0,
+                path: "top"."submodule"."io.1",
                 value_type: BitVector {
                     bit_count: 32,
                 },
@@ -339,7 +349,7 @@ IrModule {
         ),
     ],
     wires: {
-        1.0: IrWire {
+        "io.1": IrWire {
             value_type: BitVector {
                 bit_count: 32,
             },
@@ -351,7 +361,7 @@ IrModule {
         },
     },
     ..
-}"
+}"#
         );
     });
 }
@@ -359,47 +369,51 @@ IrModule {
 #[test]
 fn test_sub_submodule() {
     Context::with(|ctx| {
-        let top = IrModule::new(ctx, |_, _| {}, &mut ());
+        let top = IrModule::new_top_module(ctx, "top".into());
         assert_formats_to!(
             top,
-            r"
+            r#"
 IrModule {
-    id: 0,
+    path: "top",
+    parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {},
     ..
-}"
+}"#
         );
         let mut submodule_interface = (Input::from(true.get_value(ctx)), Output::<bool>::new(top));
         assert_formats_to!(
             top,
-            r"
+            r#"
 IrModule {
-    id: 0,
+    path: "top",
+    parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {},
     ..
-}"
+}"#
         );
-        let submodule = IrModule::new(ctx, |_, _| {}, &mut submodule_interface);
+        let submodule = IrModule::new_submodule(top, "submodule".into(), &mut submodule_interface);
         assert_formats_to!(
             top,
-            r"
+            r#"
 IrModule {
-    id: 0,
+    path: "top",
+    parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {},
     ..
-}"
+}"#
         );
         assert_formats_to!(
             submodule,
-            r"
+            r#"
 IrModule {
-    id: 1,
+    path: "top"."submodule",
+    parent: "top",
     interface_types: [
         Input(
             BitVector {
@@ -421,7 +435,7 @@ IrModule {
         ),
         Output(
             IrWire {
-                id: 1.0,
+                path: "top"."submodule"."io.1",
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -431,7 +445,7 @@ IrModule {
         ),
     ],
     wires: {
-        1.0: IrWire {
+        "io.1": IrWire {
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -440,25 +454,28 @@ IrModule {
         },
     },
     ..
-}"
+}"#
         );
-        let sub_submodule = IrModule::new(ctx, |_, _| {}, &mut submodule_interface);
+        let sub_submodule =
+            IrModule::new_submodule(submodule, "sub_submodule".into(), &mut submodule_interface);
         assert_formats_to!(
             top,
-            r"
+            r#"
 IrModule {
-    id: 0,
+    path: "top",
+    parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {},
     ..
-}"
+}"#
         );
         assert_formats_to!(
             submodule,
-            r"
+            r#"
 IrModule {
-    id: 1,
+    path: "top"."submodule",
+    parent: "top",
     interface_types: [
         Input(
             BitVector {
@@ -480,18 +497,18 @@ IrModule {
         ),
         Output(
             IrWire {
-                id: 1.0,
+                path: "top"."submodule"."io.1",
                 value_type: BitVector {
                     bit_count: 1,
                 },
                 assigned_value: IrOutputRead(
                     IrOutputReadData {
-                        module: 1,
+                        module: "top"."submodule",
                         value_type: BitVector {
                             bit_count: 1,
                         },
                         write_data: IrOutputWriteData {
-                            writing_module: 2,
+                            writing_module: "top"."submodule"."sub_submodule",
                             index: 1,
                         },
                     },
@@ -501,18 +518,18 @@ IrModule {
         ),
     ],
     wires: {
-        1.0: IrWire {
+        "io.1": IrWire {
             value_type: BitVector {
                 bit_count: 1,
             },
             assigned_value: IrOutputRead(
                 IrOutputReadData {
-                    module: 1,
+                    module: "top"."submodule",
                     value_type: BitVector {
                         bit_count: 1,
                     },
                     write_data: IrOutputWriteData {
-                        writing_module: 2,
+                        writing_module: "top"."submodule"."sub_submodule",
                         index: 1,
                     },
                 },
@@ -521,13 +538,14 @@ IrModule {
         },
     },
     ..
-}"
+}"#
         );
         assert_formats_to!(
             sub_submodule,
-            r"
+            r#"
 IrModule {
-    id: 2,
+    path: "top"."submodule"."sub_submodule",
+    parent: "top"."submodule",
     interface_types: [
         Input(
             BitVector {
@@ -543,8 +561,9 @@ IrModule {
     interface_write_ends: [
         Input(
             IrModuleInput {
-                module: 1,
+                module: "top"."submodule",
                 index: 0,
+                path: "io.0",
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -552,7 +571,7 @@ IrModule {
         ),
         Output(
             IrWire {
-                id: 2.0,
+                path: "top"."submodule"."sub_submodule"."io.1",
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -562,7 +581,7 @@ IrModule {
         ),
     ],
     wires: {
-        2.0: IrWire {
+        "io.1": IrWire {
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -571,14 +590,15 @@ IrModule {
         },
     },
     ..
-}"
+}"#
         );
         submodule_interface.1.assign(false.get_value(ctx));
         assert_formats_to!(
             sub_submodule,
-            r"
+            r#"
 IrModule {
-    id: 2,
+    path: "top"."submodule"."sub_submodule",
+    parent: "top"."submodule",
     interface_types: [
         Input(
             BitVector {
@@ -594,8 +614,9 @@ IrModule {
     interface_write_ends: [
         Input(
             IrModuleInput {
-                module: 1,
+                module: "top"."submodule",
                 index: 0,
+                path: "io.0",
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -603,7 +624,7 @@ IrModule {
         ),
         Output(
             IrWire {
-                id: 2.0,
+                path: "top"."submodule"."sub_submodule"."io.1",
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -616,7 +637,7 @@ IrModule {
         ),
     ],
     wires: {
-        2.0: IrWire {
+        "io.1": IrWire {
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -628,7 +649,7 @@ IrModule {
         },
     },
     ..
-}"
+}"#
         );
     });
 }

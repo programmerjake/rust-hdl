@@ -5,15 +5,17 @@ use crate::ir::{
     io::IrOutputReadData,
     logic::IrWire,
     module::{IrModule, IrModuleRef},
+    symbols::IrSymbolTable,
     types::IrValueType,
     values::{IrValue, IrValueRef},
 };
 use alloc::{string::String, vec::Vec};
 use core::{
     borrow::Borrow,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     fmt,
     hash::{BuildHasher, Hash, Hasher},
+    marker::PhantomData,
     ops::Deref,
     ptr::{self, NonNull},
     slice,
@@ -80,6 +82,12 @@ impl<'ctx, T: Internable<'ctx> + ?Sized> Deref for Interned<'ctx, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'ctx, T: Internable<'ctx> + ?Sized> Interned<'ctx, T> {
+    pub fn get(self) -> &'ctx T {
         self.0
     }
 }
@@ -236,6 +244,7 @@ impl<'ctx, T: Internable<'ctx> + HasNonNullPtr + ?Sized> Interner<'ctx, T> {
 
 pub struct Context<'ctx> {
     pub(crate) modules: RefCell<Vec<IrModuleRef<'ctx>>>,
+    pub(crate) root_symbol_table: IrSymbolTable<'ctx>,
     string_interner: Interner<'ctx, str>,
     value_type_interner: Interner<'ctx, IrValueType<'ctx>>,
     value_interner: Interner<'ctx, IrValue<'ctx>>,
@@ -243,12 +252,14 @@ pub struct Context<'ctx> {
     pub(crate) modules_arena: Arena<IrModule<'ctx>>,
     pub(crate) wires_arena: Arena<IrWire<'ctx>>,
     pub(crate) output_read_data_arena: Arena<IrOutputReadData<'ctx>>,
+    _phantom: PhantomData<Cell<&'ctx ()>>,
 }
 
-impl Context<'_> {
-    pub fn with<F: for<'ctx> FnOnce(ContextRef<'ctx>) -> R, R>(f: F) -> R {
+impl<'ctx> Context<'ctx> {
+    pub fn with<F: for<'ctx2> FnOnce(ContextRef<'ctx2>) -> R, R>(f: F) -> R {
         let context = Context {
             modules: RefCell::default(),
+            root_symbol_table: IrSymbolTable::default(),
             string_interner: Interner::default(),
             value_type_interner: Interner::default(),
             value_interner: Interner::default(),
@@ -256,8 +267,12 @@ impl Context<'_> {
             modules_arena: Arena::default(),
             wires_arena: Arena::default(),
             output_read_data_arena: Arena::default(),
+            _phantom: PhantomData,
         };
         f(&context)
+    }
+    pub fn root_symbol_table(&self) -> &IrSymbolTable<'ctx> {
+        &self.root_symbol_table
     }
 }
 

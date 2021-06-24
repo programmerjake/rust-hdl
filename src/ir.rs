@@ -4,5 +4,6 @@
 pub mod io;
 pub mod logic;
 pub mod module;
+pub mod symbols;
 pub mod types;
 pub mod values;
