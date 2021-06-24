@@ -7,7 +7,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
-    Attribute, Data, DeriveInput, Error, Fields, GenericParam, Lifetime, LifetimeDef, Path, Token,
+    Attribute, Data, DeriveInput, Error, Fields, GenericParam, Generics, Lifetime, LifetimeDef,
+    Path, Token,
 };
 
 enum RustHdlAttributeArg {
@@ -62,25 +63,28 @@ impl RustHdlAttributes {
         }
         Ok(Self { crate_path })
     }
+    fn get_crate_path(&self) -> Path {
+        self.crate_path.clone().unwrap_or_else(|| {
+            let mut path = Path::from(Ident::new("rust_hdl", Span::call_site()));
+            path.leading_colon = Some(<Token![::]>::default());
+            path
+        })
+    }
 }
 
-fn derive_value_impl(mut ast: DeriveInput) -> syn::Result<TokenStream> {
-    let RustHdlAttributes { crate_path } = RustHdlAttributes::parse(&ast.attrs)?;
-    let crate_path = crate_path.unwrap_or_else(|| Ident::new("rust_hdl", Span::call_site()).into());
-    let ctx_lifetime = ast.generics.lifetimes().find_map(|l| {
+fn get_or_add_ctx_lifetime(mut generics: Generics) -> (Generics, Lifetime) {
+    let ctx_lifetime = generics.lifetimes().find_map(|l| {
         if l.lifetime.ident == "ctx" {
             Some(l.lifetime.clone())
         } else {
             None
         }
     });
-    let old_generics = ast.generics.clone();
-    let (_, ty_generics, where_clause) = old_generics.split_for_impl();
     let ctx_lifetime = match ctx_lifetime {
         Some(v) => v,
         None => {
             let ctx_lifetime = Lifetime::new("'ctx", Span::call_site());
-            ast.generics
+            generics
                 .params
                 .push(GenericParam::Lifetime(LifetimeDef::new(
                     ctx_lifetime.clone(),
@@ -88,6 +92,14 @@ fn derive_value_impl(mut ast: DeriveInput) -> syn::Result<TokenStream> {
             ctx_lifetime
         }
     };
+    (generics, ctx_lifetime)
+}
+
+fn derive_value_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
+    let rust_hdl_attributes = RustHdlAttributes::parse(&ast.attrs)?;
+    let crate_path = rust_hdl_attributes.get_crate_path();
+    let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
+    let (generics, ctx_lifetime) = get_or_add_ctx_lifetime(ast.generics.clone());
     let name = ast.ident;
     let data_struct = match ast.data {
         Data::Struct(v) => v,
@@ -98,7 +110,7 @@ fn derive_value_impl(mut ast: DeriveInput) -> syn::Result<TokenStream> {
             ))
         }
     };
-    let impl_generics = ast.generics.split_for_impl().0;
+    let impl_generics = generics.split_for_impl().0;
     let enum_def;
     let fields_const;
     let mut field_value_ir_matches = Vec::new();
