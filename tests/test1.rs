@@ -1,8 +1,8 @@
 use rust_hdl::{
-    context::Context,
+    context::{Context, ContextRef},
     io::{Input, Output},
     logic::Wire,
-    module::Module,
+    named,
     values::{Int8, UInt32, Value},
 };
 
@@ -16,8 +16,8 @@ macro_rules! assert_formats_to {
 
 #[test]
 fn test1() {
-    Context::with(|ctx| {
-        let top = Module::top(ctx, "top");
+    Context::with(|ctx: ContextRef<'_>| {
+        named!(let top = ctx.top_module());
         assert_formats_to!(
             top,
             r#"
@@ -30,7 +30,7 @@ IrModule {
     ..
 }"#
         );
-        let wire: Wire<[bool; 4]> = top.wire("wire");
+        named!(let wire: Wire<[bool; 4]> = top.wire());
         assert_formats_to!(
             top,
             r#"
@@ -106,8 +106,8 @@ IrModule {
 
 #[test]
 fn test_submodule() {
-    Context::with(|ctx| {
-        let top = Module::top(ctx, "top");
+    Context::with(|ctx: ContextRef<'_>| {
+        named!(let top = ctx.top_module());
         assert_formats_to!(
             top,
             r#"
@@ -137,7 +137,7 @@ IrModule {
     ..
 }"#
         );
-        let (submodule, submodule_io) = top.submodule("submodule", submodule_io);
+        named!(let (submodule, submodule_io) = top.submodule(submodule_io));
         assert_formats_to!(
             top,
             r#"
@@ -369,7 +369,7 @@ IrModule {
 #[test]
 fn test_sub_submodule() {
     Context::with(|ctx| {
-        let top = Module::top(ctx, "top");
+        named!(let top = ctx.top_module());
         assert_formats_to!(
             top,
             r#"
@@ -395,7 +395,7 @@ IrModule {
     ..
 }"#
         );
-        let (submodule, submodule_io) = top.submodule("submodule", submodule_io);
+        named!(let (submodule, submodule_io) = top.submodule(submodule_io));
         assert_formats_to!(
             top,
             r#"
@@ -456,7 +456,7 @@ IrModule {
     ..
 }"#
         );
-        let (sub_submodule, sub_submodule_io) = submodule.submodule("sub_submodule", submodule_io);
+        named!(let (sub_submodule, sub_submodule_io) = submodule.submodule(submodule_io));
         assert_formats_to!(
             top,
             r#"

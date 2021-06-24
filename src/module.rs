@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::ContextRef,
+    context::{Context, ContextRef},
     io::{Output, IO},
     ir::module::{IrModule, IrModuleRef},
     logic::Wire,
@@ -43,12 +43,15 @@ impl<'ctx> fmt::Debug for Module<'ctx> {
     }
 }
 
-impl<'ctx> Module<'ctx> {
-    pub fn top<'a, N: Into<Cow<'a, str>>>(ctx: ContextRef<'ctx>, name: N) -> Self {
-        Self {
-            ir: IrModule::new_top_module(ctx, name.into()),
+impl<'ctx> Context<'ctx> {
+    pub fn top_module<'a, N: Into<Cow<'a, str>>>(&'ctx self, name: N) -> Module<'ctx> {
+        Module {
+            ir: IrModule::new_top_module(self, name.into()),
         }
     }
+}
+
+impl<'ctx> Module<'ctx> {
     pub fn submodule<'a, N: Into<Cow<'a, str>>, T: IO<'ctx>>(
         &self,
         name: N,

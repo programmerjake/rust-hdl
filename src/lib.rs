@@ -15,3 +15,17 @@ pub mod ir;
 pub mod logic;
 pub mod module;
 pub mod values;
+
+#[macro_export]
+macro_rules! named {
+    {
+        let $name:ident$(: $ty:ty)? = $mod_or_ctx:ident.$method:ident($($args:expr),*)
+    } => {
+        let $name $(: $ty)? = $mod_or_ctx.$method(stringify!($name), $($args),*);
+    };
+    {
+        let ($name:ident, $io:pat) = $module:ident.$submodule:ident($io_arg:expr)
+    } => {
+        let ($name, $io) = $module.$submodule(stringify!($name), $io_arg);
+    };
+}
