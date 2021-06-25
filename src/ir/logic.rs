@@ -7,7 +7,7 @@ use crate::{
     ir::{
         module::IrModuleRef,
         symbols::IrSymbol,
-        types::IrValueTypeRef,
+        types::{IrValueType, IrValueTypeRef},
         values::{IrValue, IrValueRef},
     },
 };
@@ -129,5 +129,187 @@ impl<'ctx> PartialEq for IrWireRead<'ctx> {
 impl<'ctx> Hash for IrWireRead<'ctx> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (self.0 as *const IrWire<'ctx>).hash(state)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IrRegReset<'ctx> {
+    pub reset_enable: IrValueRef<'ctx>,
+    pub reset_value: IrValueRef<'ctx>,
+}
+
+pub struct IrRegPath<'a, 'ctx>(&'a IrReg<'ctx>);
+
+impl fmt::Debug for IrRegPath<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}.{:?}", self.0.module.path(), self.0.name)
+    }
+}
+
+pub struct IrReg<'ctx> {
+    module: IrModuleRef<'ctx>,
+    name: IrSymbol<'ctx>,
+    value_type: IrValueTypeRef<'ctx>,
+    data_in: OnceCell<IrValueRef<'ctx>>,
+    clk: IrValueRef<'ctx>,
+    rst: Option<IrRegReset<'ctx>>,
+}
+
+impl<'ctx> IrReg<'ctx> {
+    pub fn new(
+        module: IrModuleRef<'ctx>,
+        name: Cow<'_, str>,
+        value_type: IrValueTypeRef<'ctx>,
+        clk: IrValueRef<'ctx>,
+        rst: Option<IrRegReset<'ctx>>,
+    ) -> IrRegRef<'ctx> {
+        assert_eq!(
+            *clk.get_type(module.ctx()),
+            IrValueType::BitVector { bit_count: 1 }
+        );
+        if let Some(owning_module) = clk.owning_module() {
+            assert_eq!(module, owning_module);
+        }
+        if let Some(IrRegReset {
+            reset_enable,
+            reset_value,
+        }) = rst
+        {
+            assert_eq!(
+                *reset_enable.get_type(module.ctx()),
+                IrValueType::BitVector { bit_count: 1 }
+            );
+            if let Some(owning_module) = reset_enable.owning_module() {
+                assert_eq!(module, owning_module);
+            }
+            assert_eq!(reset_value.get_type(module.ctx()), value_type);
+            if let Some(owning_module) = reset_value.owning_module() {
+                assert_eq!(module, owning_module);
+            }
+        }
+        let retval = module.ctx().registers_arena.alloc(Self {
+            module,
+            name: module.symbol_table().insert_uniquified(module.ctx(), name),
+            value_type,
+            data_in: OnceCell::new(),
+            rst,
+            clk,
+        });
+        module.registers.borrow_mut().push(retval);
+        retval
+    }
+    pub fn module(&self) -> IrModuleRef<'ctx> {
+        self.module
+    }
+    pub fn path(&self) -> IrRegPath<'_, 'ctx> {
+        IrRegPath(self)
+    }
+    pub fn name(&self) -> IrSymbol<'ctx> {
+        self.name
+    }
+    pub fn value_type(&self) -> IrValueTypeRef<'ctx> {
+        self.value_type
+    }
+    pub fn data_in(&self) -> Option<IrValueRef<'ctx>> {
+        self.data_in.get().copied()
+    }
+    pub fn assign_data_in(&self, data_in: IrValueRef<'ctx>) {
+        let value_type = data_in.get_type(self.module.ctx());
+        if let Some(owning_module) = data_in.owning_module() {
+            assert_eq!(self.module(), owning_module);
+        }
+        assert_eq!(self.value_type, value_type);
+        if let Err(_) = self.data_in.set(data_in) {
+            panic!("register's input already assigned");
+        }
+    }
+    pub fn rst(&self) -> Option<IrRegReset<'ctx>> {
+        self.rst
+    }
+    pub fn clk(&self) -> IrValueRef<'ctx> {
+        self.clk
+    }
+    pub fn reset_enable(&self) -> Option<IrValueRef<'ctx>> {
+        self.rst.map(|v| v.reset_enable)
+    }
+    pub fn reset_value(&self) -> Option<IrValueRef<'ctx>> {
+        self.rst.map(|v| v.reset_value)
+    }
+    pub fn output(&'ctx self) -> IrValueRef<'ctx> {
+        IrValue::RegOutput(IrRegOutput(self)).intern(self.module().ctx())
+    }
+    pub fn debug_fmt_without_name<'a: 'ctx>(&'a self) -> impl fmt::Debug + 'a {
+        struct FmtWithoutName<'a, 'ctx>(&'a IrReg<'ctx>);
+        impl fmt::Debug for FmtWithoutName<'_, '_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct("IrReg")
+                    .field("value_type", &self.0.value_type())
+                    .field(
+                        "data_in",
+                        debug_format_option_as_value_or_none(self.0.data_in.get()),
+                    )
+                    .field("clk", &self.0.clk())
+                    .field(
+                        "reset_enable",
+                        debug_format_option_as_value_or_none(self.0.reset_enable().as_ref()),
+                    )
+                    .field(
+                        "reset_value",
+                        debug_format_option_as_value_or_none(self.0.reset_value().as_ref()),
+                    )
+                    .finish_non_exhaustive()
+            }
+        }
+        FmtWithoutName(self)
+    }
+}
+
+impl fmt::Debug for IrReg<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IrReg")
+            .field("path", &self.path())
+            .field("value_type", &self.value_type())
+            .field(
+                "data_in",
+                debug_format_option_as_value_or_none(self.data_in.get()),
+            )
+            .field("clk", &self.clk())
+            .field(
+                "reset_enable",
+                debug_format_option_as_value_or_none(self.reset_enable().as_ref()),
+            )
+            .field(
+                "reset_value",
+                debug_format_option_as_value_or_none(self.reset_value().as_ref()),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+pub type IrRegRef<'ctx> = &'ctx IrReg<'ctx>;
+
+#[derive(Clone, Copy)]
+pub struct IrRegOutput<'ctx>(pub IrRegRef<'ctx>);
+
+impl fmt::Debug for IrRegOutput<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IrRegOutput")
+            .field("path", &self.0.path())
+            .field("value_type", &self.0.value_type())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'ctx> Eq for IrRegOutput<'ctx> {}
+
+impl<'ctx> PartialEq for IrRegOutput<'ctx> {
+    fn eq(&self, other: &Self) -> bool {
+        ptr::eq(self.0, other.0)
+    }
+}
+
+impl<'ctx> Hash for IrRegOutput<'ctx> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (self.0 as *const IrReg<'ctx>).hash(state)
     }
 }

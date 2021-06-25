@@ -5,7 +5,9 @@ use crate::Value;
 
 #[derive(Debug, Clone, Copy, Default, Value)]
 #[rust_hdl(crate = crate)]
-pub struct ClockDomainData {
+pub struct ClockDomain {
+    /// positive edge-triggered clock
     pub clk: bool,
+    /// active-high reset
     pub rst: bool,
 }

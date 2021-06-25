@@ -3,6 +3,7 @@
 
 use crate::{
     context::{ContextRef, Intern},
+    io::Input,
     ir::{
         types::{IrStructFieldType, IrStructType, IrValueType, IrValueTypeRef},
         values::{
@@ -21,6 +22,9 @@ use core::{
 
 pub trait Value<'ctx>: Sized {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self>;
+    fn get_input(&self, ctx: ContextRef<'ctx>) -> Input<'ctx, Self> {
+        self.get_value(ctx).into()
+    }
     fn get_value_type(&self, ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
         Self::static_value_type(ctx).unwrap_or_else(|| self.get_value(ctx).value_type())
     }

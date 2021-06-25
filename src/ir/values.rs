@@ -5,7 +5,7 @@ use crate::{
     context::{ContextRef, Intern, Interned},
     ir::{
         io::{IrModuleInput, IrOutputRead},
-        logic::IrWireRead,
+        logic::{IrRegOutput, IrWireRead},
         module::IrModuleRef,
         types::{IrStructFieldType, IrStructType, IrValueType, IrValueTypeRef},
     },
@@ -200,6 +200,12 @@ impl<'ctx> From<IrWireRead<'ctx>> for IrValue<'ctx> {
     }
 }
 
+impl<'ctx> From<IrRegOutput<'ctx>> for IrValue<'ctx> {
+    fn from(v: IrRegOutput<'ctx>) -> Self {
+        Self::RegOutput(v)
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub struct ExtractStructField<'ctx> {
     struct_value: IrValueRef<'ctx>,
@@ -281,6 +287,7 @@ pub enum IrValue<'ctx> {
     Input(IrModuleInput<'ctx>),
     OutputRead(IrOutputRead<'ctx>),
     ExtractStructField(ExtractStructField<'ctx>),
+    RegOutput(IrRegOutput<'ctx>),
 }
 
 pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
@@ -309,6 +316,7 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::Input(v) => v.value_type(),
             IrValue::OutputRead(v) => v.0.value_type(),
             IrValue::ExtractStructField(v) => v.value_type(),
+            IrValue::RegOutput(v) => v.0.value_type(),
         }
     }
     pub fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
@@ -320,6 +328,7 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::Input(input) => Some(input.module()),
             IrValue::OutputRead(output) => Some(output.0.module()),
             IrValue::ExtractStructField(v) => v.struct_value().owning_module(),
+            IrValue::RegOutput(v) => Some(v.0.module()),
         }
     }
 }
@@ -334,6 +343,7 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::Input(v) => v.fmt(f),
             IrValue::OutputRead(v) => v.fmt(f),
             IrValue::ExtractStructField(v) => v.fmt(f),
+            IrValue::RegOutput(v) => v.fmt(f),
         }
     }
 }

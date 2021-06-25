@@ -7,7 +7,7 @@ use crate::{
     io::{IOVisitor, IO},
     ir::{
         io::{InOrOut, IrIOMutRef},
-        logic::IrWireRef,
+        logic::{IrRegRef, IrWireRef},
         symbols::{IrSymbol, IrSymbolTable},
         types::IrValueTypeRef,
         values::IrValueRef,
@@ -32,6 +32,7 @@ pub struct IrModule<'ctx> {
     interface_types: Vec<InOrOut<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>>,
     interface_write_ends: OnceCell<Vec<InOrOut<IrValueRef<'ctx>, IrWireRef<'ctx>>>>,
     pub(crate) wires: RefCell<Vec<IrWireRef<'ctx>>>,
+    pub(crate) registers: RefCell<Vec<IrRegRef<'ctx>>>,
     debug_formatting: Cell<bool>,
 }
 
@@ -90,11 +91,6 @@ impl<'ctx> IrModule<'ctx> {
     ) -> IrModuleRef<'ctx> {
         if let Some(parent) = parent {
             assert!(core::ptr::eq(parent.ctx(), ctx));
-        } else {
-            assert!(
-                interface_types.is_empty(),
-                "top modules must have an empty interface"
-            );
         }
         let parent_symbol_table = Self::parent_symbol_table_impl(ctx, parent);
         let name = parent_symbol_table.insert_uniquified(ctx, name);
@@ -106,15 +102,43 @@ impl<'ctx> IrModule<'ctx> {
             interface_types,
             interface_write_ends: OnceCell::new(),
             wires: RefCell::default(),
+            registers: RefCell::default(),
             debug_formatting: Cell::new(false),
         });
         ctx.modules.borrow_mut().push(module);
         module
     }
-    pub fn new_top_module(ctx: ContextRef<'ctx>, name: Cow<'_, str>) -> IrModuleRef<'ctx> {
-        let module = Self::new_without_interface(ctx, name, None, Vec::new());
-        module.map_and_set_interface(&mut ());
-        module
+    pub fn try_new_top_module<
+        T: IO<'ctx> + ?Sized,
+        F: FnOnce(IrModuleRef<'ctx>, &mut T) -> Result<(), E>,
+        E,
+    >(
+        ctx: ContextRef<'ctx>,
+        name: Cow<'_, str>,
+        before_map_interface: F,
+        external_interface: &mut T,
+    ) -> Result<IrModuleRef<'ctx>, E> {
+        let module = Self::new_without_interface(
+            ctx,
+            name,
+            None,
+            Self::extract_interface_types(ctx, external_interface),
+        );
+        before_map_interface(module, external_interface)?;
+        module.map_and_set_interface(external_interface);
+        Ok(module)
+    }
+    pub fn new_top_module<T: IO<'ctx> + ?Sized>(
+        ctx: ContextRef<'ctx>,
+        name: Cow<'_, str>,
+        external_interface: &mut T,
+    ) -> IrModuleRef<'ctx> {
+        let retval: Result<_, Infallible> =
+            Self::try_new_top_module(ctx, name, |_, _| Ok(()), external_interface);
+        match retval {
+            Ok(module) => module,
+            Err(v) => match v {},
+        }
     }
     pub fn try_new_submodule<
         T: IO<'ctx> + ?Sized,
@@ -155,10 +179,16 @@ impl<'ctx> IrModule<'ctx> {
             &mut |io: IrIOMutRef<'_, 'ctx>, path: &str| {
                 let index = interface_write_ends.len();
                 assert!(index < self.interface_types().len());
-                let parent_module = self.parent.expect("interface must be empty on top module");
                 let write_end = io.map(
-                    |v| v.map_to_module_internal(parent_module, self, index, path),
-                    |v| v.map_to_module_internal(parent_module, self, index, path),
+                    |v| v.map_to_module_internal(self.parent, self, index, path),
+                    |v| {
+                        v.map_to_module_internal(
+                            self.parent.expect("outputs not allowed on top module"),
+                            self,
+                            index,
+                            path,
+                        )
+                    },
                 );
                 interface_write_ends.push(write_end);
                 Ok(())
@@ -225,6 +255,16 @@ impl<'ctx> fmt::Debug for IrModule<'ctx> {
                 debug_list.finish()
             }
         }
+        struct DebugRegisters<'a, 'ctx>(&'a [IrRegRef<'ctx>]);
+        impl fmt::Debug for DebugRegisters<'_, '_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let mut debug_list = f.debug_map();
+                for reg in self.0 {
+                    debug_list.entry(&reg.name(), &reg.debug_fmt_without_name());
+                }
+                debug_list.finish()
+            }
+        }
         f.debug_struct("IrModule")
             .field("path", &self.path())
             .field(
@@ -237,6 +277,7 @@ impl<'ctx> fmt::Debug for IrModule<'ctx> {
                 debug_format_option_as_value_or_none(self.interface_write_ends().as_ref()),
             )
             .field("wires", &DebugWires(&self.wires.borrow()))
+            .field("registers", &DebugRegisters(&self.registers.borrow()))
             .finish_non_exhaustive()
     }
 }

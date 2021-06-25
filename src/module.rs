@@ -2,11 +2,12 @@
 // See Notices.txt for copyright information
 
 use crate::{
+    clocking::ClockDomain,
     context::{Context, ContextRef},
     io::{Output, IO},
     ir::module::{IrModule, IrModuleRef},
-    logic::Wire,
-    values::{Value, ValueType},
+    logic::{Reg, Wire},
+    values::{Val, Value, ValueType},
 };
 use alloc::borrow::Cow;
 use core::fmt;
@@ -44,10 +45,17 @@ impl<'ctx> fmt::Debug for Module<'ctx> {
 }
 
 impl<'ctx> Context<'ctx> {
-    pub fn top_module<'a, N: Into<Cow<'a, str>>>(&'ctx self, name: N) -> Module<'ctx> {
-        Module {
-            ir: IrModule::new_top_module(self, name.into()),
-        }
+    pub fn top_module<'a, N: Into<Cow<'a, str>>, T: IO<'ctx>>(
+        &'ctx self,
+        name: N,
+        mut io: T,
+    ) -> (Module<'ctx>, T) {
+        (
+            Module {
+                ir: IrModule::new_top_module(self, name.into(), &mut io),
+            },
+            io,
+        )
     }
 }
 
@@ -91,5 +99,37 @@ impl<'ctx> Module<'ctx> {
         value_type: ValueType<'ctx, T>,
     ) -> Output<'ctx, T> {
         Output::with_type(self, value_type)
+    }
+    pub fn reg<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
+        &self,
+        name: N,
+        clock_domain: Val<'ctx, ClockDomain>,
+        reset_value: T,
+    ) -> Reg<'ctx, T> {
+        Reg::new(self, name, clock_domain, reset_value)
+    }
+    pub fn reg_without_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx> + Default>(
+        &self,
+        name: N,
+        clk: Val<'ctx, bool>,
+    ) -> Reg<'ctx, T> {
+        Reg::without_reset(self, name, clk)
+    }
+    pub fn reg_with_type_without_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
+        &self,
+        name: N,
+        clk: Val<'ctx, bool>,
+        value_type: ValueType<'ctx, T>,
+    ) -> Reg<'ctx, T> {
+        Reg::with_type_without_reset(self, name, clk, value_type)
+    }
+    pub fn reg_with_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
+        &self,
+        name: N,
+        clk: Val<'ctx, bool>,
+        reset_enable: Val<'ctx, bool>,
+        reset_value: T,
+    ) -> Reg<'ctx, T> {
+        Reg::with_reset(self, name, clk, reset_enable, reset_value)
     }
 }

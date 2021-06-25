@@ -2,10 +2,11 @@
 // See Notices.txt for copyright information
 
 pub use crate::{
+    clocking::ClockDomain,
     context::{Context, ContextRef},
     field,
     io::{Input, NotIO, Output, IO},
-    logic::Wire,
+    logic::{Reg, Wire},
     module::Module,
     named,
     values::{

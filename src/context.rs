@@ -3,7 +3,7 @@
 
 use crate::ir::{
     io::IrOutputReadData,
-    logic::IrWire,
+    logic::{IrReg, IrWire},
     module::{IrModule, IrModuleRef},
     symbols::IrSymbolTable,
     types::{IrStructFieldType, IrValueType},
@@ -253,6 +253,7 @@ pub struct Context<'ctx> {
     value_ref_interner: Interner<'ctx, [IrValueRef<'ctx>]>,
     pub(crate) modules_arena: Arena<IrModule<'ctx>>,
     pub(crate) wires_arena: Arena<IrWire<'ctx>>,
+    pub(crate) registers_arena: Arena<IrReg<'ctx>>,
     pub(crate) output_read_data_arena: Arena<IrOutputReadData<'ctx>>,
     _phantom: PhantomData<Cell<&'ctx ()>>,
 }
@@ -270,6 +271,7 @@ impl<'ctx> Context<'ctx> {
             value_ref_interner: Interner::default(),
             modules_arena: Arena::default(),
             wires_arena: Arena::default(),
+            registers_arena: Arena::default(),
             output_read_data_arena: Arena::default(),
             _phantom: PhantomData,
         };

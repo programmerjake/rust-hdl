@@ -91,7 +91,7 @@ impl<'ctx> IrInput<'ctx> {
     /// returns the write end (the value from the external module)
     pub(crate) fn map_to_module_internal(
         &mut self,
-        parent_module: IrModuleRef<'ctx>,
+        parent_module: Option<IrModuleRef<'ctx>>,
         module: IrModuleRef<'ctx>,
         index: usize,
         path: &str,
@@ -103,7 +103,7 @@ impl<'ctx> IrInput<'ctx> {
         };
         assert_eq!(self.value.get_type(module.ctx()), module_input.value_type());
         if let Some(owning_module) = self.value.owning_module() {
-            assert_eq!(owning_module, parent_module);
+            assert_eq!(Some(owning_module), parent_module);
         }
         mem::replace(
             &mut self.value,

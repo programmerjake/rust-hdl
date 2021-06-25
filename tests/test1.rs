@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// See Notices.txt for copyright information
 use rust_hdl::prelude::*;
 
 #[derive(Value, IO, Default)]
@@ -35,7 +37,7 @@ macro_rules! assert_formats_to {
 #[test]
 fn test_structs() {
     Context::with(|ctx| {
-        named!(let top = ctx.top_module());
+        named!(let (top, ()) = ctx.top_module(()));
         named!(let _wire: Wire<Struct> = top.wire());
         assert_formats_to!(
             top,
@@ -86,6 +88,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
@@ -145,6 +148,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
@@ -311,6 +315,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
@@ -404,7 +409,7 @@ Val {
 #[test]
 fn test1() {
     Context::with(|ctx: ContextRef<'_>| {
-        named!(let top = ctx.top_module());
+        named!(let (top, ()) = ctx.top_module(()));
         assert_formats_to!(
             top,
             r#"
@@ -414,6 +419,7 @@ IrModule {
     interface_types: [],
     interface_write_ends: [],
     wires: {},
+    registers: {},
     ..
 }"#
         );
@@ -438,6 +444,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
@@ -485,6 +492,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
@@ -494,7 +502,7 @@ IrModule {
 #[test]
 fn test_submodule() {
     Context::with(|ctx: ContextRef<'_>| {
-        named!(let top = ctx.top_module());
+        named!(let (top, ()) = ctx.top_module(()));
         assert_formats_to!(
             top,
             r#"
@@ -504,6 +512,7 @@ IrModule {
     interface_types: [],
     interface_write_ends: [],
     wires: {},
+    registers: {},
     ..
 }"#
         );
@@ -521,6 +530,7 @@ IrModule {
     interface_types: [],
     interface_write_ends: [],
     wires: {},
+    registers: {},
     ..
 }"#
         );
@@ -534,6 +544,7 @@ IrModule {
     interface_types: [],
     interface_write_ends: [],
     wires: {},
+    registers: {},
     ..
 }"#
         );
@@ -604,6 +615,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
@@ -747,6 +759,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
@@ -756,7 +769,7 @@ IrModule {
 #[test]
 fn test_sub_submodule() {
     Context::with(|ctx| {
-        named!(let top = ctx.top_module());
+        named!(let (top, ()) = ctx.top_module(()));
         assert_formats_to!(
             top,
             r#"
@@ -766,6 +779,7 @@ IrModule {
     interface_types: [],
     interface_write_ends: [],
     wires: {},
+    registers: {},
     ..
 }"#
         );
@@ -779,6 +793,7 @@ IrModule {
     interface_types: [],
     interface_write_ends: [],
     wires: {},
+    registers: {},
     ..
 }"#
         );
@@ -792,6 +807,7 @@ IrModule {
     interface_types: [],
     interface_write_ends: [],
     wires: {},
+    registers: {},
     ..
 }"#
         );
@@ -840,6 +856,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
@@ -853,6 +870,7 @@ IrModule {
     interface_types: [],
     interface_write_ends: [],
     wires: {},
+    registers: {},
     ..
 }"#
         );
@@ -923,6 +941,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
@@ -975,6 +994,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
@@ -1034,6 +1054,7 @@ IrModule {
             ..
         },
     },
+    registers: {},
     ..
 }"#
         );
