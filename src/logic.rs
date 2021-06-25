@@ -15,13 +15,13 @@ use alloc::borrow::Cow;
 use core::{fmt, marker::PhantomData, ops::Deref};
 
 #[derive(Clone, Copy)]
-pub struct GenericWire<'ctx, T: Value<'ctx>> {
+pub struct WireRef<'ctx, T: Value<'ctx>> {
     read_value: IrValueRef<'ctx>,
     ir: IrWireRef<'ctx>,
     _phantom: PhantomData<fn(T) -> T>,
 }
 
-impl<'ctx, T: Value<'ctx>> fmt::Debug for GenericWire<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> fmt::Debug for WireRef<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Wire")
             .field("ir", self.ir)
@@ -29,7 +29,7 @@ impl<'ctx, T: Value<'ctx>> fmt::Debug for GenericWire<'ctx, T> {
     }
 }
 
-impl<'ctx, T: Value<'ctx>> GenericWire<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> WireRef<'ctx, T> {
     pub fn from_ir_unchecked(ir: IrWireRef<'ctx>) -> Self {
         Self {
             ir,
@@ -49,7 +49,7 @@ impl<'ctx, T: Value<'ctx>> GenericWire<'ctx, T> {
 }
 
 #[must_use]
-pub struct Wire<'ctx, T: Value<'ctx>>(GenericWire<'ctx, T>);
+pub struct Wire<'ctx, T: Value<'ctx>>(WireRef<'ctx, T>);
 
 impl<'ctx, T: Value<'ctx>> fmt::Debug for Wire<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -58,7 +58,7 @@ impl<'ctx, T: Value<'ctx>> fmt::Debug for Wire<'ctx, T> {
 }
 
 impl<'ctx, T: Value<'ctx>> Deref for Wire<'ctx, T> {
-    type Target = GenericWire<'ctx, T>;
+    type Target = WireRef<'ctx, T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -67,7 +67,7 @@ impl<'ctx, T: Value<'ctx>> Deref for Wire<'ctx, T> {
 
 impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
     pub fn from_ir_unchecked(ir: IrWireRef<'ctx>) -> Self {
-        Self(GenericWire::from_ir_unchecked(ir))
+        Self(WireRef::from_ir_unchecked(ir))
     }
     pub fn with_type<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
@@ -87,43 +87,20 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
         let module = module.as_ir_module();
         Self::with_type(module, name.into(), Value::default_value_type(module.ctx()))
     }
-    pub fn assign(self, assigned_value: Val<'ctx, T>) -> AssignedWire<'ctx, T> {
+    pub fn assign(self, assigned_value: Val<'ctx, T>) -> WireRef<'ctx, T> {
         self.0.ir.assign(assigned_value.ir());
-        AssignedWire(self.0)
+        self.0
     }
 }
 
 #[derive(Clone, Copy)]
-pub struct AssignedWire<'ctx, T: Value<'ctx>>(GenericWire<'ctx, T>);
-
-impl<'ctx, T: Value<'ctx>> fmt::Debug for AssignedWire<'ctx, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl<'ctx, T: Value<'ctx>> AssignedWire<'ctx, T> {
-    pub fn from_ir_unchecked(ir: IrWireRef<'ctx>) -> Self {
-        Self(GenericWire::from_ir_unchecked(ir))
-    }
-}
-
-impl<'ctx, T: Value<'ctx>> Deref for AssignedWire<'ctx, T> {
-    type Target = GenericWire<'ctx, T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct GenericReg<'ctx, T: Value<'ctx>> {
+pub struct RegRef<'ctx, T: Value<'ctx>> {
     output_value: IrValueRef<'ctx>,
     ir: IrRegRef<'ctx>,
     _phantom: PhantomData<fn(T) -> T>,
 }
 
-impl<'ctx, T: Value<'ctx>> fmt::Debug for GenericReg<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> fmt::Debug for RegRef<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Reg")
             .field("ir", self.ir)
@@ -131,7 +108,7 @@ impl<'ctx, T: Value<'ctx>> fmt::Debug for GenericReg<'ctx, T> {
     }
 }
 
-impl<'ctx, T: Value<'ctx>> GenericReg<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> RegRef<'ctx, T> {
     pub fn from_ir_unchecked(ir: IrRegRef<'ctx>) -> Self {
         let output_value = ir.output();
         Self {
@@ -152,11 +129,11 @@ impl<'ctx, T: Value<'ctx>> GenericReg<'ctx, T> {
 }
 
 #[must_use]
-pub struct Reg<'ctx, T: Value<'ctx>>(GenericReg<'ctx, T>);
+pub struct Reg<'ctx, T: Value<'ctx>>(RegRef<'ctx, T>);
 
 impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
     pub fn from_ir_unchecked(ir: IrRegRef<'ctx>) -> Self {
-        Self(GenericReg::from_ir_unchecked(ir))
+        Self(RegRef::from_ir_unchecked(ir))
     }
     pub fn with_type_without_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
@@ -223,14 +200,14 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
             reset_value,
         )
     }
-    pub fn assign_data_in(self, assigned_value: Val<'ctx, T>) -> AssignedReg<'ctx, T> {
+    pub fn assign_data_in(self, assigned_value: Val<'ctx, T>) -> RegRef<'ctx, T> {
         self.ir.assign_data_in(assigned_value.ir());
-        AssignedReg(self.0)
+        self.0
     }
 }
 
 impl<'ctx, T: Value<'ctx>> Deref for Reg<'ctx, T> {
-    type Target = GenericReg<'ctx, T>;
+    type Target = RegRef<'ctx, T>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -238,29 +215,6 @@ impl<'ctx, T: Value<'ctx>> Deref for Reg<'ctx, T> {
 }
 
 impl<'ctx, T: Value<'ctx>> fmt::Debug for Reg<'ctx, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct AssignedReg<'ctx, T: Value<'ctx>>(GenericReg<'ctx, T>);
-
-impl<'ctx, T: Value<'ctx>> AssignedReg<'ctx, T> {
-    pub fn from_ir_unchecked(ir: IrRegRef<'ctx>) -> Self {
-        Self(GenericReg::from_ir_unchecked(ir))
-    }
-}
-
-impl<'ctx, T: Value<'ctx>> Deref for AssignedReg<'ctx, T> {
-    type Target = GenericReg<'ctx, T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'ctx, T: Value<'ctx>> fmt::Debug for AssignedReg<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
