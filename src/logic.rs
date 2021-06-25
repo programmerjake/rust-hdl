@@ -59,7 +59,7 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
     pub fn read(&self) -> Val<'ctx, T> {
         Val::from_ir_and_type_unchecked(
             self.read_value,
-            ValueType::from_ir_unchecked(self.ir.value_type()),
+            ValueType::from_ir_unchecked(self.ir.module().ctx(), self.ir.value_type()),
         )
     }
 }

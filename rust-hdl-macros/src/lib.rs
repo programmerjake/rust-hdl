@@ -115,30 +115,16 @@ fn derive_value_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     let fields_const;
     let mut field_value_ir_matches = Vec::new();
     let mut field_static_value_type_ir_matches = Vec::new();
+    let struct_of_field_enums_const;
     match data_struct.fields {
         Fields::Named(fields) => {
-            let enum_fields: Vec<_> = fields
-                .named
-                .iter()
-                .map(|field| field.ident.clone())
-                .collect();
-            enum_def = quote! {
-                #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-                #[allow(non_camel_case_types)]
-                #[repr(usize)]
-                pub enum __FieldEnum {
-                    #(#enum_fields),*
-                }
-
-                impl ::core::convert::From<__FieldEnum> for usize {
-                    fn from(v: __FieldEnum) -> Self {
-                        v as usize
-                    }
-                }
-            };
+            let mut enum_fields = Vec::new();
             let mut field_descriptors = Vec::new();
+            let mut struct_of_field_enums_fields = Vec::new();
+            let mut struct_of_field_enums_const_fields = Vec::new();
             for field in &fields.named {
                 let name = field.ident.as_ref().unwrap();
+                let vis = &field.vis;
                 let name_str = name.to_string();
                 field_descriptors.push(quote! {
                     #crate_path::values::StructFieldDescriptor {
@@ -153,18 +139,48 @@ fn derive_value_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
                 field_static_value_type_ir_matches.push(quote! {
                     __FieldEnum::#name => ::core::option::Option::Some(<#field_ty as #crate_path::values::Value>::static_value_type(ctx)?.ir()),
                 });
+                enum_fields.push(quote! {#name,});
+                struct_of_field_enums_fields.push(quote! {
+                    #vis #name: __FieldEnum,
+                });
+                struct_of_field_enums_const_fields.push(quote! {
+                    #name: __FieldEnum::#name,
+                });
             }
             fields_const = quote! {&[#(#field_descriptors),*]};
+            struct_of_field_enums_const = quote! {
+                __StructOfFieldEnums {
+                    #(#struct_of_field_enums_const_fields)*
+                }
+            };
+            enum_def = quote! {
+                #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+                #[allow(non_camel_case_types)]
+                #[repr(usize)]
+                pub enum __FieldEnum {
+                    #(#enum_fields)*
+                }
+
+                impl ::core::convert::From<__FieldEnum> for usize {
+                    fn from(v: __FieldEnum) -> Self {
+                        v as usize
+                    }
+                }
+
+                #[allow(non_snake_case)]
+                pub struct __StructOfFieldEnums {
+                    #(#struct_of_field_enums_fields)*
+                }
+            };
         }
         Fields::Unnamed(fields) => {
-            enum_def = quote! {
-                #[allow(non_camel_case_types)]
-                pub type __FieldEnum = usize;
-            };
             let mut field_descriptors = Vec::new();
+            let mut struct_of_field_enums_fields = Vec::new();
+            let mut struct_of_field_enums_const_fields = Vec::new();
             for (name, field) in fields.unnamed.iter().enumerate() {
                 let name_str = name.to_string();
                 let name = Literal::usize_unsuffixed(name);
+                let vis = &field.vis;
                 field_descriptors.push(quote! {
                     #crate_path::values::StructFieldDescriptor {
                         name: #name_str,
@@ -178,13 +194,33 @@ fn derive_value_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
                 field_static_value_type_ir_matches.push(quote! {
                     #name => ::core::option::Option::Some(<#field_ty as #crate_path::values::Value>::static_value_type(ctx)?.ir()),
                 });
+                struct_of_field_enums_fields.push(quote! {
+                    #vis __FieldEnum,
+                });
+                struct_of_field_enums_const_fields.push(quote! {
+                    #name,
+                });
             }
             let fallback_match_arm = quote! {
-                _ => ::core::unreachable!("field index out of bounds"),
+                _ => ::core::panic!("field index out of bounds"),
             };
             field_value_ir_matches.push(fallback_match_arm.clone());
             field_static_value_type_ir_matches.push(fallback_match_arm);
             fields_const = quote! {&[#(#field_descriptors),*]};
+            enum_def = quote! {
+                #[allow(non_camel_case_types)]
+                pub type __FieldEnum = usize;
+
+                #[allow(non_snake_case)]
+                pub struct __StructOfFieldEnums(
+                    #(#struct_of_field_enums_fields)*
+                );
+            };
+            struct_of_field_enums_const = quote! {
+                __StructOfFieldEnums(
+                    #(#struct_of_field_enums_const_fields)*
+                )
+            };
         }
         Fields::Unit => {
             enum_def = quote! {
@@ -197,8 +233,11 @@ fn derive_value_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
                         match v {}
                     }
                 }
+
+                pub struct __StructOfFieldEnums;
             };
             fields_const = quote! { &[] };
+            struct_of_field_enums_const = quote! { __StructOfFieldEnums };
         }
     }
     Ok(quote! {
@@ -207,6 +246,8 @@ fn derive_value_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
             #[automatically_derived]
             impl #impl_generics #crate_path::values::StructValue<#ctx_lifetime> for #name #ty_generics #where_clause {
                 type FieldEnum = __FieldEnum;
+                type StructOfFieldEnums = __StructOfFieldEnums;
+                const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums = #struct_of_field_enums_const;
                 const FIELDS: &'static [#crate_path::values::StructFieldDescriptor<'static, Self::FieldEnum>] = #fields_const;
                 fn field_value_ir(&self, ctx: #crate_path::context::ContextRef<'ctx>, field: Self::FieldEnum) -> #crate_path::ir::values::IrValueRef<'ctx> {
                     match field {

@@ -33,3 +33,90 @@ macro_rules! named {
         let ($name, $io) = $module.$submodule(stringify!($name), $io_arg);
     };
 }
+
+/// Get the field enumerant for a field of a struct.
+/// The struct must be decorated with [`#[derive(Value)]`](rust_hdl_macros::Value).
+///
+/// Example:
+/// ```
+/// # use rust_hdl::{field_enum, prelude::*};
+/// #[derive(Value)]
+/// struct MyStruct {
+///     a: Int32,
+///     b: UInt16,
+/// }
+/// #[derive(Value)]
+/// struct MyTupleStruct(bool, bool);
+/// println!("fields: {:?} {:?}", field_enum!(MyStruct::a), field_enum!(MyTupleStruct::1));
+/// ```
+///
+/// If the named field is invalid, it will fail at compile time:
+/// ```compile_fail
+/// # use rust_hdl::{field_enum, prelude::*};
+/// # #[derive(Value)]
+/// # struct MyStruct {
+/// #     a: Int32,
+/// #     b: UInt16,
+/// # }
+/// field_enum!(MyStruct::into);
+/// ```
+///
+/// ```compile_fail
+/// # use rust_hdl::{field_enum, prelude::*};
+/// # #[derive(Value)]
+/// # struct MyTupleStruct(bool, bool);
+/// field_enum!(MyTupleStruct::2);
+/// ```
+#[macro_export]
+macro_rules! field_enum {
+    (<$ty:ty>::$field:ident) => {{
+        const VALUE: <$ty as $crate::values::StructValue>::FieldEnum =
+            <<$ty as $crate::values::StructValue>::FieldEnum>::$field;
+        VALUE
+    }};
+    (<$ty:ty>::$field:literal) => {{
+        const VALUE: <$ty as $crate::values::StructValue>::FieldEnum = {
+            let index: usize = $field;
+            let _ = <$ty as $crate::values::StructValue>::FIELDS[index];
+            index
+        };
+        VALUE
+    }};
+    ($ty:ident::$field:tt) => {
+        $crate::field_enum!(<$ty>::$field)
+    };
+}
+
+/// Get the field of a struct wrapped in [`Val`].
+///
+/// You can use it to get a field:
+/// `field!((val_expr).field)`
+/// You can also use it to get a field's field (or a field of a field's field, and so on):
+/// or `field!((val_expr).field1.subfield2)`
+///
+/// Example:
+/// ```
+/// # use rust_hdl::prelude::*;
+/// #[derive(Value)]
+/// struct MyStruct {
+///     a: MyTupleStruct,
+/// }
+/// #[derive(Value)]
+/// struct MyTupleStruct(bool, bool);
+///
+/// fn get_field<'ctx>(v: Val<'ctx, MyStruct>) -> Val<'ctx, bool> {
+///     field!((v).a.1)
+/// }
+/// ```
+#[macro_export]
+macro_rules! field {
+    (($val:expr).$first_field:tt$(.$rest:tt)+) => {
+        $crate::field!(($crate::field!(($val).$first_field))$(.$rest)+)
+    };
+    (($val:expr).$field:tt) => {
+        {
+            let val: $crate::values::Val<'_, _> = $val;
+            val.extract_field_unchecked_macro_helper(|opt, struct_of_field_enums| (struct_of_field_enums.$field, opt.map(|v| (&v.0.$field, v.1))))
+        }
+    };
+}

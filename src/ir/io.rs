@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::Intern,
+    context::{ContextRef, Intern},
     fmt_utils::{debug_format_option_as_value_or_invalid, debug_format_option_as_value_or_none},
     ir::{
         logic::{IrWire, IrWireRef},
@@ -224,6 +224,12 @@ impl<'ctx> IrOutput<'ctx> {
         match self {
             IrOutput::WriteEnd(v) => v.read(),
             IrOutput::ReadEnd(v) => v.read(),
+        }
+    }
+    pub fn ctx(&self) -> ContextRef<'ctx> {
+        match self {
+            IrOutput::WriteEnd(v) => v.module().ctx(),
+            IrOutput::ReadEnd(v) => v.0.module.ctx(),
         }
     }
     pub fn value_type(&self) -> IrValueTypeRef<'ctx> {

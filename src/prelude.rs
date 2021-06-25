@@ -3,6 +3,7 @@
 
 pub use crate::{
     context::{Context, ContextRef},
+    field,
     io::{Input, NotIO, Output, IO},
     logic::Wire,
     module::Module,

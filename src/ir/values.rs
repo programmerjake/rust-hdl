@@ -200,6 +200,78 @@ impl<'ctx> From<IrWireRead<'ctx>> for IrValue<'ctx> {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+pub struct ExtractStructField<'ctx> {
+    struct_value: IrValueRef<'ctx>,
+    struct_type: IrStructType<'ctx>,
+    field_index: usize,
+}
+
+impl<'ctx> ExtractStructField<'ctx> {
+    pub fn new(ctx: ContextRef<'ctx>, struct_value: IrValueRef<'ctx>, field_index: usize) -> Self {
+        let struct_type = match *struct_value.get_type(ctx) {
+            IrValueType::Struct(v) => v,
+            _ => panic!("value type is not a struct"),
+        };
+        assert!(field_index < struct_type.fields.len());
+        Self {
+            struct_value,
+            struct_type,
+            field_index,
+        }
+    }
+    pub fn new_with_struct_type_unchecked(
+        struct_value: IrValueRef<'ctx>,
+        struct_type: IrValueTypeRef<'ctx>,
+        field_index: usize,
+    ) -> Self {
+        let struct_type = match *struct_type {
+            IrValueType::Struct(v) => v,
+            _ => panic!("value type is not a struct"),
+        };
+        assert!(field_index < struct_type.fields.len());
+        Self {
+            struct_value,
+            struct_type,
+            field_index,
+        }
+    }
+    pub fn struct_value(self) -> IrValueRef<'ctx> {
+        self.struct_value
+    }
+    pub fn struct_field_type(self) -> IrStructFieldType<'ctx> {
+        self.struct_type.fields[self.field_index]
+    }
+    pub fn value_type(self) -> IrValueTypeRef<'ctx> {
+        self.struct_field_type().ty
+    }
+    pub fn field_name(self) -> Interned<'ctx, str> {
+        self.struct_field_type().name
+    }
+    pub fn struct_type(self) -> IrStructType<'ctx> {
+        self.struct_type
+    }
+    pub fn field_index(self) -> usize {
+        self.field_index
+    }
+}
+
+impl fmt::Debug for ExtractStructField<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExtractStructField")
+            .field("struct_value", &self.struct_value())
+            .field("struct_field_type", &self.struct_field_type())
+            .field("field_index", &self.field_index())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'ctx> From<ExtractStructField<'ctx>> for IrValue<'ctx> {
+    fn from(v: ExtractStructField<'ctx>) -> Self {
+        Self::ExtractStructField(v)
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub enum IrValue<'ctx> {
     LiteralBits(LiteralBits),
@@ -208,6 +280,7 @@ pub enum IrValue<'ctx> {
     WireRead(IrWireRead<'ctx>),
     Input(IrModuleInput<'ctx>),
     OutputRead(IrOutputRead<'ctx>),
+    ExtractStructField(ExtractStructField<'ctx>),
 }
 
 pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
@@ -222,9 +295,10 @@ fn check_types() {
 impl<'ctx> IrValue<'ctx> {
     pub fn get_type(&self, ctx: ContextRef<'ctx>) -> IrValueTypeRef<'ctx> {
         match self {
-            &IrValue::LiteralBits(LiteralBits { bit_count, .. }) => {
-                IrValueType::BitVector { bit_count }.intern(ctx)
+            IrValue::LiteralBits(v) => IrValueType::BitVector {
+                bit_count: v.bit_count,
             }
+            .intern(ctx),
             IrValue::LiteralArray(v) => IrValueType::Array {
                 element: v.element_type(),
                 length: v.len(),
@@ -234,6 +308,7 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::WireRead(v) => v.0.value_type(),
             IrValue::Input(v) => v.value_type(),
             IrValue::OutputRead(v) => v.0.value_type(),
+            IrValue::ExtractStructField(v) => v.value_type(),
         }
     }
     pub fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
@@ -244,6 +319,7 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::WireRead(wire) => Some(wire.0.module()),
             IrValue::Input(input) => Some(input.module()),
             IrValue::OutputRead(output) => Some(output.0.module()),
+            IrValue::ExtractStructField(v) => v.struct_value().owning_module(),
         }
     }
 }
@@ -257,6 +333,7 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::WireRead(v) => v.fmt(f),
             IrValue::Input(v) => v.fmt(f),
             IrValue::OutputRead(v) => v.fmt(f),
+            IrValue::ExtractStructField(v) => v.fmt(f),
         }
     }
 }

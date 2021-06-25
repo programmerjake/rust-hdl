@@ -95,7 +95,7 @@ IrModule {
             c: EmptyType,
             d: IOTupleStruct(top.output()),
         };
-        named!(let (submodule, _io) = top.submodule(io));
+        named!(let (submodule, io) = top.submodule(io));
         assert_formats_to!(
             top,
             r#"
@@ -312,6 +312,90 @@ IrModule {
         },
     },
     ..
+}"#
+        );
+        let field = field!((io.d.0.read()).c.1);
+        assert_formats_to!(
+            field,
+            r#"
+Val {
+    ir: ExtractStructField {
+        struct_value: ExtractStructField {
+            struct_value: IrWireRead {
+                path: "top"."submodule"."io.d.0",
+                value_type: IrStructType {
+                    fields: [
+                        IrStructFieldType {
+                            name: "a",
+                            ty: BitVector {
+                                bit_count: 1,
+                            },
+                        },
+                        IrStructFieldType {
+                            name: "b",
+                            ty: IrStructType {
+                                fields: [],
+                            },
+                        },
+                        IrStructFieldType {
+                            name: "c",
+                            ty: IrStructType {
+                                fields: [
+                                    IrStructFieldType {
+                                        name: "0",
+                                        ty: BitVector {
+                                            bit_count: 1,
+                                        },
+                                    },
+                                    IrStructFieldType {
+                                        name: "1",
+                                        ty: BitVector {
+                                            bit_count: 8,
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+                ..
+            },
+            struct_field_type: IrStructFieldType {
+                name: "c",
+                ty: IrStructType {
+                    fields: [
+                        IrStructFieldType {
+                            name: "0",
+                            ty: BitVector {
+                                bit_count: 1,
+                            },
+                        },
+                        IrStructFieldType {
+                            name: "1",
+                            ty: BitVector {
+                                bit_count: 8,
+                            },
+                        },
+                    ],
+                },
+            },
+            field_index: 2,
+            ..
+        },
+        struct_field_type: IrStructFieldType {
+            name: "1",
+            ty: BitVector {
+                bit_count: 8,
+            },
+        },
+        field_index: 1,
+        ..
+    },
+    value_type: ValueType(
+        BitVector {
+            bit_count: 8,
+        },
+    ),
 }"#
         );
     });

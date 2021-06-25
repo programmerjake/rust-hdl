@@ -5,11 +5,15 @@ use crate::{
     context::{ContextRef, Intern},
     ir::{
         types::{IrStructFieldType, IrStructType, IrValueType, IrValueTypeRef},
-        values::{IrValue, IrValueRef, LiteralArray, LiteralStruct, LiteralStructField},
+        values::{
+            ExtractStructField, IrValue, IrValueRef, LiteralArray, LiteralStruct,
+            LiteralStructField,
+        },
     },
 };
 use alloc::vec::Vec;
 use core::{
+    convert::Infallible,
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -39,6 +43,8 @@ pub struct StructFieldDescriptor<'a, FieldEnum> {
 
 pub trait StructValue<'ctx>: Value<'ctx> {
     type FieldEnum: 'static + Copy + Send + Sync + Ord + Hash + Into<usize>;
+    type StructOfFieldEnums;
+    const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums;
     const FIELDS: &'static [StructFieldDescriptor<'static, Self::FieldEnum>];
     fn field_value_ir(&self, ctx: ContextRef<'ctx>, field: Self::FieldEnum) -> IrValueRef<'ctx>;
     fn field_static_value_type_ir(
@@ -74,6 +80,7 @@ impl<'ctx, T: StructValue<'ctx>> Value<'ctx> for T {
             });
         }
         Some(ValueType::from_ir_unchecked(
+            ctx,
             IrValueType::from(IrStructType {
                 fields: fields.intern(ctx),
             })
@@ -96,6 +103,8 @@ mod unit_impl {
 
     impl<'ctx> StructValue<'ctx> for () {
         type FieldEnum = UnitFields;
+        type StructOfFieldEnums = ();
+        const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums = ();
         const FIELDS: &'static [StructFieldDescriptor<'static, Self::FieldEnum>] = &[];
         fn field_value_ir(
             &self,
@@ -122,6 +131,7 @@ impl<'ctx> Value<'ctx> for bool {
     }
     fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
         Some(ValueType::from_ir_unchecked(
+            ctx,
             IrValueType::BitVector { bit_count: 1 }.intern(ctx),
         ))
     }
@@ -133,6 +143,7 @@ impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
     }
     fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
         Some(ValueType::from_ir_unchecked(
+            ctx,
             IrValueType::BitVector {
                 bit_count: Shape::static_shape()?.bit_count,
             }
@@ -167,6 +178,7 @@ impl<'ctx, T: Value<'ctx>, const N: usize> Value<'ctx> for [T; N] {
     fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
         let element_type = T::static_value_type(ctx)?;
         Some(ValueType::from_ir_unchecked(
+            ctx,
             IrValueType::Array {
                 element: element_type.ir,
                 length: N,
@@ -183,10 +195,7 @@ pub struct Val<'ctx, T: Value<'ctx>> {
 
 impl<'ctx, T: Value<'ctx>> Val<'ctx, T> {
     pub fn from_ir_unchecked(ctx: ContextRef<'ctx>, ir: IrValueRef<'ctx>) -> Self {
-        let value_type = ValueType {
-            ir: ir.get_type(ctx),
-            _phantom: PhantomData,
-        };
+        let value_type = ValueType::from_ir_unchecked(ctx, ir.get_type(ctx));
         Self { ir, value_type }
     }
     pub fn from_ir_and_type_unchecked(
@@ -198,8 +207,53 @@ impl<'ctx, T: Value<'ctx>> Val<'ctx, T> {
     pub fn value_type(self) -> ValueType<'ctx, T> {
         self.value_type
     }
+    pub fn ctx(self) -> ContextRef<'ctx> {
+        self.value_type.ctx()
+    }
     pub fn ir(self) -> IrValueRef<'ctx> {
         self.ir
+    }
+    pub fn extract_field_unchecked<Field: Value<'ctx>>(
+        self,
+        field_enum: T::FieldEnum,
+    ) -> Val<'ctx, Field>
+    where
+        T: StructValue<'ctx>,
+    {
+        let extract_struct_field = ExtractStructField::new_with_struct_type_unchecked(
+            self.ir,
+            self.value_type.ir,
+            field_enum.into(),
+        );
+        let ir = IrValue::from(extract_struct_field).intern(self.ctx());
+        let value_type =
+            ValueType::from_ir_unchecked(self.ctx(), extract_struct_field.value_type());
+        Val::from_ir_and_type_unchecked(ir, value_type)
+    }
+    #[doc(hidden)]
+    pub fn extract_field_unchecked_macro_helper<
+        Field: Value<'ctx>,
+        GetFieldEnum: FnOnce(
+            Option<(&T, Infallible)>,
+            T::StructOfFieldEnums,
+        ) -> (T::FieldEnum, Option<(&Field, Infallible)>),
+    >(
+        self,
+        get_field_enum: GetFieldEnum,
+    ) -> Val<'ctx, Field>
+    where
+        T: StructValue<'ctx>,
+    {
+        self.extract_field_unchecked(get_field_enum(None, T::STRUCT_OF_FIELD_ENUMS).0)
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> fmt::Debug for Val<'ctx, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Val")
+            .field("ir", &self.ir)
+            .field("value_type", &self.value_type)
+            .finish()
     }
 }
 
@@ -213,18 +267,23 @@ impl<'ctx, T: Value<'ctx>> Clone for Val<'ctx, T> {
 
 pub struct ValueType<'ctx, T: Value<'ctx>> {
     ir: IrValueTypeRef<'ctx>,
+    ctx: ContextRef<'ctx>,
     _phantom: PhantomData<fn(T) -> T>,
 }
 
 impl<'ctx, T: Value<'ctx>> ValueType<'ctx, T> {
-    pub(crate) fn from_ir_unchecked(ir: IrValueTypeRef<'ctx>) -> Self {
+    pub(crate) fn from_ir_unchecked(ctx: ContextRef<'ctx>, ir: IrValueTypeRef<'ctx>) -> Self {
         ValueType {
             ir,
+            ctx,
             _phantom: PhantomData,
         }
     }
     pub fn ir(self) -> IrValueTypeRef<'ctx> {
         self.ir
+    }
+    pub fn ctx(self) -> ContextRef<'ctx> {
+        self.ctx
     }
 }
 
