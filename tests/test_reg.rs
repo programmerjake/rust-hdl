@@ -265,11 +265,10 @@ Reg {
     ..
 }"#
         );
-        let reg_output = reg.output();
-        io.output.assign(reg_output);
-        reg.assign_data_in(io.input.get());
+        io.output.assign(reg.output());
+        let reg = reg.assign_data_in(io.input.get());
         assert_formats_to!(
-            reg_output,
+            reg.output(),
             r#"
 Val {
     ir: IrRegOutput {
@@ -284,6 +283,94 @@ Val {
             bit_count: 1,
         },
     ),
+}"#
+        );
+        assert_formats_to!(
+            reg,
+            r#"
+Reg {
+    ir: IrReg {
+        path: "top"."reg",
+        value_type: BitVector {
+            bit_count: 1,
+        },
+        data_in: IrModuleInput {
+            module: "top",
+            index: 2,
+            path: "io.input",
+            value_type: BitVector {
+                bit_count: 1,
+            },
+        },
+        clk: ExtractStructField {
+            struct_value: IrModuleInput {
+                module: "top",
+                index: 0,
+                path: "io.cd",
+                value_type: IrStructType {
+                    fields: [
+                        IrStructFieldType {
+                            name: "clk",
+                            ty: BitVector {
+                                bit_count: 1,
+                            },
+                        },
+                        IrStructFieldType {
+                            name: "rst",
+                            ty: BitVector {
+                                bit_count: 1,
+                            },
+                        },
+                    ],
+                },
+            },
+            struct_field_type: IrStructFieldType {
+                name: "clk",
+                ty: BitVector {
+                    bit_count: 1,
+                },
+            },
+            field_index: 0,
+            ..
+        },
+        reset_enable: ExtractStructField {
+            struct_value: IrModuleInput {
+                module: "top",
+                index: 0,
+                path: "io.cd",
+                value_type: IrStructType {
+                    fields: [
+                        IrStructFieldType {
+                            name: "clk",
+                            ty: BitVector {
+                                bit_count: 1,
+                            },
+                        },
+                        IrStructFieldType {
+                            name: "rst",
+                            ty: BitVector {
+                                bit_count: 1,
+                            },
+                        },
+                    ],
+                },
+            },
+            struct_field_type: IrStructFieldType {
+                name: "rst",
+                ty: BitVector {
+                    bit_count: 1,
+                },
+            },
+            field_index: 1,
+            ..
+        },
+        reset_value: LiteralBits {
+            bit_count: 1,
+            value: 0x0,
+        },
+        ..
+    },
+    ..
 }"#
         );
         assert_formats_to!(
