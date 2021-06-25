@@ -8,7 +8,7 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
-pub use rust_hdl_macros::{Value, IO};
+pub use rust_hdl_macros::{PlainIO, Value, IO};
 
 pub mod clocking;
 pub mod context;
@@ -28,9 +28,9 @@ macro_rules! named {
         let $name $(: $ty)? = $mod_or_ctx.$method(stringify!($name), $($args),*);
     };
     {
-        let ($name:ident, $io:pat) = $module:ident.$submodule:ident($io_arg:expr)
+        let ($name:ident, $io:pat)$(: $ty:ty)? = $mod_or_ctx:ident.$method:ident($($args:expr),*)
     } => {
-        let ($name, $io) = $module.$submodule(stringify!($name), $io_arg);
+        let ($name, $io)$(: $ty)? = $mod_or_ctx.$method(stringify!($name), $($args),*);
     };
 }
 

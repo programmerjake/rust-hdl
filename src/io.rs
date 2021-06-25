@@ -5,11 +5,11 @@ use crate::{
     context::{Context, ContextRef},
     ir::io::{InOrOut, IrIOCallback, IrIOMutRef, IrInput, IrOutput},
     module::{AsIrModule, Module},
-    values::{integer::IntShapeTrait, Int, Val, Value, ValueType},
+    values::{integer::IntShapeTrait, Int, SInt, UInt, Val, Value, ValueType},
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
-    convert::Infallible,
+    convert::{Infallible, TryInto},
     fmt::{self, Write},
     marker::PhantomData,
     ops::{Deref, DerefMut},
@@ -124,9 +124,25 @@ pub trait IO<'ctx> {
     fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>);
 }
 
+pub trait PlainIO<'ctx>: IO<'ctx> + Sized {
+    fn external(ctx: ContextRef<'ctx>) -> Self;
+}
+
+impl<'ctx> Context<'ctx> {
+    pub fn external<T: PlainIO<'ctx>>(&'ctx self) -> T {
+        T::external(self)
+    }
+}
+
 impl<'ctx, T: IO<'ctx> + ?Sized> IO<'ctx> for Box<T> {
     fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
         T::visit_io(self, visitor)
+    }
+}
+
+impl<'ctx, T: PlainIO<'ctx>> PlainIO<'ctx> for Box<T> {
+    fn external(ctx: ContextRef<'ctx>) -> Self {
+        Box::new(ctx.external())
     }
 }
 
@@ -159,6 +175,16 @@ impl<'ctx, T: IO<'ctx>> IO<'ctx> for [T] {
 impl<'ctx, T: IO<'ctx>, const N: usize> IO<'ctx> for [T; N] {
     fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
         visitor.visit_list().entries(self).finish()
+    }
+}
+
+impl<'ctx, T: PlainIO<'ctx>, const N: usize> PlainIO<'ctx> for [T; N] {
+    fn external(ctx: ContextRef<'ctx>) -> Self {
+        let mut elements = Vec::with_capacity(N);
+        for _ in 0..N {
+            elements.push(ctx.external());
+        }
+        elements.try_into().ok().unwrap()
     }
 }
 
@@ -210,6 +236,24 @@ no_op_impl_io!(ContextRef<'_>);
 no_op_impl_io!(Module<'_>);
 no_op_impl_io!(&'_ str);
 
+impl<'ctx> PlainIO<'ctx> for ContextRef<'ctx> {
+    fn external(ctx: ContextRef<'ctx>) -> Self {
+        ctx
+    }
+}
+
+impl<'ctx> PlainIO<'ctx> for SInt<0> {
+    fn external(_ctx: ContextRef<'ctx>) -> Self {
+        SInt::default()
+    }
+}
+
+impl<'ctx> PlainIO<'ctx> for UInt<0> {
+    fn external(_ctx: ContextRef<'ctx>) -> Self {
+        UInt::default()
+    }
+}
+
 impl<'ctx> IO<'ctx> for IrInput<'ctx> {
     fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
         if !visitor.is_early_exit() {
@@ -238,6 +282,12 @@ macro_rules! impl_io_trait_for_tuples {
                     .visit_struct()
                     $(.field(stringify!($index), &mut self.$index))*
                     .finish()
+            }
+        }
+        impl<'ctx, $($T: PlainIO<'ctx>),*> PlainIO<'ctx> for ($($T,)*) {
+            #[allow(unused_variables)]
+            fn external(ctx: ContextRef<'ctx>) -> Self {
+                ($($T::external(ctx),)*)
             }
         }
     };
@@ -313,6 +363,12 @@ pub struct Input<'ctx, T: Value<'ctx>> {
 impl<'ctx, T: Value<'ctx>> IO<'ctx> for Input<'ctx, T> {
     fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
         self.ir.visit_io(visitor)
+    }
+}
+
+impl<'ctx, T: Value<'ctx> + Default> PlainIO<'ctx> for Input<'ctx, T> {
+    fn external(ctx: ContextRef<'ctx>) -> Self {
+        ctx.external_input()
     }
 }
 
@@ -424,5 +480,11 @@ impl<'ctx, T: Value<'ctx>> Output<'ctx, T> {
 impl<'ctx, T: Value<'ctx>> IO<'ctx> for Output<'ctx, T> {
     fn visit_io(&mut self, visitor: IOVisitor<'_, 'ctx>) {
         self.ir.visit_io(visitor)
+    }
+}
+
+impl<'ctx, T: Value<'ctx> + Default> PlainIO<'ctx> for Output<'ctx, T> {
+    fn external(ctx: ContextRef<'ctx>) -> Self {
+        ctx.external_output()
     }
 }

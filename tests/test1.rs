@@ -37,7 +37,7 @@ macro_rules! assert_formats_to {
 #[test]
 fn test_structs() {
     Context::with(|ctx| {
-        named!(let (top, ()) = ctx.top_module(()));
+        named!(let (top, ()) = ctx.top_module());
         named!(let _wire: Wire<Struct> = top.wire());
         assert_formats_to!(
             top,
@@ -411,7 +411,7 @@ Val {
 #[test]
 fn test1() {
     Context::with(|ctx: ContextRef<'_>| {
-        named!(let (top, ()) = ctx.top_module(()));
+        named!(let (top, ()) = ctx.top_module());
         assert_formats_to!(
             top,
             r#"
@@ -504,7 +504,7 @@ IrModule {
 #[test]
 fn test_submodule() {
     Context::with(|ctx: ContextRef<'_>| {
-        named!(let (top, ()) = ctx.top_module(()));
+        named!(let (top, ()) = ctx.top_module());
         assert_formats_to!(
             top,
             r#"
@@ -779,7 +779,7 @@ IrModule {
 #[test]
 fn test_sub_submodule() {
     Context::with(|ctx| {
-        named!(let (top, ()) = ctx.top_module(()));
+        named!(let (top, ()) = ctx.top_module());
         assert_formats_to!(
             top,
             r#"

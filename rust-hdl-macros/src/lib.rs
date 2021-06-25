@@ -314,6 +314,50 @@ fn derive_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     })
 }
 
+fn derive_plain_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
+    let rust_hdl_attributes = RustHdlAttributes::parse(&ast.attrs)?;
+    let crate_path = rust_hdl_attributes.get_crate_path();
+    let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
+    let (generics, ctx_lifetime) = get_or_add_ctx_lifetime(ast.generics.clone());
+    let name = ast.ident;
+    let data_struct = match ast.data {
+        Data::Struct(v) => v,
+        _ => {
+            return Err(Error::new_spanned(
+                name,
+                "#[derive(PlainIO)] only valid on structs",
+            ))
+        }
+    };
+    let impl_generics = generics.split_for_impl().0;
+    let external_body = match data_struct.fields {
+        Fields::Named(fields) => {
+            let mut external_fields = Vec::new();
+            for field in fields.named {
+                let name = field.ident.as_ref().unwrap();
+                external_fields.push(quote! {#name: ctx.external()});
+            }
+            quote! { Self { #(#external_fields,)* } }
+        }
+        Fields::Unnamed(fields) => {
+            let mut external_fields = Vec::new();
+            for _ in &fields.unnamed {
+                external_fields.push(quote! {ctx.external()});
+            }
+            quote! { Self(#(#external_fields,)*) }
+        }
+        Fields::Unit => quote! { Self },
+    };
+    Ok(quote! {
+        #[automatically_derived]
+        impl #impl_generics #crate_path::io::PlainIO<#ctx_lifetime> for #name #ty_generics #where_clause {
+            fn external(ctx: #crate_path::context::ContextRef<'ctx>) -> Self {
+                #external_body
+            }
+        }
+    })
+}
+
 #[proc_macro_derive(Value, attributes(rust_hdl))]
 pub fn derive_value(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
@@ -328,6 +372,16 @@ pub fn derive_value(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn derive_io(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     match derive_io_impl(ast) {
+        Ok(retval) => retval,
+        Err(e) => e.into_compile_error(),
+    }
+    .into()
+}
+
+#[proc_macro_derive(PlainIO, attributes(rust_hdl))]
+pub fn derive_plain_io(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
+    match derive_plain_io_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),
     }

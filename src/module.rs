@@ -4,7 +4,7 @@
 use crate::{
     clocking::ClockDomain,
     context::{Context, ContextRef},
-    io::{Output, IO},
+    io::{Output, PlainIO, IO},
     ir::module::{IrModule, IrModuleRef},
     logic::{Reg, Wire},
     values::{Val, Value, ValueType},
@@ -45,7 +45,13 @@ impl<'ctx> fmt::Debug for Module<'ctx> {
 }
 
 impl<'ctx> Context<'ctx> {
-    pub fn top_module<'a, N: Into<Cow<'a, str>>, T: IO<'ctx>>(
+    pub fn top_module<'a, N: Into<Cow<'a, str>>, T: PlainIO<'ctx>>(
+        &'ctx self,
+        name: N,
+    ) -> (Module<'ctx>, T) {
+        self.top_module_with_io(name.into(), self.external())
+    }
+    pub fn top_module_with_io<'a, N: Into<Cow<'a, str>>, T: IO<'ctx>>(
         &'ctx self,
         name: N,
         mut io: T,

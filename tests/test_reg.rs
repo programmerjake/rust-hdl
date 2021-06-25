@@ -10,7 +10,7 @@ macro_rules! assert_formats_to {
     }};
 }
 
-#[derive(IO)]
+#[derive(IO, PlainIO)]
 struct TopIO<'ctx> {
     cd: Input<'ctx, ClockDomain>,
     output: Output<'ctx, bool>,
@@ -20,12 +20,7 @@ struct TopIO<'ctx> {
 #[test]
 fn test_reg() {
     Context::with(|ctx: ContextRef| {
-        let io: TopIO = TopIO {
-            cd: ctx.external_input(),
-            output: ctx.external_output(),
-            input: ctx.external_input(),
-        };
-        named!(let (top, io) = ctx.top_module(io));
+        named!(let (top, io): (_, TopIO) = ctx.top_module());
         named!(let reg = top.reg(io.cd.get(), bool::default()));
         assert_formats_to!(
             top,
