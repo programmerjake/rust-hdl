@@ -6,7 +6,7 @@ use crate::{
     fmt_utils::{debug_format_option_as_value_or_invalid, debug_format_option_as_value_or_none},
     ir::{
         logic::{IrWire, IrWireRef},
-        module::IrModuleRef,
+        module::{IrModule, IrModuleRef},
         symbols::IrSymbol,
         types::IrValueTypeRef,
         values::{IrValue, IrValueRef},
@@ -62,31 +62,43 @@ impl<'ctx> IrModuleInput<'ctx> {
 }
 
 #[derive(Debug, Clone)]
-pub struct IrInput<'ctx> {
-    value: IrValueRef<'ctx>,
+pub enum IrInput<'ctx> {
+    Input { value: IrValueRef<'ctx> },
+    ExternalInput { value_type: IrValueTypeRef<'ctx> },
 }
 
 impl<'ctx> From<IrValueRef<'ctx>> for IrInput<'ctx> {
     fn from(value: IrValueRef<'ctx>) -> Self {
-        Self { value }
+        Self::Input { value }
     }
 }
 
 impl<'ctx> IrInput<'ctx> {
-    pub fn get_wrapped_value(&self) -> IrValueRef<'ctx> {
-        self.value
-    }
-    #[track_caller]
-    pub fn assert_is_module_input(&self) {
-        if let IrValue::Input(_) = *self.value {
+    pub fn get_wrapped_value(&self) -> Option<IrValueRef<'ctx>> {
+        if let Self::Input { value } = *self {
+            Some(value)
         } else {
-            panic!("can't read from a module's input outside that module")
+            None
         }
+    }
+    pub fn value_type(&self, ctx: ContextRef<'ctx>) -> IrValueTypeRef<'ctx> {
+        match *self {
+            IrInput::Input { value } => value.get_type(ctx),
+            IrInput::ExternalInput { value_type } => value_type,
+        }
+    }
+    pub fn external(ctx: ContextRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
+        let _ = ctx;
+        Self::ExternalInput { value_type }
     }
     #[track_caller]
     pub fn get(&self) -> IrValueRef<'ctx> {
-        self.assert_is_module_input();
-        self.value
+        if let IrInput::Input { value } = *self {
+            if let IrValue::Input(_) = *value {
+                return value;
+            }
+        }
+        panic!("can't read from a module's input outside that module")
     }
     /// returns the write end (the value from the external module)
     pub(crate) fn map_to_module_internal(
@@ -95,19 +107,32 @@ impl<'ctx> IrInput<'ctx> {
         module: IrModuleRef<'ctx>,
         index: usize,
         path: &str,
-    ) -> IrValueRef<'ctx> {
+    ) -> IrInput<'ctx> {
         let module_input = IrModuleInput {
             module,
             index,
             path: module.symbol_table().insert_uniquified(module.ctx(), path),
         };
-        assert_eq!(self.value.get_type(module.ctx()), module_input.value_type());
-        if let Some(owning_module) = self.value.owning_module() {
-            assert_eq!(Some(owning_module), parent_module);
+        assert_eq!(self.value_type(module.ctx()), module_input.value_type());
+        match (&*self, parent_module) {
+            (IrInput::Input { value }, Some(parent_module)) => {
+                if let Some(owning_module) = value.owning_module() {
+                    assert_eq!(owning_module, parent_module);
+                }
+            }
+            (IrInput::Input { .. }, None) => {
+                panic!("input to top module must be an external input")
+            }
+            (IrInput::ExternalInput { .. }, Some(_)) => {
+                panic!("input to submodule must not be an external input")
+            }
+            (IrInput::ExternalInput { .. }, None) => {}
         }
         mem::replace(
-            &mut self.value,
-            IrValue::Input(module_input).intern(module.ctx()),
+            self,
+            IrInput::Input {
+                value: IrValue::Input(module_input).intern(module.ctx()),
+            },
         )
     }
 }
@@ -135,8 +160,29 @@ impl fmt::Debug for IrOutputWriteData<'_> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum ModuleOrContext<'ctx> {
+    Module(IrModuleRef<'ctx>),
+    Context(ContextRef<'ctx>),
+}
+
+impl<'ctx> ModuleOrContext<'ctx> {
+    pub fn ctx(self) -> ContextRef<'ctx> {
+        match self {
+            ModuleOrContext::Module(v) => v.ctx(),
+            ModuleOrContext::Context(v) => v,
+        }
+    }
+    pub fn module(self) -> Option<IrModuleRef<'ctx>> {
+        match self {
+            ModuleOrContext::Module(v) => Some(v),
+            ModuleOrContext::Context(_) => None,
+        }
+    }
+}
+
 pub struct IrOutputReadData<'ctx> {
-    module: IrModuleRef<'ctx>,
+    module_or_context: ModuleOrContext<'ctx>,
     value_type: IrValueTypeRef<'ctx>,
     write_data: OnceCell<IrOutputWriteData<'ctx>>,
 }
@@ -144,7 +190,10 @@ pub struct IrOutputReadData<'ctx> {
 impl fmt::Debug for IrOutputReadData<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IrOutputReadData")
-            .field("module", &self.module().path())
+            .field(
+                "module",
+                debug_format_option_as_value_or_none(self.module().map(IrModule::path).as_ref()),
+            )
             .field("value_type", &self.value_type())
             .field(
                 "write_data",
@@ -161,11 +210,18 @@ impl<'ctx> IrOutputReadData<'ctx> {
     pub fn value_type(&self) -> IrValueTypeRef<'ctx> {
         self.value_type
     }
-    pub fn module(&self) -> IrModuleRef<'ctx> {
-        self.module
+    pub fn module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.module_or_context.module()
+    }
+    pub fn ctx(&self) -> ContextRef<'ctx> {
+        self.module_or_context.ctx()
     }
     pub fn read(&'ctx self) -> IrValueRef<'ctx> {
-        IrValue::OutputRead(IrOutputRead(self)).intern(self.module().ctx())
+        IrValue::OutputRead(IrOutputRead(self)).intern(
+            self.module()
+                .expect("can't read from an external output")
+                .ctx(),
+        )
     }
 }
 
@@ -180,7 +236,14 @@ impl<'ctx> IrOutputRead<'ctx> {
     }
     pub fn new(module: IrModuleRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
         IrOutputRead(module.ctx().output_read_data_arena.alloc(IrOutputReadData {
-            module,
+            module_or_context: ModuleOrContext::Module(module),
+            value_type,
+            write_data: OnceCell::new(),
+        }))
+    }
+    pub fn external(ctx: ContextRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
+        IrOutputRead(ctx.output_read_data_arena.alloc(IrOutputReadData {
+            module_or_context: ModuleOrContext::Context(ctx),
             value_type,
             write_data: OnceCell::new(),
         }))
@@ -211,6 +274,9 @@ impl<'ctx> IrOutput<'ctx> {
     pub fn new(module: IrModuleRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
         IrOutput::ReadEnd(IrOutputRead::new(module, value_type))
     }
+    pub fn external(ctx: ContextRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
+        IrOutput::ReadEnd(IrOutputRead::external(ctx, value_type))
+    }
     #[track_caller]
     pub fn assign(self, value: IrValueRef<'ctx>) {
         match self {
@@ -229,7 +295,7 @@ impl<'ctx> IrOutput<'ctx> {
     pub fn ctx(&self) -> ContextRef<'ctx> {
         match self {
             IrOutput::WriteEnd(v) => v.module().ctx(),
-            IrOutput::ReadEnd(v) => v.0.module.ctx(),
+            IrOutput::ReadEnd(v) => v.0.ctx(),
         }
     }
     pub fn value_type(&self) -> IrValueTypeRef<'ctx> {
@@ -241,7 +307,7 @@ impl<'ctx> IrOutput<'ctx> {
     /// returns the write end (the wire in the internal module)
     pub(crate) fn map_to_module_internal(
         &mut self,
-        parent_module: IrModuleRef<'ctx>,
+        parent_module: Option<IrModuleRef<'ctx>>,
         module: IrModuleRef<'ctx>,
         index: usize,
         path: &str,
@@ -257,13 +323,20 @@ impl<'ctx> IrOutput<'ctx> {
                 // through parent_module to module, adapt
                 // by creating a IrOutputRead in parent_module and
                 // writing it to the wire there.
-                assert_eq!(parent_module, write_end.module());
-                let read_end = IrOutputRead::new(parent_module, write_end.value_type());
+                assert_eq!(parent_module, Some(write_end.module()));
+                let read_end = IrOutputRead::new(parent_module.unwrap(), write_end.value_type());
                 write_end.assign(read_end.read());
                 read_end
             }
         };
-        assert_eq!(read_end.0.module(), parent_module);
+        match (read_end.0.module(), parent_module) {
+            (Some(read_end_module), Some(parent_module)) => {
+                assert_eq!(read_end_module, parent_module);
+            }
+            (None, Some(_)) => panic!("an external output can only be the output of a top module"),
+            (Some(_), None) => panic!("the output(s) of a top module must be external outputs"),
+            (None, None) => {}
+        }
         let was_empty = read_end
             .0
             .write_data

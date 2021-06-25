@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::ContextRef,
+    context::{Context, ContextRef},
     ir::io::{InOrOut, IrIOCallback, IrIOMutRef, IrInput, IrOutput},
     module::{AsIrModule, Module},
     values::{integer::IntShapeTrait, Int, Val, Value, ValueType},
@@ -325,7 +325,40 @@ impl<'ctx, T: Value<'ctx>> From<Val<'ctx, T>> for Input<'ctx, T> {
     }
 }
 
+impl<'ctx> Context<'ctx> {
+    pub fn external_input_with_type<T: Value<'ctx>>(
+        &'ctx self,
+        value_type: ValueType<'ctx, T>,
+    ) -> Input<'ctx, T> {
+        Input::external_with_type(self, value_type)
+    }
+    pub fn external_input<T: Value<'ctx> + Default>(&'ctx self) -> Input<'ctx, T> {
+        Input::external(self)
+    }
+    pub fn external_output_with_type<T: Value<'ctx>>(
+        &'ctx self,
+        value_type: ValueType<'ctx, T>,
+    ) -> Output<'ctx, T> {
+        Output::external_with_type(self, value_type)
+    }
+    pub fn external_output<T: Value<'ctx> + Default>(&'ctx self) -> Output<'ctx, T> {
+        Output::external(self)
+    }
+}
+
 impl<'ctx, T: Value<'ctx>> Input<'ctx, T> {
+    pub fn external_with_type(ctx: ContextRef<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
+        Self {
+            ir: IrInput::external(ctx, value_type.ir()),
+            value_type,
+        }
+    }
+    pub fn external(ctx: ContextRef<'ctx>) -> Self
+    where
+        T: Default,
+    {
+        Self::external_with_type(ctx, T::default_value_type(ctx))
+    }
     pub fn get(&self) -> Val<'ctx, T> {
         Val::from_ir_and_type_unchecked(self.ir.get(), self.value_type)
     }
@@ -360,6 +393,18 @@ impl<'ctx, T: Value<'ctx>> Output<'ctx, T> {
     {
         let module = module.as_ir_module();
         Self::with_type(module, Value::default_value_type(module.ctx()))
+    }
+    pub fn external_with_type(ctx: ContextRef<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
+        Output {
+            ir: IrOutput::external(ctx, value_type.ir()),
+            _phantom: PhantomData,
+        }
+    }
+    pub fn external(ctx: ContextRef<'ctx>) -> Self
+    where
+        T: Default,
+    {
+        Self::external_with_type(ctx, Value::default_value_type(ctx))
     }
     #[track_caller]
     pub fn assign(self, assigned_value: Val<'ctx, T>) {

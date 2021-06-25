@@ -209,9 +209,11 @@ IrModule {
     ],
     interface_write_ends: [
         Input(
-            LiteralBits {
-                bit_count: 1,
-                value: 0x0,
+            Input {
+                value: LiteralBits {
+                    bit_count: 1,
+                    value: 0x0,
+                },
             },
         ),
         Output(
@@ -576,9 +578,11 @@ IrModule {
     ],
     interface_write_ends: [
         Input(
-            LiteralBits {
-                bit_count: 1,
-                value: 0x1,
+            Input {
+                value: LiteralBits {
+                    bit_count: 1,
+                    value: 0x1,
+                },
             },
         ),
         Output(
@@ -592,17 +596,19 @@ IrModule {
             },
         ),
         Input(
-            LiteralArray {
-                element_type: BitVector {
-                    bit_count: 8,
-                },
-                owning_module: None,
-                elements: [
-                    LiteralBits {
+            Input {
+                value: LiteralArray {
+                    element_type: BitVector {
                         bit_count: 8,
-                        value: 0x23,
                     },
-                ],
+                    owning_module: None,
+                    elements: [
+                        LiteralBits {
+                            bit_count: 8,
+                            value: 0x23,
+                        },
+                    ],
+                },
             },
         ),
     ],
@@ -624,7 +630,7 @@ IrModule {
             first_input,
             r#"
 Input {
-    ir: IrInput {
+    ir: Input {
         value: IrModuleInput {
             module: "top"."submodule",
             index: 0,
@@ -662,7 +668,7 @@ Output {
             last_input,
             r#"
 Input {
-    ir: IrInput {
+    ir: Input {
         value: IrModuleInput {
             module: "top"."submodule",
             index: 2,
@@ -714,9 +720,11 @@ IrModule {
     ],
     interface_write_ends: [
         Input(
-            LiteralBits {
-                bit_count: 1,
-                value: 0x1,
+            Input {
+                value: LiteralBits {
+                    bit_count: 1,
+                    value: 0x1,
+                },
             },
         ),
         Output(
@@ -733,17 +741,19 @@ IrModule {
             },
         ),
         Input(
-            LiteralArray {
-                element_type: BitVector {
-                    bit_count: 8,
-                },
-                owning_module: None,
-                elements: [
-                    LiteralBits {
+            Input {
+                value: LiteralArray {
+                    element_type: BitVector {
                         bit_count: 8,
-                        value: 0x23,
                     },
-                ],
+                    owning_module: None,
+                    elements: [
+                        LiteralBits {
+                            bit_count: 8,
+                            value: 0x23,
+                        },
+                    ],
+                },
             },
         ),
     ],
@@ -831,9 +841,11 @@ IrModule {
     ],
     interface_write_ends: [
         Input(
-            LiteralBits {
-                bit_count: 1,
-                value: 0x1,
+            Input {
+                value: LiteralBits {
+                    bit_count: 1,
+                    value: 0x1,
+                },
             },
         ),
         Output(
@@ -894,9 +906,11 @@ IrModule {
     ],
     interface_write_ends: [
         Input(
-            LiteralBits {
-                bit_count: 1,
-                value: 0x1,
+            Input {
+                value: LiteralBits {
+                    bit_count: 1,
+                    value: 0x1,
+                },
             },
         ),
         Output(
@@ -965,12 +979,14 @@ IrModule {
     ],
     interface_write_ends: [
         Input(
-            IrModuleInput {
-                module: "top"."submodule",
-                index: 0,
-                path: "io.0",
-                value_type: BitVector {
-                    bit_count: 1,
+            Input {
+                value: IrModuleInput {
+                    module: "top"."submodule",
+                    index: 0,
+                    path: "io.0",
+                    value_type: BitVector {
+                        bit_count: 1,
+                    },
                 },
             },
         ),
@@ -1019,12 +1035,14 @@ IrModule {
     ],
     interface_write_ends: [
         Input(
-            IrModuleInput {
-                module: "top"."submodule",
-                index: 0,
-                path: "io.0",
-                value_type: BitVector {
-                    bit_count: 1,
+            Input {
+                value: IrModuleInput {
+                    module: "top"."submodule",
+                    index: 0,
+                    path: "io.0",
+                    value_type: BitVector {
+                        bit_count: 1,
+                    },
                 },
             },
         ),

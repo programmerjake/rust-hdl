@@ -10,11 +10,23 @@ macro_rules! assert_formats_to {
     }};
 }
 
+#[derive(IO)]
+struct TopIO<'ctx> {
+    cd: Input<'ctx, ClockDomain>,
+    output: Output<'ctx, bool>,
+    input: Input<'ctx, bool>,
+}
+
 #[test]
 fn test_reg() {
     Context::with(|ctx: ContextRef| {
-        named!(let (top, cd) = ctx.top_module(ClockDomain::default().get_input(ctx)));
-        named!(let reg = top.reg(cd.get(), UInt32::default()));
+        let io: TopIO = TopIO {
+            cd: ctx.external_input(),
+            output: ctx.external_output(),
+            input: ctx.external_input(),
+        };
+        named!(let (top, io) = ctx.top_module(io));
+        named!(let reg = top.reg(io.cd.get(), bool::default()));
         assert_formats_to!(
             top,
             r#"
@@ -40,11 +52,21 @@ IrModule {
                 ],
             },
         ),
+        Output(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+        Input(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
     ],
     interface_write_ends: [
         Input(
-            LiteralStruct {
-                ty: IrStructType {
+            ExternalInput {
+                value_type: IrStructType {
                     fields: [
                         IrStructFieldType {
                             name: "clk",
@@ -60,38 +82,46 @@ IrModule {
                         },
                     ],
                 },
-                owning_module: None,
-                fields: [
-                    LiteralStructField {
-                        name: "clk",
-                        value: LiteralBits {
-                            bit_count: 1,
-                            value: 0x0,
-                        },
-                    },
-                    LiteralStructField {
-                        name: "rst",
-                        value: LiteralBits {
-                            bit_count: 1,
-                            value: 0x0,
-                        },
-                    },
-                ],
+            },
+        ),
+        Output(
+            IrWire {
+                path: "top"."io.output",
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+                assigned_value: <None>,
+                ..
+            },
+        ),
+        Input(
+            ExternalInput {
+                value_type: BitVector {
+                    bit_count: 1,
+                },
             },
         ),
     ],
-    wires: {},
+    wires: {
+        "io.output": IrWire {
+            value_type: BitVector {
+                bit_count: 1,
+            },
+            assigned_value: <None>,
+            ..
+        },
+    },
     registers: {
         "reg": IrReg {
             value_type: BitVector {
-                bit_count: 32,
+                bit_count: 1,
             },
             data_in: <None>,
             clk: ExtractStructField {
                 struct_value: IrModuleInput {
                     module: "top",
                     index: 0,
-                    path: "io",
+                    path: "io.cd",
                     value_type: IrStructType {
                         fields: [
                             IrStructFieldType {
@@ -122,7 +152,7 @@ IrModule {
                 struct_value: IrModuleInput {
                     module: "top",
                     index: 0,
-                    path: "io",
+                    path: "io.cd",
                     value_type: IrStructType {
                         fields: [
                             IrStructFieldType {
@@ -150,7 +180,7 @@ IrModule {
                 ..
             },
             reset_value: LiteralBits {
-                bit_count: 32,
+                bit_count: 1,
                 value: 0x0,
             },
             ..
@@ -166,14 +196,14 @@ Reg {
     ir: IrReg {
         path: "top"."reg",
         value_type: BitVector {
-            bit_count: 32,
+            bit_count: 1,
         },
         data_in: <None>,
         clk: ExtractStructField {
             struct_value: IrModuleInput {
                 module: "top",
                 index: 0,
-                path: "io",
+                path: "io.cd",
                 value_type: IrStructType {
                     fields: [
                         IrStructFieldType {
@@ -204,7 +234,7 @@ Reg {
             struct_value: IrModuleInput {
                 module: "top",
                 index: 0,
-                path: "io",
+                path: "io.cd",
                 value_type: IrStructType {
                     fields: [
                         IrStructFieldType {
@@ -232,7 +262,7 @@ Reg {
             ..
         },
         reset_value: LiteralBits {
-            bit_count: 32,
+            bit_count: 1,
             value: 0x0,
         },
         ..
@@ -241,7 +271,8 @@ Reg {
 }"#
         );
         let reg_output = reg.output();
-        reg.assign_data_in(UInt32::wrapping_new(0x1234).get_value(ctx));
+        io.output.assign(reg_output);
+        reg.assign_data_in(io.input.get());
         assert_formats_to!(
             reg_output,
             r#"
@@ -249,13 +280,13 @@ Val {
     ir: IrRegOutput {
         path: "top"."reg",
         value_type: BitVector {
-            bit_count: 32,
+            bit_count: 1,
         },
         ..
     },
     value_type: ValueType(
         BitVector {
-            bit_count: 32,
+            bit_count: 1,
         },
     ),
 }"#
@@ -285,11 +316,21 @@ IrModule {
                 ],
             },
         ),
+        Output(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+        Input(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
     ],
     interface_write_ends: [
         Input(
-            LiteralStruct {
-                ty: IrStructType {
+            ExternalInput {
+                value_type: IrStructType {
                     fields: [
                         IrStructFieldType {
                             name: "clk",
@@ -305,41 +346,65 @@ IrModule {
                         },
                     ],
                 },
-                owning_module: None,
-                fields: [
-                    LiteralStructField {
-                        name: "clk",
-                        value: LiteralBits {
-                            bit_count: 1,
-                            value: 0x0,
-                        },
+            },
+        ),
+        Output(
+            IrWire {
+                path: "top"."io.output",
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+                assigned_value: IrRegOutput {
+                    path: "top"."reg",
+                    value_type: BitVector {
+                        bit_count: 1,
                     },
-                    LiteralStructField {
-                        name: "rst",
-                        value: LiteralBits {
-                            bit_count: 1,
-                            value: 0x0,
-                        },
-                    },
-                ],
+                    ..
+                },
+                ..
+            },
+        ),
+        Input(
+            ExternalInput {
+                value_type: BitVector {
+                    bit_count: 1,
+                },
             },
         ),
     ],
-    wires: {},
+    wires: {
+        "io.output": IrWire {
+            value_type: BitVector {
+                bit_count: 1,
+            },
+            assigned_value: IrRegOutput {
+                path: "top"."reg",
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+                ..
+            },
+            ..
+        },
+    },
     registers: {
         "reg": IrReg {
             value_type: BitVector {
-                bit_count: 32,
+                bit_count: 1,
             },
-            data_in: LiteralBits {
-                bit_count: 32,
-                value: 0x1234,
+            data_in: IrModuleInput {
+                module: "top",
+                index: 2,
+                path: "io.input",
+                value_type: BitVector {
+                    bit_count: 1,
+                },
             },
             clk: ExtractStructField {
                 struct_value: IrModuleInput {
                     module: "top",
                     index: 0,
-                    path: "io",
+                    path: "io.cd",
                     value_type: IrStructType {
                         fields: [
                             IrStructFieldType {
@@ -370,7 +435,7 @@ IrModule {
                 struct_value: IrModuleInput {
                     module: "top",
                     index: 0,
-                    path: "io",
+                    path: "io.cd",
                     value_type: IrStructType {
                         fields: [
                             IrStructFieldType {
@@ -398,7 +463,7 @@ IrModule {
                 ..
             },
             reset_value: LiteralBits {
-                bit_count: 32,
+                bit_count: 1,
                 value: 0x0,
             },
             ..

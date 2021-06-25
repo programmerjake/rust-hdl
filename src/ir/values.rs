@@ -326,7 +326,7 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::LiteralStruct(s) => s.owning_module(),
             IrValue::WireRead(wire) => Some(wire.0.module()),
             IrValue::Input(input) => Some(input.module()),
-            IrValue::OutputRead(output) => Some(output.0.module()),
+            IrValue::OutputRead(output) => output.0.module(),
             IrValue::ExtractStructField(v) => v.struct_value().owning_module(),
             IrValue::RegOutput(v) => Some(v.0.module()),
         }
