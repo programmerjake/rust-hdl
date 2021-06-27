@@ -10,6 +10,7 @@ use crate::{
         logic::{IrRegRef, IrWireRef},
         symbols::{IrSymbol, IrSymbolTable},
         types::IrValueTypeRef,
+        SourceLocation,
     },
 };
 use alloc::{borrow::Cow, vec::Vec};
@@ -24,6 +25,7 @@ use once_cell::unsync::OnceCell;
 
 pub struct IrModule<'ctx> {
     ctx: ContextRef<'ctx>,
+    source_location: Cell<SourceLocation<'ctx>>,
     parent: Option<IrModuleRef<'ctx>>,
     /// name is registered in parent_symbol_table
     name: IrSymbol<'ctx>,
@@ -83,6 +85,7 @@ impl<'ctx> IrModule<'ctx> {
     }
     pub fn new_without_interface(
         ctx: ContextRef<'ctx>,
+        source_location: SourceLocation<'ctx>,
         name: Cow<'_, str>,
         parent: Option<IrModuleRef<'ctx>>,
         interface_types: Vec<InOrOut<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>>,
@@ -94,6 +97,7 @@ impl<'ctx> IrModule<'ctx> {
         let name = parent_symbol_table.insert_uniquified(ctx, name);
         let module = ctx.modules_arena.alloc(IrModule {
             ctx,
+            source_location: Cell::new(source_location),
             parent,
             name,
             symbol_table: IrSymbolTable::default(),
@@ -112,12 +116,14 @@ impl<'ctx> IrModule<'ctx> {
         E,
     >(
         ctx: ContextRef<'ctx>,
+        source_location: SourceLocation<'ctx>,
         name: Cow<'_, str>,
         before_map_interface: F,
         external_interface: &mut T,
     ) -> Result<IrModuleRef<'ctx>, E> {
         let module = Self::new_without_interface(
             ctx,
+            source_location,
             name,
             None,
             Self::extract_interface_types(ctx, external_interface),
@@ -128,11 +134,17 @@ impl<'ctx> IrModule<'ctx> {
     }
     pub fn new_top_module<T: IO<'ctx> + ?Sized>(
         ctx: ContextRef<'ctx>,
+        source_location: SourceLocation<'ctx>,
         name: Cow<'_, str>,
         external_interface: &mut T,
     ) -> IrModuleRef<'ctx> {
-        let retval: Result<_, Infallible> =
-            Self::try_new_top_module(ctx, name, |_, _| Ok(()), external_interface);
+        let retval: Result<_, Infallible> = Self::try_new_top_module(
+            ctx,
+            source_location,
+            name,
+            |_, _| Ok(()),
+            external_interface,
+        );
         match retval {
             Ok(module) => module,
             Err(v) => match v {},
@@ -144,12 +156,14 @@ impl<'ctx> IrModule<'ctx> {
         E,
     >(
         parent: IrModuleRef<'ctx>,
+        source_location: SourceLocation<'ctx>,
         name: Cow<'_, str>,
         before_map_interface: F,
         external_interface: &mut T,
     ) -> Result<IrModuleRef<'ctx>, E> {
         let module = Self::new_without_interface(
             parent.ctx(),
+            source_location,
             name,
             Some(parent),
             Self::extract_interface_types(parent.ctx(), external_interface),
@@ -160,11 +174,17 @@ impl<'ctx> IrModule<'ctx> {
     }
     pub fn new_submodule<T: IO<'ctx> + ?Sized>(
         parent: IrModuleRef<'ctx>,
+        source_location: SourceLocation<'ctx>,
         name: Cow<'_, str>,
         external_interface: &mut T,
     ) -> IrModuleRef<'ctx> {
-        let retval: Result<_, Infallible> =
-            Self::try_new_submodule(parent, name, |_, _| Ok(()), external_interface);
+        let retval: Result<_, Infallible> = Self::try_new_submodule(
+            parent,
+            source_location,
+            name,
+            |_, _| Ok(()),
+            external_interface,
+        );
         match retval {
             Ok(module) => module,
             Err(v) => match v {},
@@ -215,6 +235,12 @@ impl<'ctx> IrModule<'ctx> {
     pub fn symbol_table(&self) -> &IrSymbolTable<'ctx> {
         &self.symbol_table
     }
+    pub fn source_location(&self) -> SourceLocation<'ctx> {
+        self.source_location.get()
+    }
+    pub fn set_source_location(&self, source_location: SourceLocation<'ctx>) {
+        self.source_location.set(source_location);
+    }
     /// name is registered in parent_symbol_table
     pub fn name(&self) -> IrSymbol<'ctx> {
         self.name
@@ -258,6 +284,7 @@ impl<'ctx> fmt::Debug for IrModule<'ctx> {
         }
         f.debug_struct("IrModule")
             .field("path", &self.path())
+            .field("source_location", &self.source_location())
             .field(
                 "parent",
                 debug_format_option_as_value_or_none(self.parent().map(IrModule::path).as_ref()),

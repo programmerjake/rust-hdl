@@ -9,10 +9,12 @@ use crate::{
         symbols::IrSymbol,
         types::{IrValueType, IrValueTypeRef},
         values::{IrValue, IrValueRef},
+        SourceLocation,
     },
 };
 use alloc::borrow::Cow;
 use core::{
+    cell::Cell,
     fmt,
     hash::{Hash, Hasher},
     ptr,
@@ -21,6 +23,7 @@ use once_cell::unsync::OnceCell;
 
 pub struct IrWire<'ctx> {
     module: IrModuleRef<'ctx>,
+    source_location: Cell<SourceLocation<'ctx>>,
     name: IrSymbol<'ctx>,
     value_type: IrValueTypeRef<'ctx>,
     assigned_value: OnceCell<IrValueRef<'ctx>>,
@@ -32,6 +35,7 @@ impl fmt::Debug for IrWire<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IrWire")
             .field("path", &self.path())
+            .field("source_location", &self.source_location())
             .field("value_type", &self.value_type())
             .field(
                 "assigned_value",
@@ -53,6 +57,12 @@ impl<'ctx> IrWire<'ctx> {
     pub fn module(&self) -> IrModuleRef<'ctx> {
         self.module
     }
+    pub fn source_location(&self) -> SourceLocation<'ctx> {
+        self.source_location.get()
+    }
+    pub fn set_source_location(&self, source_location: SourceLocation<'ctx>) {
+        self.source_location.set(source_location);
+    }
     pub fn path(&self) -> IrWirePath<'_, 'ctx> {
         IrWirePath(self)
     }
@@ -64,11 +74,13 @@ impl<'ctx> IrWire<'ctx> {
     }
     pub fn new(
         module: IrModuleRef<'ctx>,
+        source_location: SourceLocation<'ctx>,
         name: Cow<'_, str>,
         value_type: IrValueTypeRef<'ctx>,
     ) -> IrWireRef<'ctx> {
         let retval = module.ctx().wires_arena.alloc(Self {
             module,
+            source_location: Cell::new(source_location),
             name: module.symbol_table().insert_uniquified(module.ctx(), name),
             value_type,
             assigned_value: OnceCell::new(),
@@ -79,6 +91,7 @@ impl<'ctx> IrWire<'ctx> {
     pub fn read(&'ctx self) -> IrValueRef<'ctx> {
         IrValue::WireRead(IrWireRead(self)).intern(self.module().ctx())
     }
+    #[track_caller]
     pub fn assign(&self, value: IrValueRef<'ctx>) {
         let value_type = value.get_type(self.module.ctx());
         if let Some(owning_module) = value.owning_module() {
@@ -94,6 +107,7 @@ impl<'ctx> IrWire<'ctx> {
         impl fmt::Debug for FmtWithoutName<'_, '_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_struct("IrWire")
+                    .field("source_location", &self.0.source_location())
                     .field("value_type", &self.0.value_type())
                     .field(
                         "assigned_value",
@@ -148,6 +162,7 @@ impl fmt::Debug for IrRegPath<'_, '_> {
 
 pub struct IrReg<'ctx> {
     module: IrModuleRef<'ctx>,
+    source_location: Cell<SourceLocation<'ctx>>,
     name: IrSymbol<'ctx>,
     value_type: IrValueTypeRef<'ctx>,
     data_in: OnceCell<IrValueRef<'ctx>>,
@@ -158,6 +173,7 @@ pub struct IrReg<'ctx> {
 impl<'ctx> IrReg<'ctx> {
     pub fn new(
         module: IrModuleRef<'ctx>,
+        source_location: SourceLocation<'ctx>,
         name: Cow<'_, str>,
         value_type: IrValueTypeRef<'ctx>,
         clk: IrValueRef<'ctx>,
@@ -189,6 +205,7 @@ impl<'ctx> IrReg<'ctx> {
         }
         let retval = module.ctx().registers_arena.alloc(Self {
             module,
+            source_location: Cell::new(source_location),
             name: module.symbol_table().insert_uniquified(module.ctx(), name),
             value_type,
             data_in: OnceCell::new(),
@@ -200,6 +217,12 @@ impl<'ctx> IrReg<'ctx> {
     }
     pub fn module(&self) -> IrModuleRef<'ctx> {
         self.module
+    }
+    pub fn source_location(&self) -> SourceLocation<'ctx> {
+        self.source_location.get()
+    }
+    pub fn set_source_location(&self, source_location: SourceLocation<'ctx>) {
+        self.source_location.set(source_location);
     }
     pub fn path(&self) -> IrRegPath<'_, 'ctx> {
         IrRegPath(self)
@@ -213,6 +236,7 @@ impl<'ctx> IrReg<'ctx> {
     pub fn data_in(&self) -> Option<IrValueRef<'ctx>> {
         self.data_in.get().copied()
     }
+    #[track_caller]
     pub fn assign_data_in(&self, data_in: IrValueRef<'ctx>) {
         let value_type = data_in.get_type(self.module.ctx());
         if let Some(owning_module) = data_in.owning_module() {
@@ -243,6 +267,7 @@ impl<'ctx> IrReg<'ctx> {
         impl fmt::Debug for FmtWithoutName<'_, '_> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_struct("IrReg")
+                    .field("source_location", &self.0.source_location())
                     .field("value_type", &self.0.value_type())
                     .field(
                         "data_in",
@@ -268,6 +293,7 @@ impl fmt::Debug for IrReg<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IrReg")
             .field("path", &self.path())
+            .field("source_location", &self.source_location())
             .field("value_type", &self.value_type())
             .field(
                 "data_in",

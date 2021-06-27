@@ -15,5 +15,11 @@ typed-arena = { version="2.0.1", default-features=false }
 hashbrown = { version="0.11.2", default-features=false, features=["ahash", "raw"] }
 rust-hdl-macros = { version="=0.1.0", path="rust-hdl-macros" }
 
+[dev-dependencies]
+regex = "1.5.4"
+
 [workspace]
 members = [".", "rust-hdl-macros"]
+
+[features]
+std = []

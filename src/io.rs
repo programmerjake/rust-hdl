@@ -415,6 +415,7 @@ impl<'ctx, T: Value<'ctx>> Input<'ctx, T> {
     {
         Self::external_with_type(ctx, T::default_value_type(ctx))
     }
+    #[track_caller]
     pub fn get(&self) -> Val<'ctx, T> {
         Val::from_ir_and_type_unchecked(self.ir.get(), self.value_type)
     }

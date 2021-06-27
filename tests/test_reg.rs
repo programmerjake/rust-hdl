@@ -1,14 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 use rust_hdl::prelude::*;
-
-macro_rules! assert_formats_to {
-    ($value:expr, $expected:literal) => {{
-        let value = format!("\n{:#?}", $value);
-        let expected: &str = $expected;
-        assert!(value == expected, "doesn't match expected. value:{}", value);
-    }};
-}
+#[macro_use]
+mod common;
 
 #[derive(IO, PlainIO)]
 struct TopIO<'ctx> {
@@ -27,6 +21,7 @@ fn test_reg() {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-2, 9),
     parent: <None>,
     interface_types: [
         Input(
@@ -82,6 +77,7 @@ IrModule {
         Output(
             IrWire {
                 path: "top"."io.output",
+                source_location: SourceLocation($FILE, $LINE-2, 9),
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -99,6 +95,7 @@ IrModule {
     ],
     wires: {
         "io.output": IrWire {
+            source_location: SourceLocation($FILE, $LINE-2, 9),
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -108,6 +105,7 @@ IrModule {
     },
     registers: {
         "reg": IrReg {
+            source_location: SourceLocation($FILE, $LINE-1, 9),
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -190,6 +188,7 @@ IrModule {
 Reg {
     ir: IrReg {
         path: "top"."reg",
+        source_location: SourceLocation($FILE, $LINE-167, 9),
         value_type: BitVector {
             bit_count: 1,
         },
@@ -291,6 +290,7 @@ Val {
 Reg {
     ir: IrReg {
         path: "top"."reg",
+        source_location: SourceLocation($FILE, $LINE-269, 9),
         value_type: BitVector {
             bit_count: 1,
         },
@@ -378,6 +378,7 @@ Reg {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-359, 9),
     parent: <None>,
     interface_types: [
         Input(
@@ -433,6 +434,7 @@ IrModule {
         Output(
             IrWire {
                 path: "top"."io.output",
+                source_location: SourceLocation($FILE, $LINE-359, 9),
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -456,6 +458,7 @@ IrModule {
     ],
     wires: {
         "io.output": IrWire {
+            source_location: SourceLocation($FILE, $LINE-359, 9),
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -471,6 +474,7 @@ IrModule {
     },
     registers: {
         "reg": IrReg {
+            source_location: SourceLocation($FILE, $LINE-358, 9),
             value_type: BitVector {
                 bit_count: 1,
             },

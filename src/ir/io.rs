@@ -346,7 +346,12 @@ impl<'ctx> IrOutput<'ctx> {
             })
             .is_ok();
         assert!(was_empty);
-        let wire = IrWire::new(module, Cow::Borrowed(path), read_end.0.value_type());
+        let wire = IrWire::new(
+            module,
+            module.source_location(),
+            Cow::Borrowed(path),
+            read_end.0.value_type(),
+        );
         *self = IrOutput::WriteEnd(wire);
         wire
     }

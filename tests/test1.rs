@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 use rust_hdl::prelude::*;
+#[macro_use]
+mod common;
 
 #[derive(Value, IO, Default)]
 struct EmptyType;
@@ -26,14 +28,6 @@ struct TupleStruct(bool, Int8);
 #[derive(IO)]
 struct IOTupleStruct<'ctx>(Output<'ctx, Struct>);
 
-macro_rules! assert_formats_to {
-    ($value:expr, $expected:literal) => {{
-        let value = format!("\n{:#?}", $value);
-        let expected: &str = $expected;
-        assert!(value == expected, "doesn't match expected. value:{}", value);
-    }};
-}
-
 #[test]
 fn test_structs() {
     Context::with(|ctx| {
@@ -44,11 +38,13 @@ fn test_structs() {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-2, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {
         "_wire": IrWire {
+            source_location: SourceLocation($FILE, $LINE-1, 9),
             value_type: IrStructType {
                 fields: [
                     IrStructFieldType {
@@ -104,11 +100,13 @@ IrModule {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-64, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {
         "_wire": IrWire {
+            source_location: SourceLocation($FILE, $LINE-63, 9),
             value_type: IrStructType {
                 fields: [
                     IrStructFieldType {
@@ -157,6 +155,7 @@ IrModule {
             r#"
 IrModule {
     path: "top"."submodule",
+    source_location: SourceLocation($FILE, $LINE-56, 9),
     parent: "top",
     interface_types: [
         Input(
@@ -219,6 +218,7 @@ IrModule {
         Output(
             IrWire {
                 path: "top"."submodule"."io.b",
+                source_location: SourceLocation($FILE, $LINE-56, 9),
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -229,6 +229,7 @@ IrModule {
         Output(
             IrWire {
                 path: "top"."submodule"."io.d.0",
+                source_location: SourceLocation($FILE, $LINE-56, 9),
                 value_type: IrStructType {
                     fields: [
                         IrStructFieldType {
@@ -271,6 +272,7 @@ IrModule {
     ],
     wires: {
         "io.b": IrWire {
+            source_location: SourceLocation($FILE, $LINE-56, 9),
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -278,6 +280,7 @@ IrModule {
             ..
         },
         "io.d.0": IrWire {
+            source_location: SourceLocation($FILE, $LINE-56, 9),
             value_type: IrStructType {
                 fields: [
                     IrStructFieldType {
@@ -417,6 +420,7 @@ fn test1() {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-1, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
@@ -431,11 +435,13 @@ IrModule {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-16, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {
         "wire": IrWire {
+            source_location: SourceLocation($FILE, $LINE-1, 9),
             value_type: Array {
                 element: BitVector {
                     bit_count: 1,
@@ -456,11 +462,13 @@ IrModule {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-43, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
     wires: {
         "wire": IrWire {
+            source_location: SourceLocation($FILE, $LINE-28, 9),
             value_type: Array {
                 element: BitVector {
                     bit_count: 1,
@@ -510,6 +518,7 @@ fn test_submodule() {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-1, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
@@ -528,6 +537,7 @@ IrModule {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-20, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
@@ -542,6 +552,7 @@ IrModule {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-35, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
@@ -555,6 +566,7 @@ IrModule {
             r#"
 IrModule {
     path: "top"."submodule",
+    source_location: SourceLocation($FILE, $LINE-15, 9),
     parent: "top",
     interface_types: [
         Input(
@@ -588,6 +600,7 @@ IrModule {
         Output(
             IrWire {
                 path: "top"."submodule"."io.1",
+                source_location: SourceLocation($FILE, $LINE-15, 9),
                 value_type: BitVector {
                     bit_count: 32,
                 },
@@ -614,6 +627,7 @@ IrModule {
     ],
     wires: {
         "io.1": IrWire {
+            source_location: SourceLocation($FILE, $LINE-15, 9),
             value_type: BitVector {
                 bit_count: 32,
             },
@@ -654,6 +668,7 @@ Output {
     ir: WriteEnd(
         IrWire {
             path: "top"."submodule"."io.1",
+            source_location: SourceLocation($FILE, $LINE-115, 9),
             value_type: BitVector {
                 bit_count: 32,
             },
@@ -697,6 +712,7 @@ Input {
             r#"
 IrModule {
     path: "top"."submodule",
+    source_location: SourceLocation($FILE, $LINE-161, 9),
     parent: "top",
     interface_types: [
         Input(
@@ -730,6 +746,7 @@ IrModule {
         Output(
             IrWire {
                 path: "top"."submodule"."io.1",
+                source_location: SourceLocation($FILE, $LINE-161, 9),
                 value_type: BitVector {
                     bit_count: 32,
                 },
@@ -759,6 +776,7 @@ IrModule {
     ],
     wires: {
         "io.1": IrWire {
+            source_location: SourceLocation($FILE, $LINE-161, 9),
             value_type: BitVector {
                 bit_count: 32,
             },
@@ -785,6 +803,7 @@ fn test_sub_submodule() {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-1, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
@@ -799,6 +818,7 @@ IrModule {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-16, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
@@ -813,6 +833,7 @@ IrModule {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-31, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
@@ -826,6 +847,7 @@ IrModule {
             r#"
 IrModule {
     path: "top"."submodule",
+    source_location: SourceLocation($FILE, $LINE-15, 9),
     parent: "top",
     interface_types: [
         Input(
@@ -851,6 +873,7 @@ IrModule {
         Output(
             IrWire {
                 path: "top"."submodule"."io.1",
+                source_location: SourceLocation($FILE, $LINE-15, 9),
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -861,6 +884,7 @@ IrModule {
     ],
     wires: {
         "io.1": IrWire {
+            source_location: SourceLocation($FILE, $LINE-15, 9),
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -878,6 +902,7 @@ IrModule {
             r#"
 IrModule {
     path: "top",
+    source_location: SourceLocation($FILE, $LINE-100, 9),
     parent: <None>,
     interface_types: [],
     interface_write_ends: [],
@@ -891,6 +916,7 @@ IrModule {
             r#"
 IrModule {
     path: "top"."submodule",
+    source_location: SourceLocation($FILE, $LINE-84, 9),
     parent: "top",
     interface_types: [
         Input(
@@ -916,6 +942,7 @@ IrModule {
         Output(
             IrWire {
                 path: "top"."submodule"."io.1",
+                source_location: SourceLocation($FILE, $LINE-84, 9),
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -937,6 +964,7 @@ IrModule {
     ],
     wires: {
         "io.1": IrWire {
+            source_location: SourceLocation($FILE, $LINE-84, 9),
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -964,6 +992,7 @@ IrModule {
             r#"
 IrModule {
     path: "top"."submodule"."sub_submodule",
+    source_location: SourceLocation($FILE, $LINE-91, 9),
     parent: "top"."submodule",
     interface_types: [
         Input(
@@ -993,6 +1022,7 @@ IrModule {
         Output(
             IrWire {
                 path: "top"."submodule"."sub_submodule"."io.1",
+                source_location: SourceLocation($FILE, $LINE-91, 9),
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -1003,6 +1033,7 @@ IrModule {
     ],
     wires: {
         "io.1": IrWire {
+            source_location: SourceLocation($FILE, $LINE-91, 9),
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -1020,6 +1051,7 @@ IrModule {
             r#"
 IrModule {
     path: "top"."submodule"."sub_submodule",
+    source_location: SourceLocation($FILE, $LINE-150, 9),
     parent: "top"."submodule",
     interface_types: [
         Input(
@@ -1049,6 +1081,7 @@ IrModule {
         Output(
             IrWire {
                 path: "top"."submodule"."sub_submodule"."io.1",
+                source_location: SourceLocation($FILE, $LINE-150, 9),
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -1062,6 +1095,7 @@ IrModule {
     ],
     wires: {
         "io.1": IrWire {
+            source_location: SourceLocation($FILE, $LINE-150, 9),
             value_type: BitVector {
                 bit_count: 1,
             },

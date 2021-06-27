@@ -4,8 +4,12 @@
 use crate::{
     clocking::ClockDomain,
     context::{Context, ContextRef},
+    export::Exporter,
     io::{Output, PlainIO, IO},
-    ir::module::{IrModule, IrModuleRef},
+    ir::{
+        module::{IrModule, IrModuleRef},
+        SourceLocation,
+    },
     logic::{Reg, Wire},
     values::{Val, Value, ValueType},
 };
@@ -45,12 +49,14 @@ impl<'ctx> fmt::Debug for Module<'ctx> {
 }
 
 impl<'ctx> Context<'ctx> {
+    #[track_caller]
     pub fn top_module<'a, N: Into<Cow<'a, str>>, T: PlainIO<'ctx>>(
         &'ctx self,
         name: N,
     ) -> (Module<'ctx>, T) {
         self.top_module_with_io(name.into(), self.external())
     }
+    #[track_caller]
     pub fn top_module_with_io<'a, N: Into<Cow<'a, str>>, T: IO<'ctx>>(
         &'ctx self,
         name: N,
@@ -58,7 +64,7 @@ impl<'ctx> Context<'ctx> {
     ) -> (Module<'ctx>, T) {
         (
             Module {
-                ir: IrModule::new_top_module(self, name.into(), &mut io),
+                ir: IrModule::new_top_module(self, SourceLocation::caller(), name.into(), &mut io),
             },
             io,
         )
@@ -66,6 +72,7 @@ impl<'ctx> Context<'ctx> {
 }
 
 impl<'ctx> Module<'ctx> {
+    #[track_caller]
     pub fn submodule<'a, N: Into<Cow<'a, str>>, T: IO<'ctx>>(
         &self,
         name: N,
@@ -73,7 +80,12 @@ impl<'ctx> Module<'ctx> {
     ) -> (Module<'ctx>, T) {
         (
             Module {
-                ir: IrModule::new_submodule(self.ir, name.into(), &mut io),
+                ir: IrModule::new_submodule(
+                    self.ir,
+                    SourceLocation::caller(),
+                    name.into(),
+                    &mut io,
+                ),
             },
             io,
         )
@@ -84,12 +96,14 @@ impl<'ctx> Module<'ctx> {
     pub fn ctx(&self) -> ContextRef<'ctx> {
         self.ir.ctx()
     }
+    #[track_caller]
     pub fn wire<'a, N: Into<Cow<'a, str>>, T: Value<'ctx> + Default>(
         &self,
         name: N,
     ) -> Wire<'ctx, T> {
         Wire::new(self, name)
     }
+    #[track_caller]
     pub fn wire_with_type<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
         name: N,
@@ -106,6 +120,7 @@ impl<'ctx> Module<'ctx> {
     ) -> Output<'ctx, T> {
         Output::with_type(self, value_type)
     }
+    #[track_caller]
     pub fn reg<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
         name: N,
@@ -114,6 +129,7 @@ impl<'ctx> Module<'ctx> {
     ) -> Reg<'ctx, T> {
         Reg::new(self, name, clock_domain, reset_value)
     }
+    #[track_caller]
     pub fn reg_without_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx> + Default>(
         &self,
         name: N,
@@ -121,6 +137,7 @@ impl<'ctx> Module<'ctx> {
     ) -> Reg<'ctx, T> {
         Reg::without_reset(self, name, clk)
     }
+    #[track_caller]
     pub fn reg_with_type_without_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
         name: N,
@@ -129,6 +146,7 @@ impl<'ctx> Module<'ctx> {
     ) -> Reg<'ctx, T> {
         Reg::with_type_without_reset(self, name, clk, value_type)
     }
+    #[track_caller]
     pub fn reg_with_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
         name: N,
@@ -137,5 +155,8 @@ impl<'ctx> Module<'ctx> {
         reset_value: T,
     ) -> Reg<'ctx, T> {
         Reg::with_reset(self, name, clk, reset_enable, reset_value)
+    }
+    pub fn export<E: Exporter>(&self, mut exporter: E) -> Result<(), E::Error> {
+        exporter.export_ir(self.ir())
     }
 }

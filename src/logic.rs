@@ -7,6 +7,7 @@ use crate::{
     ir::{
         logic::{IrReg, IrRegRef, IrRegReset, IrWire, IrWireRef},
         values::IrValueRef,
+        SourceLocation,
     },
     module::AsIrModule,
     values::{Val, Value, ValueType},
@@ -69,6 +70,7 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
     pub fn from_ir_unchecked(ir: IrWireRef<'ctx>) -> Self {
         Self(WireRef::from_ir_unchecked(ir))
     }
+    #[track_caller]
     pub fn with_type<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
         name: N,
@@ -76,10 +78,12 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
     ) -> Self {
         Self::from_ir_unchecked(IrWire::new(
             module.as_ir_module(),
+            SourceLocation::caller(),
             name.into(),
             value_type.ir(),
         ))
     }
+    #[track_caller]
     pub fn new<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(module: M, name: N) -> Self
     where
         T: Default,
@@ -87,6 +91,7 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
         let module = module.as_ir_module();
         Self::with_type(module, name.into(), Value::default_value_type(module.ctx()))
     }
+    #[track_caller]
     pub fn assign(self, assigned_value: Val<'ctx, T>) -> WireRef<'ctx, T> {
         self.0.ir.assign(assigned_value.ir());
         self.0
@@ -135,6 +140,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
     pub fn from_ir_unchecked(ir: IrRegRef<'ctx>) -> Self {
         Self(RegRef::from_ir_unchecked(ir))
     }
+    #[track_caller]
     pub fn with_type_without_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
         name: N,
@@ -144,12 +150,14 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
         let module = module.as_ir_module();
         Self::from_ir_unchecked(IrReg::new(
             module,
+            SourceLocation::caller(),
             name.into(),
             value_type.ir(),
             clk.ir(),
             None,
         ))
     }
+    #[track_caller]
     pub fn without_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
         name: N,
@@ -166,6 +174,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
             Value::default_value_type(module.ctx()),
         )
     }
+    #[track_caller]
     pub fn with_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
         name: N,
@@ -177,6 +186,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
         let reset_value = reset_value.get_value(module.ctx());
         Self::from_ir_unchecked(IrReg::new(
             module,
+            SourceLocation::caller(),
             name.into(),
             reset_value.value_type().ir(),
             clk.ir(),
@@ -186,6 +196,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
             }),
         ))
     }
+    #[track_caller]
     pub fn new<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
         name: N,
@@ -200,6 +211,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
             reset_value,
         )
     }
+    #[track_caller]
     pub fn assign_data_in(self, assigned_value: Val<'ctx, T>) -> RegRef<'ctx, T> {
         self.ir.assign_data_in(assigned_value.ir());
         self.0

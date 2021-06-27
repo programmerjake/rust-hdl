@@ -5,13 +5,14 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
-#[cfg(test)]
+#[cfg(any(test, std))]
 extern crate std;
 
 pub use rust_hdl_macros::{PlainIO, Value, IO};
 
 pub mod clocking;
 pub mod context;
+pub mod export;
 mod fmt_utils;
 pub mod io;
 pub mod ir;
