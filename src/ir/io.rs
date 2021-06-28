@@ -136,7 +136,7 @@ impl<'ctx> IrInput<'ctx> {
                     value: IrValue::Input(module_input).intern(module.ctx()),
                 },
             ),
-            path,
+            module_input,
         )
     }
 }

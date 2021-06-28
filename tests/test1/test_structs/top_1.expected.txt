@@ -1,0 +1,51 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-10, 9),
+    parent: <None>,
+    interface_types: [],
+    interface: [],
+    wires: {
+        "_wire": IrWire {
+            source_location: SourceLocation($FILE, $LINE-9, 9),
+            value_type: IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "a",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "b",
+                        ty: IrStructType {
+                            fields: [],
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "c",
+                        ty: IrStructType {
+                            fields: [
+                                IrStructFieldType {
+                                    name: "0",
+                                    ty: BitVector {
+                                        bit_count: 1,
+                                    },
+                                },
+                                IrStructFieldType {
+                                    name: "1",
+                                    ty: BitVector {
+                                        bit_count: 8,
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+            assigned_value: <None>,
+            ..
+        },
+    },
+    registers: {},
+    ..
+}

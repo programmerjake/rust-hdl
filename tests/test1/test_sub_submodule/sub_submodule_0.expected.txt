@@ -1,0 +1,64 @@
+IrModule {
+    path: "top"."submodule"."sub_submodule",
+    source_location: SourceLocation($FILE, $LINE-3, 9),
+    parent: "top"."submodule",
+    interface_types: [
+        Input(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+        Output(
+            BitVector {
+                bit_count: 1,
+            },
+        ),
+    ],
+    interface: [
+        Input(
+            IrModuleInputData {
+                external_value: Input {
+                    value: IrModuleInput {
+                        module: "top"."submodule",
+                        index: 0,
+                        path: "io.0",
+                        value_type: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top"."submodule"."sub_submodule",
+                    index: 0,
+                    path: "io.0",
+                    value_type: BitVector {
+                        bit_count: 1,
+                    },
+                },
+            },
+        ),
+        Output(
+            IrWire {
+                path: "top"."submodule"."sub_submodule"."io.1",
+                source_location: SourceLocation($FILE, $LINE-3, 9),
+                value_type: BitVector {
+                    bit_count: 1,
+                },
+                assigned_value: <None>,
+                ..
+            },
+        ),
+    ],
+    wires: {
+        "io.1": IrWire {
+            source_location: SourceLocation($FILE, $LINE-3, 9),
+            value_type: BitVector {
+                bit_count: 1,
+            },
+            assigned_value: <None>,
+            ..
+        },
+    },
+    registers: {},
+    ..
+}

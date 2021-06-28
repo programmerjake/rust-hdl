@@ -1,0 +1,45 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-5, 9),
+    parent: <None>,
+    interface_types: [],
+    interface: [],
+    wires: {
+        "wire": IrWire {
+            source_location: SourceLocation($FILE, $LINE-3, 9),
+            value_type: Array {
+                element: BitVector {
+                    bit_count: 1,
+                },
+                length: 4,
+            },
+            assigned_value: LiteralArray {
+                element_type: BitVector {
+                    bit_count: 1,
+                },
+                owning_module: None,
+                elements: [
+                    LiteralBits {
+                        bit_count: 1,
+                        value: 0x1,
+                    },
+                    LiteralBits {
+                        bit_count: 1,
+                        value: 0x0,
+                    },
+                    LiteralBits {
+                        bit_count: 1,
+                        value: 0x1,
+                    },
+                    LiteralBits {
+                        bit_count: 1,
+                        value: 0x1,
+                    },
+                ],
+            },
+            ..
+        },
+    },
+    registers: {},
+    ..
+}

@@ -1,10 +1,25 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use crate::{export::Exporter, ir::module::IrModuleRef};
-use alloc::string::{String, ToString};
-use core::fmt;
-use hashbrown::HashSet;
+use crate::{
+    context::Intern,
+    export::Exporter,
+    ir::{
+        io::InOrOut,
+        module::IrModuleRef,
+        types::{IrStructFieldType, IrStructType, IrValueType, IrValueTypeRef},
+        values::{IrValue, IrValueRef},
+        SourceLocation,
+    },
+};
+use alloc::{
+    format,
+    rc::Rc,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::fmt::{self, Write as _};
+use hashbrown::{HashMap, HashSet};
 
 pub trait Write {
     type Error: fmt::Display + fmt::Debug + Send + 'static;
@@ -100,18 +115,20 @@ impl<W: Write + ?Sized> Writer<W> {
     }
 }
 
-struct Id<'a>(&'a str);
+struct RtlilId<'a>(&'a str);
 
-impl fmt::Display for Id<'_> {
+impl fmt::Display for RtlilId<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let id = self.0;
-        if id.is_empty()
-            || (id.starts_with("#") && !id[1..].contains(|ch: char| !ch.is_ascii_digit()))
-        {
-            write!(f, "$")?;
-        } else {
-            write!(f, "\\")?;
-        };
+        if id.is_empty() {
+            return write!(f, "$$");
+        }
+        match id.strip_prefix("#") {
+            Some(id) if !id.contains(|ch: char| !ch.is_ascii_digit()) => {
+                return write!(f, "${}", id);
+            }
+            _ => write!(f, "\\")?,
+        }
         /// rtlil identifiers can't have some whitespace and other special characters, replace them with Unicode control pictures.
         fn replace_char(ch: char) -> Option<char> {
             Some(match ch {
@@ -134,8 +151,64 @@ impl fmt::Display for Id<'_> {
     }
 }
 
+struct RtlilStr<'a>(&'a str);
+
+impl fmt::Display for RtlilStr<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\"")?;
+        for b in self.0.bytes() {
+            match b {
+                b'\n' => write!(f, r"\n")?,
+                b'\t' => write!(f, r"\t")?,
+                b'\\' => write!(f, r"\\")?,
+                b'\"' => write!(f, r#"\""#)?,
+                b' ' => write!(f, " ")?,
+                b'\0' => {
+                    for b in "\u{2400}".bytes() {
+                        write!(f, "\\{:03o}", b)?;
+                    }
+                }
+                _ => {
+                    if b.is_ascii_graphic() {
+                        write!(f, "{}", b as char)?;
+                    } else {
+                        write!(f, "\\{:03o}", b)?;
+                    }
+                }
+            }
+        }
+        write!(f, "\"")
+    }
+}
+
+struct RtlilLocation<'ctx>(SourceLocation<'ctx>);
+
+impl fmt::Display for RtlilLocation<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        RtlilStr(&format!(
+            "{}:{}.{}",
+            self.0.file(),
+            self.0.line(),
+            self.0.column()
+        ))
+        .fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RtlilWireType {
+    bit_count: u32,
+}
+
+#[derive(Debug, Clone)]
+struct RtlilWire {
+    name: Rc<str>,
+    ty: RtlilWireType,
+}
+
 pub struct RtlilExporter<'ctx, W: Write + ?Sized> {
     written_modules: HashSet<IrModuleRef<'ctx>>,
+    wires_for_values: HashMap<IrValueRef<'ctx>, Rc<[RtlilWire]>>,
     writer: Writer<W>,
 }
 
@@ -146,6 +219,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
     {
         Self {
             written_modules: HashSet::new(),
+            wires_for_values: HashMap::new(),
             writer: Writer(writer),
         }
     }
@@ -158,6 +232,70 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
     }
 }
 
+struct PathBuilder<'a> {
+    path_prefix: &'a mut String,
+    initial_len: usize,
+}
+
+impl<'a> From<&'a mut String> for PathBuilder<'a> {
+    fn from(path_prefix: &'a mut String) -> Self {
+        Self::new(path_prefix)
+    }
+}
+
+impl<'a> PathBuilder<'a> {
+    fn new(path_prefix: &'a mut String) -> Self {
+        Self {
+            initial_len: path_prefix.len(),
+            path_prefix,
+        }
+    }
+    fn push_fmt<'b>(&'b mut self, args: fmt::Arguments<'_>) -> PathBuilder<'b> {
+        let retval = PathBuilder::new(self.path_prefix);
+        retval.path_prefix.write_fmt(args).unwrap();
+        retval
+    }
+    fn push_array_index<'b>(&'b mut self, index: usize) -> PathBuilder<'b> {
+        self.push_fmt(format_args!("[{}]", index))
+    }
+    fn push_struct_member<'b>(&'b mut self, name: &str) -> PathBuilder<'b> {
+        self.push_fmt(format_args!(".{}", name))
+    }
+    fn get(&self) -> &str {
+        &self.path_prefix
+    }
+}
+
+impl Drop for PathBuilder<'_> {
+    fn drop(&mut self) {
+        self.path_prefix.truncate(self.initial_len)
+    }
+}
+
+fn visit_wire_types_in_type<'ctx, 'a, E>(
+    ty: IrValueTypeRef<'ctx>,
+    path_builder: impl Into<PathBuilder<'a>>,
+    visitor: &mut impl FnMut(RtlilWireType, &str) -> Result<(), E>,
+) -> Result<(), E> {
+    let mut path_builder = path_builder.into();
+    match *ty {
+        IrValueType::BitVector { bit_count } => {
+            visitor(RtlilWireType { bit_count }, path_builder.get())?
+        }
+        IrValueType::Array { element, length } => {
+            for index in 0..length {
+                visit_wire_types_in_type(element, path_builder.push_array_index(index), visitor)?;
+            }
+        }
+        IrValueType::Struct(IrStructType { fields }) => {
+            for &IrStructFieldType { name, ty } in &*fields {
+                visit_wire_types_in_type(ty, path_builder.push_struct_member(&name), visitor)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
     type Error = W::Error;
 
@@ -166,7 +304,72 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
             return Ok(());
         }
         writeln!(self.writer, r#"attribute \generator "rust-hdl""#)?;
-        writeln!(self.writer, "module {}", Id(&module.path().to_string()))?;
+        writeln!(
+            self.writer,
+            r"attribute \src {}",
+            RtlilLocation(module.source_location())
+        )?;
+        writeln!(
+            self.writer,
+            "module {}",
+            RtlilId(&module.path().to_string())
+        )?;
+        let ctx = module.ctx();
+        let interface = module.interface().expect("module is missing its interface");
+        let mut io_index = 0usize;
+        for io in interface {
+            match io {
+                InOrOut::Input(input) => {
+                    let mut wires = Vec::new();
+                    visit_wire_types_in_type(
+                        input.external_value().value_type(ctx),
+                        &mut input.module_input().path().to_string(),
+                        &mut |ty, path| {
+                            wires.push(RtlilWire {
+                                name: path.into(),
+                                ty,
+                            });
+                            writeln!(
+                                self.writer,
+                                "  wire width {} input {} {}",
+                                ty.bit_count,
+                                io_index,
+                                RtlilId(path)
+                            )?;
+                            io_index += 1;
+                            Ok(())
+                        },
+                    )?;
+                    self.wires_for_values.insert(
+                        IrValue::Input(input.module_input()).intern(ctx),
+                        wires.into(),
+                    );
+                }
+                InOrOut::Output(output) => {
+                    let mut wires = Vec::new();
+                    visit_wire_types_in_type(
+                        output.value_type(),
+                        &mut output.name().to_string(),
+                        &mut |ty, path| {
+                            wires.push(RtlilWire {
+                                name: path.into(),
+                                ty,
+                            });
+                            writeln!(
+                                self.writer,
+                                "  wire width {} output {} {}",
+                                ty.bit_count,
+                                io_index,
+                                RtlilId(path)
+                            )?;
+                            io_index += 1;
+                            Ok(())
+                        },
+                    )?;
+                    self.wires_for_values.insert(output.read(), wires.into());
+                }
+            }
+        }
         // TODO: finish
         writeln!(self.writer, "end")
     }
@@ -188,5 +391,67 @@ impl RtlilExporter<'_, FmtWrite<String>> {
 impl<T: std::io::Write> RtlilExporter<'_, IOWrite<T>> {
     pub fn new_io(writer: T) -> Self {
         Self::new(IOWrite(writer))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rtlil_id() {
+        assert_eq!(RtlilId("").to_string(), r"$$");
+        assert_eq!(RtlilId("abc").to_string(), r"\abc");
+        assert_eq!(RtlilId("abc\\def").to_string(), r"\abc\def");
+        assert_eq!(RtlilId("abc def").to_string(), r"\abc␣def");
+        assert_eq!(RtlilId("abc\rdef").to_string(), r"\abc␍def");
+        assert_eq!(RtlilId("abc\ndef").to_string(), r"\abc␤def");
+        assert_eq!(RtlilId("abc\tdef").to_string(), r"\abc␉def");
+        assert_eq!(RtlilId("abc\0def").to_string(), r"\abc␀def");
+        assert_eq!(RtlilId("⛄").to_string(), r"\⛄");
+        assert_eq!(RtlilId("😀").to_string(), r"\😀");
+        assert_eq!(RtlilId("abc#3").to_string(), r"\abc#3");
+        assert_eq!(RtlilId("#3").to_string(), r"$3");
+        assert_eq!(RtlilId("#123").to_string(), r"$123");
+        assert_eq!(RtlilId("#123a").to_string(), r"\#123a");
+    }
+
+    #[test]
+    fn test_rtlil_str() {
+        assert_eq!(RtlilStr("").to_string(), r#""""#);
+        assert_eq!(RtlilStr("␀").to_string(), r#""\342\220\200""#);
+        assert_eq!(RtlilStr("\0").to_string(), r#""\342\220\200""#);
+        assert_eq!(RtlilStr("\r").to_string(), r#""\015""#);
+        assert_eq!(RtlilStr("\t").to_string(), r#""\t""#);
+        assert_eq!(RtlilStr("\n").to_string(), r#""\n""#);
+        assert_eq!(RtlilStr("\\").to_string(), r#""\\""#);
+        assert_eq!(RtlilStr("\"").to_string(), r#""\"""#);
+        assert_eq!(RtlilStr("'").to_string(), r#""'""#);
+        assert_eq!(RtlilStr("\u{7F}").to_string(), r#""\177""#);
+        assert_eq!(RtlilStr("⛄").to_string(), r#""\342\233\204""#);
+        assert_eq!(RtlilStr("😀").to_string(), r#""\360\237\230\200""#);
+        assert_eq!(RtlilStr("abc def").to_string(), r#""abc def""#);
+    }
+
+    #[test]
+    fn test_rtlil_location() {
+        assert_eq!(
+            RtlilLocation(SourceLocation::new_borrowed(
+                "/home/me/my-project/my_file.rs",
+                123,
+                45
+            ))
+            .to_string(),
+            r#""/home/me/my-project/my_file.rs:123.45""#
+        );
+        assert_eq!(
+            RtlilLocation(SourceLocation::new_borrowed(
+                "D:\\my-project\\my_file.rs",
+                123,
+                45
+            ))
+            .to_string(),
+            r#""D:\\my-project\\my_file.rs:123.45""#
+        );
     }
 }

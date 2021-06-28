@@ -6,7 +6,7 @@ use crate::{
     fmt_utils::{debug_format_option_as_value_or_none, NestedDebugTracking},
     io::{IOVisitor, IO},
     ir::{
-        io::{InOrOut, IrIOMutRef, IrInput},
+        io::{InOrOut, IrIOMutRef, IrInput, IrModuleInput},
         logic::{IrRegRef, IrWireRef},
         symbols::{IrSymbol, IrSymbolTable},
         types::IrValueTypeRef,
@@ -26,21 +26,21 @@ use once_cell::unsync::OnceCell;
 #[derive(Debug, Clone)]
 pub struct IrModuleInputData<'ctx> {
     external_value: IrInput<'ctx>,
-    path: IrSymbol<'ctx>,
+    module_input: IrModuleInput<'ctx>,
 }
 
 impl<'ctx> IrModuleInputData<'ctx> {
-    pub fn new(external_value: IrInput<'ctx>, path: IrSymbol<'ctx>) -> Self {
+    pub fn new(external_value: IrInput<'ctx>, module_input: IrModuleInput<'ctx>) -> Self {
         Self {
             external_value,
-            path,
+            module_input,
         }
     }
     pub fn external_value(&self) -> &IrInput<'ctx> {
         &self.external_value
     }
-    pub fn path(&self) -> IrSymbol<'ctx> {
-        self.path
+    pub fn module_input(&self) -> IrModuleInput<'ctx> {
+        self.module_input
     }
 }
 

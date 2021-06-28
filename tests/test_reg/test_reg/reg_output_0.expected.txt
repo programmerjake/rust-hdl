@@ -1,0 +1,14 @@
+Val {
+    ir: IrRegOutput {
+        path: "top"."reg",
+        value_type: BitVector {
+            bit_count: 1,
+        },
+        ..
+    },
+    value_type: ValueType(
+        BitVector {
+            bit_count: 1,
+        },
+    ),
+}

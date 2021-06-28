@@ -1,0 +1,10 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-7, 9),
+    parent: <None>,
+    interface_types: [],
+    interface: [],
+    wires: {},
+    registers: {},
+    ..
+}

@@ -58,6 +58,12 @@ impl<'ctx, T: Internable<'ctx> + ?Sized + fmt::Debug> fmt::Debug for Interned<'c
     }
 }
 
+impl<'ctx, T: Internable<'ctx> + ?Sized + fmt::Display> fmt::Display for Interned<'ctx, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        T::fmt(self, f)
+    }
+}
+
 impl<'ctx, T: Internable<'ctx> + ?Sized> Copy for Interned<'ctx, T> {}
 
 impl<'ctx, T: Internable<'ctx> + ?Sized> Clone for Interned<'ctx, T> {

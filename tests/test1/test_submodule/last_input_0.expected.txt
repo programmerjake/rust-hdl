@@ -1,0 +1,23 @@
+Input {
+    ir: Input {
+        value: IrModuleInput {
+            module: "top"."submodule",
+            index: 2,
+            path: "io.2",
+            value_type: Array {
+                element: BitVector {
+                    bit_count: 8,
+                },
+                length: 1,
+            },
+        },
+    },
+    value_type: ValueType(
+        Array {
+            element: BitVector {
+                bit_count: 8,
+            },
+            length: 1,
+        },
+    ),
+}
