@@ -316,6 +316,11 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     name: path.into(),
                     ty,
                 });
+                writeln!(
+                    self.writer,
+                    r"  attribute \src {}",
+                    RtlilLocation(wire.source_location())
+                )?;
                 write!(self.writer, "  wire width {}", ty.bit_count)?;
                 if let Some(io_index) = io_index.as_deref_mut() {
                     write!(self.writer, " output {}", io_index)?;
@@ -365,6 +370,11 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
                             });
                             writeln!(
                                 self.writer,
+                                r"  attribute \src {}",
+                                RtlilLocation(module.source_location())
+                            )?;
+                            writeln!(
+                                self.writer,
                                 "  wire width {} input {} {}",
                                 ty.bit_count,
                                 io_index,
@@ -395,6 +405,11 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
                         name: path.into(),
                         ty,
                     });
+                    writeln!(
+                        self.writer,
+                        r"  attribute \src {}",
+                        RtlilLocation(reg.source_location())
+                    )?;
                     writeln!(
                         self.writer,
                         "  wire width {} {}",
