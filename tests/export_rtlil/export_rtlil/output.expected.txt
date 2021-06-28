@@ -15,4 +15,12 @@ module \top
   wire width 8 output 11 \io.reg_output.b[0]
   wire width 8 output 12 \io.reg_output.b[1]
   wire width 8 output 13 \io.reg_output.b[2]
+  wire width 1 \wire.a
+  wire width 8 \wire.b[0]
+  wire width 8 \wire.b[1]
+  wire width 8 \wire.b[2]
+  wire width 1 \reg.a
+  wire width 8 \reg.b[0]
+  wire width 8 \reg.b[1]
+  wire width 8 \reg.b[2]
 end

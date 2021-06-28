@@ -282,6 +282,12 @@ impl<'ctx> IrModule<'ctx> {
     pub fn interface_types(&self) -> &[InOrOut<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>] {
         &self.interface_types
     }
+    pub fn wires(&self) -> Vec<IrWireRef<'ctx>> {
+        self.wires.borrow().clone()
+    }
+    pub fn registers(&self) -> Vec<IrRegRef<'ctx>> {
+        self.registers.borrow().clone()
+    }
 }
 
 impl<'ctx> fmt::Debug for IrModule<'ctx> {

@@ -6,6 +6,7 @@ use crate::{
     export::Exporter,
     ir::{
         io::InOrOut,
+        logic::IrWireRef,
         module::IrModuleRef,
         types::{IrStructFieldType, IrStructType, IrValueType, IrValueTypeRef},
         values::{IrValue, IrValueRef},
@@ -296,6 +297,39 @@ fn visit_wire_types_in_type<'ctx, 'a, E>(
     Ok(())
 }
 
+impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
+    fn export_wire(
+        &mut self,
+        wire: IrWireRef<'ctx>,
+        mut io_index: Option<&mut usize>,
+    ) -> Result<(), W::Error> {
+        let key = wire.read();
+        if self.wires_for_values.contains_key(&key) {
+            return Ok(());
+        }
+        let mut wires = Vec::new();
+        visit_wire_types_in_type(
+            wire.value_type(),
+            &mut wire.name().to_string(),
+            &mut |ty, path| {
+                wires.push(RtlilWire {
+                    name: path.into(),
+                    ty,
+                });
+                write!(self.writer, "  wire width {}", ty.bit_count)?;
+                if let Some(io_index) = io_index.as_deref_mut() {
+                    write!(self.writer, " output {}", io_index)?;
+                    *io_index += 1;
+                }
+                writeln!(self.writer, " {}", RtlilId(path))?;
+                Ok(())
+            },
+        )?;
+        self.wires_for_values.insert(key, wires.into());
+        Ok(())
+    }
+}
+
 impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
     type Error = W::Error;
 
@@ -345,30 +379,32 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
                         wires.into(),
                     );
                 }
-                InOrOut::Output(output) => {
-                    let mut wires = Vec::new();
-                    visit_wire_types_in_type(
-                        output.value_type(),
-                        &mut output.name().to_string(),
-                        &mut |ty, path| {
-                            wires.push(RtlilWire {
-                                name: path.into(),
-                                ty,
-                            });
-                            writeln!(
-                                self.writer,
-                                "  wire width {} output {} {}",
-                                ty.bit_count,
-                                io_index,
-                                RtlilId(path)
-                            )?;
-                            io_index += 1;
-                            Ok(())
-                        },
-                    )?;
-                    self.wires_for_values.insert(output.read(), wires.into());
-                }
+                InOrOut::Output(output) => self.export_wire(output, Some(&mut io_index))?,
             }
+        }
+        for wire in module.wires() {
+            self.export_wire(wire, None)?;
+        }
+        for reg in module.registers() {
+            let mut wires = Vec::new();
+            visit_wire_types_in_type(
+                reg.value_type(),
+                &mut reg.name().to_string(),
+                &mut |ty, path| {
+                    wires.push(RtlilWire {
+                        name: path.into(),
+                        ty,
+                    });
+                    writeln!(
+                        self.writer,
+                        "  wire width {} {}",
+                        ty.bit_count,
+                        RtlilId(path)
+                    )?;
+                    Ok(())
+                },
+            )?;
+            self.wires_for_values.insert(reg.output(), wires.into());
         }
         // TODO: finish
         writeln!(self.writer, "end")
