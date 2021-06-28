@@ -5,23 +5,23 @@ use crate::ir::module::IrModuleRef;
 use alloc::boxed::Box;
 use core::fmt;
 
-pub trait Exporter {
+pub trait Exporter<'ctx> {
     type Error: fmt::Display + fmt::Debug + Send + 'static;
-    fn export_ir<'ctx>(&mut self, module: IrModuleRef<'ctx>) -> Result<(), Self::Error>;
+    fn export_ir(&mut self, module: IrModuleRef<'ctx>) -> Result<(), Self::Error>;
 }
 
-impl<T: ?Sized + Exporter> Exporter for &'_ mut T {
+impl<'ctx, T: ?Sized + Exporter<'ctx>> Exporter<'ctx> for &'_ mut T {
     type Error = T::Error;
 
-    fn export_ir<'ctx>(&mut self, module: IrModuleRef<'ctx>) -> Result<(), Self::Error> {
+    fn export_ir(&mut self, module: IrModuleRef<'ctx>) -> Result<(), Self::Error> {
         (**self).export_ir(module)
     }
 }
 
-impl<T: ?Sized + Exporter> Exporter for Box<T> {
+impl<'ctx, T: ?Sized + Exporter<'ctx>> Exporter<'ctx> for Box<T> {
     type Error = T::Error;
 
-    fn export_ir<'ctx>(&mut self, module: IrModuleRef<'ctx>) -> Result<(), Self::Error> {
+    fn export_ir(&mut self, module: IrModuleRef<'ctx>) -> Result<(), Self::Error> {
         (**self).export_ir(module)
     }
 }

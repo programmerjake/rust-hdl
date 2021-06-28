@@ -2,23 +2,34 @@
 // See Notices.txt for copyright information
 
 use crate::{export::Exporter, ir::module::IrModuleRef};
-use core::{
-    borrow::Borrow,
-    fmt::{self, Arguments},
-};
+use alloc::string::{String, ToString};
+use core::fmt;
+use hashbrown::HashSet;
 
 pub trait Write {
     type Error: fmt::Display + fmt::Debug + Send + 'static;
+    type Output: ?Sized;
+    fn into_output(self) -> Self::Output
+    where
+        Self: Sized,
+        Self::Output: Sized;
     fn write_str(&mut self, s: &str) -> Result<(), Self::Error>;
 }
 
-#[cfg(std)]
-pub struct IoWrite<T: ?Sized + std::io::Write>(pub T);
+#[cfg(feature = "std")]
+pub struct IOWrite<T: ?Sized + std::io::Write>(pub T);
 
-#[cfg(std)]
-impl<T: ?Sized + std::io::Write> Write for IoWrite<T> {
+#[cfg(feature = "std")]
+impl<T: ?Sized + std::io::Write> Write for IOWrite<T> {
     type Error = std::io::Error;
-
+    type Output = T;
+    fn into_output(self) -> Self::Output
+    where
+        Self: Sized,
+        Self::Output: Sized,
+    {
+        self.0
+    }
     fn write_str(&mut self, s: &str) -> Result<(), Self::Error> {
         self.0.write_all(s.as_bytes())
     }
@@ -28,7 +39,14 @@ pub struct FmtWrite<T: ?Sized + fmt::Write>(pub T);
 
 impl<T: ?Sized + fmt::Write> Write for FmtWrite<T> {
     type Error = fmt::Error;
-
+    type Output = T;
+    fn into_output(self) -> Self::Output
+    where
+        Self: Sized,
+        Self::Output: Sized,
+    {
+        self.0
+    }
     fn write_str(&mut self, s: &str) -> Result<(), Self::Error> {
         self.0.write_str(s)
     }
@@ -36,31 +54,30 @@ impl<T: ?Sized + fmt::Write> Write for FmtWrite<T> {
 
 impl<T: ?Sized + Write> Write for &'_ mut T {
     type Error = T::Error;
-
+    type Output = Self;
+    fn into_output(self) -> Self::Output
+    where
+        Self: Sized,
+        Self::Output: Sized,
+    {
+        self
+    }
     fn write_str(&mut self, s: &str) -> Result<(), Self::Error> {
         T::write_str(self, s)
     }
 }
 
-pub struct RtlilExporter<W: Write + ?Sized> {
-    writer: W,
-}
+struct Writer<W: Write + ?Sized>(W);
 
-impl<W: ?Sized + Write> RtlilExporter<W> {
-    pub fn new(writer: W) -> Self
-    where
-        W: Sized,
-    {
-        Self { writer }
-    }
-    fn write_fmt(&mut self, args: Arguments<'_>) -> Result<(), W::Error> {
+impl<W: Write + ?Sized> Writer<W> {
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> Result<(), W::Error> {
         struct Adaptor<T, E> {
-            this: T,
+            writer: T,
             error: Result<(), E>,
         }
-        impl<W: ?Sized + Write> fmt::Write for Adaptor<&'_ mut RtlilExporter<W>, W::Error> {
+        impl<W: ?Sized + Write> fmt::Write for Adaptor<&'_ mut Writer<W>, W::Error> {
             fn write_str(&mut self, s: &str) -> fmt::Result {
-                match self.this.writer.write_str(s) {
+                match self.writer.0.write_str(s) {
                     Ok(()) => Ok(()),
                     Err(e) => {
                         self.error = Err(e);
@@ -70,7 +87,7 @@ impl<W: ?Sized + Write> RtlilExporter<W> {
             }
         }
         let mut adaptor = Adaptor {
-            this: self,
+            writer: self,
             error: Ok(()),
         };
         if fmt::Write::write_fmt(&mut adaptor, args).is_err() {
@@ -81,14 +98,19 @@ impl<W: ?Sized + Write> RtlilExporter<W> {
             Ok(())
         }
     }
-    fn write_id<'a>(&mut self, id: impl Borrow<str>) -> Result<(), W::Error> {
-        let id: &str = id.borrow();
+}
+
+struct Id<'a>(&'a str);
+
+impl fmt::Display for Id<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let id = self.0;
         if id.is_empty()
             || (id.starts_with("#") && !id[1..].contains(|ch: char| !ch.is_ascii_digit()))
         {
-            write!(self, "$")?;
+            write!(f, "$")?;
         } else {
-            write!(self, "\\")?;
+            write!(f, "\\")?;
         };
         /// rtlil identifiers can't have some whitespace and other special characters, replace them with Unicode control pictures.
         fn replace_char(ch: char) -> Option<char> {
@@ -103,32 +125,68 @@ impl<W: ?Sized + Write> RtlilExporter<W> {
         }
         if id.contains(|ch| replace_char(ch).is_some()) {
             for ch in id.chars() {
-                write!(self, "{}", replace_char(ch).unwrap_or(ch))?;
+                write!(f, "{}", replace_char(ch).unwrap_or(ch))?;
             }
             Ok(())
         } else {
-            write!(self, "{}", id)
+            write!(f, "{}", id)
         }
     }
 }
 
-impl<W: ?Sized + Write> Exporter for RtlilExporter<W> {
-    type Error = W::Error;
+pub struct RtlilExporter<'ctx, W: Write + ?Sized> {
+    written_modules: HashSet<IrModuleRef<'ctx>>,
+    writer: Writer<W>,
+}
 
-    fn export_ir<'ctx>(&mut self, module: IrModuleRef<'ctx>) -> Result<(), Self::Error> {
-        todo!()
+impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
+    pub fn new(writer: W) -> Self
+    where
+        W: Sized,
+    {
+        Self {
+            written_modules: HashSet::new(),
+            writer: Writer(writer),
+        }
+    }
+    pub fn into_output(self) -> W::Output
+    where
+        W: Sized,
+        W::Output: Sized,
+    {
+        self.writer.0.into_output()
     }
 }
 
-impl<T: fmt::Write> RtlilExporter<FmtWrite<T>> {
+impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
+    type Error = W::Error;
+
+    fn export_ir(&mut self, module: IrModuleRef<'ctx>) -> Result<(), Self::Error> {
+        if !self.written_modules.insert(module) {
+            return Ok(());
+        }
+        writeln!(self.writer, r#"attribute \generator "rust-hdl""#)?;
+        writeln!(self.writer, "module {}", Id(&module.path().to_string()))?;
+        // TODO: finish
+        writeln!(self.writer, "end")
+    }
+}
+
+impl<T: fmt::Write> RtlilExporter<'_, FmtWrite<T>> {
     pub fn new_fmt(writer: T) -> Self {
         Self::new(FmtWrite(writer))
     }
 }
 
-#[cfg(std)]
-impl<T: std::io::Write> RtlilExporter<IoWrite<T>> {
+impl RtlilExporter<'_, FmtWrite<String>> {
+    pub fn new_str() -> Self {
+        Self::new_fmt(String::new())
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: std::io::Write> RtlilExporter<'_, IOWrite<T>> {
     pub fn new_io(writer: T) -> Self {
-        Self::new(IoWrite(writer))
+        Self::new(IOWrite(writer))
     }
 }

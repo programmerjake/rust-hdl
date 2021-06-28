@@ -24,6 +24,13 @@ impl fmt::Debug for IrSymbol<'_> {
     }
 }
 
+impl fmt::Display for IrSymbol<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let v: &str = self;
+        write!(f, "{}", v)
+    }
+}
+
 impl<'ctx> Deref for IrSymbol<'ctx> {
     type Target = Interned<'ctx, str>;
 

@@ -26,6 +26,12 @@ pub fn assert_formats_to_impl(formatted: &str, expected: &str) {
     assert!(value == expected, "doesn't match expected. value:{}", value);
 }
 
+macro_rules! assert_display_formats_to {
+    ($value:expr, $expected:literal) => {
+        $crate::common::assert_formats_to_impl(&format!("\n{}", $value), $expected)
+    };
+}
+
 macro_rules! assert_formats_to {
     ($value:expr, $expected:literal) => {
         $crate::common::assert_formats_to_impl(&format!("\n{:#?}", $value), $expected)

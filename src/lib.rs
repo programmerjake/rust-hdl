@@ -5,7 +5,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
-#[cfg(any(test, std))]
+#[cfg(any(test, feature = "std"))]
 extern crate std;
 
 pub use rust_hdl_macros::{PlainIO, Value, IO};

@@ -156,7 +156,8 @@ impl<'ctx> Module<'ctx> {
     ) -> Reg<'ctx, T> {
         Reg::with_reset(self, name, clk, reset_enable, reset_value)
     }
-    pub fn export<E: Exporter>(&self, mut exporter: E) -> Result<(), E::Error> {
-        exporter.export_ir(self.ir())
+    pub fn export<E: Exporter<'ctx>>(&self, mut exporter: E) -> Result<E, E::Error> {
+        exporter.export_ir(self.ir())?;
+        Ok(exporter)
     }
 }

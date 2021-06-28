@@ -6,7 +6,7 @@ use crate::{
     fmt_utils::{debug_format_option_as_value_or_invalid, debug_format_option_as_value_or_none},
     ir::{
         logic::{IrWire, IrWireRef},
-        module::{IrModule, IrModuleRef},
+        module::{IrModule, IrModuleInputData, IrModuleRef},
         symbols::IrSymbol,
         types::IrValueTypeRef,
         values::{IrValue, IrValueRef},
@@ -107,11 +107,12 @@ impl<'ctx> IrInput<'ctx> {
         module: IrModuleRef<'ctx>,
         index: usize,
         path: &str,
-    ) -> IrInput<'ctx> {
+    ) -> IrModuleInputData<'ctx> {
+        let path = module.symbol_table().insert_uniquified(module.ctx(), path);
         let module_input = IrModuleInput {
             module,
             index,
-            path: module.symbol_table().insert_uniquified(module.ctx(), path),
+            path,
         };
         assert_eq!(self.value_type(module.ctx()), module_input.value_type());
         match (&*self, parent_module) {
@@ -128,11 +129,14 @@ impl<'ctx> IrInput<'ctx> {
             }
             (IrInput::ExternalInput { .. }, None) => {}
         }
-        mem::replace(
-            self,
-            IrInput::Input {
-                value: IrValue::Input(module_input).intern(module.ctx()),
-            },
+        IrModuleInputData::new(
+            mem::replace(
+                self,
+                IrInput::Input {
+                    value: IrValue::Input(module_input).intern(module.ctx()),
+                },
+            ),
+            path,
         )
     }
 }

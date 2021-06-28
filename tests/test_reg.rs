@@ -53,25 +53,28 @@ IrModule {
             },
         ),
     ],
-    interface_write_ends: [
+    interface: [
         Input(
-            ExternalInput {
-                value_type: IrStructType {
-                    fields: [
-                        IrStructFieldType {
-                            name: "clk",
-                            ty: BitVector {
-                                bit_count: 1,
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "clk",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
                             },
-                        },
-                        IrStructFieldType {
-                            name: "rst",
-                            ty: BitVector {
-                                bit_count: 1,
+                            IrStructFieldType {
+                                name: "rst",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
                             },
-                        },
-                    ],
+                        ],
+                    },
                 },
+                path: "io.cd",
             },
         ),
         Output(
@@ -86,10 +89,13 @@ IrModule {
             },
         ),
         Input(
-            ExternalInput {
-                value_type: BitVector {
-                    bit_count: 1,
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: BitVector {
+                        bit_count: 1,
+                    },
                 },
+                path: "io.input",
             },
         ),
     ],
@@ -188,7 +194,7 @@ IrModule {
 Reg {
     ir: IrReg {
         path: "top"."reg",
-        source_location: SourceLocation($FILE, $LINE-167, 9),
+        source_location: SourceLocation($FILE, $LINE-173, 9),
         value_type: BitVector {
             bit_count: 1,
         },
@@ -290,7 +296,7 @@ Val {
 Reg {
     ir: IrReg {
         path: "top"."reg",
-        source_location: SourceLocation($FILE, $LINE-269, 9),
+        source_location: SourceLocation($FILE, $LINE-275, 9),
         value_type: BitVector {
             bit_count: 1,
         },
@@ -378,7 +384,7 @@ Reg {
             r#"
 IrModule {
     path: "top",
-    source_location: SourceLocation($FILE, $LINE-359, 9),
+    source_location: SourceLocation($FILE, $LINE-365, 9),
     parent: <None>,
     interface_types: [
         Input(
@@ -410,31 +416,34 @@ IrModule {
             },
         ),
     ],
-    interface_write_ends: [
+    interface: [
         Input(
-            ExternalInput {
-                value_type: IrStructType {
-                    fields: [
-                        IrStructFieldType {
-                            name: "clk",
-                            ty: BitVector {
-                                bit_count: 1,
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "clk",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
                             },
-                        },
-                        IrStructFieldType {
-                            name: "rst",
-                            ty: BitVector {
-                                bit_count: 1,
+                            IrStructFieldType {
+                                name: "rst",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
                             },
-                        },
-                    ],
+                        ],
+                    },
                 },
+                path: "io.cd",
             },
         ),
         Output(
             IrWire {
                 path: "top"."io.output",
-                source_location: SourceLocation($FILE, $LINE-359, 9),
+                source_location: SourceLocation($FILE, $LINE-365, 9),
                 value_type: BitVector {
                     bit_count: 1,
                 },
@@ -449,16 +458,19 @@ IrModule {
             },
         ),
         Input(
-            ExternalInput {
-                value_type: BitVector {
-                    bit_count: 1,
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: BitVector {
+                        bit_count: 1,
+                    },
                 },
+                path: "io.input",
             },
         ),
     ],
     wires: {
         "io.output": IrWire {
-            source_location: SourceLocation($FILE, $LINE-359, 9),
+            source_location: SourceLocation($FILE, $LINE-365, 9),
             value_type: BitVector {
                 bit_count: 1,
             },
@@ -474,7 +486,7 @@ IrModule {
     },
     registers: {
         "reg": IrReg {
-            source_location: SourceLocation($FILE, $LINE-358, 9),
+            source_location: SourceLocation($FILE, $LINE-364, 9),
             value_type: BitVector {
                 bit_count: 1,
             },

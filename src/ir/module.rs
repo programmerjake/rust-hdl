@@ -23,6 +23,27 @@ use core::{
 };
 use once_cell::unsync::OnceCell;
 
+#[derive(Debug, Clone)]
+pub struct IrModuleInputData<'ctx> {
+    external_value: IrInput<'ctx>,
+    path: IrSymbol<'ctx>,
+}
+
+impl<'ctx> IrModuleInputData<'ctx> {
+    pub fn new(external_value: IrInput<'ctx>, path: IrSymbol<'ctx>) -> Self {
+        Self {
+            external_value,
+            path,
+        }
+    }
+    pub fn external_value(&self) -> &IrInput<'ctx> {
+        &self.external_value
+    }
+    pub fn path(&self) -> IrSymbol<'ctx> {
+        self.path
+    }
+}
+
 pub struct IrModule<'ctx> {
     ctx: ContextRef<'ctx>,
     source_location: Cell<SourceLocation<'ctx>>,
@@ -31,7 +52,7 @@ pub struct IrModule<'ctx> {
     name: IrSymbol<'ctx>,
     symbol_table: IrSymbolTable<'ctx>,
     interface_types: Vec<InOrOut<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>>,
-    interface_write_ends: OnceCell<Vec<InOrOut<IrInput<'ctx>, IrWireRef<'ctx>>>>,
+    interface: OnceCell<Vec<InOrOut<IrModuleInputData<'ctx>, IrWireRef<'ctx>>>>,
     pub(crate) wires: RefCell<Vec<IrWireRef<'ctx>>>,
     pub(crate) registers: RefCell<Vec<IrRegRef<'ctx>>>,
     debug_formatting: Cell<bool>,
@@ -63,6 +84,16 @@ impl fmt::Debug for IrModulePath<'_, '_> {
             write!(f, ".")?;
         }
         write!(f, "{:?}", self.0.name)
+    }
+}
+
+impl fmt::Display for IrModulePath<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(parent) = self.0.parent {
+            IrModulePath(parent).fmt(f)?;
+            write!(f, ".")?;
+        }
+        write!(f, "{}", self.0.name)
     }
 }
 
@@ -102,7 +133,7 @@ impl<'ctx> IrModule<'ctx> {
             name,
             symbol_table: IrSymbolTable::default(),
             interface_types,
-            interface_write_ends: OnceCell::new(),
+            interface: OnceCell::new(),
             wires: RefCell::default(),
             registers: RefCell::default(),
             debug_formatting: Cell::new(false),
@@ -191,28 +222,28 @@ impl<'ctx> IrModule<'ctx> {
         }
     }
     pub fn map_and_set_interface<T: IO<'ctx> + ?Sized>(&'ctx self, external_interface: &mut T) {
-        let mut interface_write_ends = Vec::with_capacity(self.interface_types().len());
+        let mut interface = Vec::with_capacity(self.interface_types().len());
         IOVisitor::visit(
             external_interface,
             &mut |io: IrIOMutRef<'_, 'ctx>, path: &str| {
-                let index = interface_write_ends.len();
+                let index = interface.len();
                 assert!(index < self.interface_types().len());
                 let write_end = io.map(
                     |v| v.map_to_module_internal(self.parent, self, index, path),
                     |v| v.map_to_module_internal(self.parent, self, index, path),
                 );
-                interface_write_ends.push(write_end);
+                interface.push(write_end);
                 Ok(())
             },
             "io",
         )
         .unwrap();
-        assert_eq!(interface_write_ends.len(), self.interface_types().len());
-        let was_empty = self.interface_write_ends.set(interface_write_ends).is_ok();
+        assert_eq!(interface.len(), self.interface_types().len());
+        let was_empty = self.interface.set(interface).is_ok();
         assert!(was_empty);
     }
-    pub fn interface_write_ends(&self) -> Option<&[InOrOut<IrInput<'ctx>, IrWireRef<'ctx>>]> {
-        self.interface_write_ends.get().map(Deref::deref)
+    pub fn interface(&self) -> Option<&[InOrOut<IrModuleInputData<'ctx>, IrWireRef<'ctx>>]> {
+        self.interface.get().map(Deref::deref)
     }
     pub fn ctx(&self) -> ContextRef<'ctx> {
         self.ctx
@@ -291,8 +322,8 @@ impl<'ctx> fmt::Debug for IrModule<'ctx> {
             )
             .field("interface_types", &self.interface_types())
             .field(
-                "interface_write_ends",
-                debug_format_option_as_value_or_none(self.interface_write_ends().as_ref()),
+                "interface",
+                debug_format_option_as_value_or_none(self.interface().as_ref()),
             )
             .field("wires", &DebugWires(&self.wires.borrow()))
             .field("registers", &DebugRegisters(&self.registers.borrow()))
