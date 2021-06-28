@@ -14,14 +14,26 @@ struct MyValue {
 struct TopIO<'ctx> {
     cd: Input<'ctx, ClockDomain>,
     input: Input<'ctx, MyValue>,
-    output: Output<'ctx, MyValue>,
+    wire_output: Output<'ctx, MyValue>,
+    reg_output: Output<'ctx, MyValue>,
 }
 
 #[test]
 fn export_rtlil() {
     Context::with(|ctx: ContextRef<'_>| {
         named!(let (top, io) = ctx.top_module());
-        let TopIO { cd, input, output } = io;
+        let TopIO {
+            cd,
+            input,
+            wire_output,
+            reg_output,
+        } = io;
+        named!(let wire = top.wire());
+        let wire = wire.assign(input.get());
+        wire_output.assign(wire.read());
+        named!(let reg = top.reg(cd.get(), MyValue::default()));
+        let reg = reg.assign_data_in(input.get());
+        reg_output.assign(reg.output());
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(export_rtlil, output, exported);
     });
