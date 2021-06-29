@@ -26,6 +26,7 @@ use alloc::{
     vec::Vec,
 };
 use core::{
+    borrow::BorrowMut,
     cell::{Cell, RefCell},
     cmp::Ordering,
     convert::{Infallible, TryFrom},
@@ -203,8 +204,9 @@ struct ModuleData<'ctx> {
     symbol_table: SymbolTable<'ctx>,
     interface: Rc<[InOrOut<Rc<[RtlilWire<'ctx>]>, Rc<[RtlilWire<'ctx>]>>]>,
     added_to_module_worklist: Cell<bool>,
-    exported_as_submodule: Cell<bool>,
+    added_to_submodule_worklist: Cell<bool>,
     wires_for_values: RefCell<HashMap<IrValueRef<'ctx>, Rc<[RtlilWire<'ctx>]>>>,
+    submodule_worklist: RefCell<Vec<IrModuleRef<'ctx>>>,
 }
 
 impl<'ctx> ModuleData<'ctx> {
@@ -272,8 +274,9 @@ impl<'ctx> ModuleData<'ctx> {
             symbol_table,
             interface,
             added_to_module_worklist: Cell::new(false),
-            exported_as_submodule: Cell::new(false),
+            added_to_submodule_worklist: Cell::new(false),
             wires_for_values: RefCell::new(wires_for_values),
+            submodule_worklist: RefCell::new(Vec::new()),
         }
     }
 }
@@ -347,9 +350,6 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
         submodule: IrModuleRef<'ctx>,
     ) -> Result<(), W::Error> {
         let submodule_data = self.get_module_data(submodule);
-        if submodule_data.exported_as_submodule.replace(true) {
-            return Ok(());
-        }
         self.add_module_to_worklist(submodule);
         let submodule_ir_interface = submodule
             .interface()
@@ -493,7 +493,9 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                         .expect("can't read from an unconnected output");
                 let submodule = write_data.writing_module();
                 let submodule_data = self.get_module_data(submodule);
-                self.export_submodule(module, submodule)?;
+                if !submodule_data.added_to_submodule_worklist.replace(true) {
+                    module_data.submodule_worklist.borrow_mut().push(submodule);
+                }
                 let rtlil_submodule_output = submodule_data.interface[write_data.index()]
                     .clone()
                     .output()
@@ -864,6 +866,9 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
                         q = output_wire.name,
                     )?;
                 }
+            }
+            while let Some(submodule) = module_data.submodule_worklist.borrow_mut().pop() {
+                self.export_submodule(module, submodule)?;
             }
             writeln!(self.writer, "end")?;
         }

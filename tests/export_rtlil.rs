@@ -59,6 +59,5 @@ fn export_rtlil_submodule() {
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(export_rtlil_submodule, output, exported);
         assert_formats_to!(export_rtlil_submodule, top_0, top);
-        panic!("fix submodule outputs not connecting to top outputs due to duplicate wires")
     });
 }
