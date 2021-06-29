@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::context::{ContextRef, Intern, Interned};
-use core::panic::Location;
+use core::{fmt, panic::Location};
 
 pub mod io;
 pub mod logic;
@@ -16,6 +16,12 @@ pub struct SourceLocation<'ctx> {
     file: &'ctx str,
     line: u32,
     column: u32,
+}
+
+impl fmt::Display for SourceLocation<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}:{}", self.file, self.line, self.column)
+    }
 }
 
 impl<'ctx> From<&'ctx Location<'ctx>> for SourceLocation<'ctx> {

@@ -6,7 +6,10 @@ use crate::{
     fmt_utils::{debug_format_option_as_value_or_invalid, debug_format_option_as_value_or_none},
     ir::{
         logic::{IrWire, IrWireRef},
-        module::{IrModule, IrModuleInputData, IrModuleRef},
+        module::{
+            combine_owning_modules, IrModule, IrModuleInputData, IrModuleOutputData, IrModuleRef,
+            OwningModule,
+        },
         symbols::IrSymbol,
         types::IrValueTypeRef,
         values::{IrValue, IrValueRef},
@@ -25,6 +28,12 @@ pub struct IrModuleInput<'ctx> {
     module: IrModuleRef<'ctx>,
     index: usize,
     path: IrSymbol<'ctx>,
+}
+
+impl<'ctx> OwningModule<'ctx> for IrModuleInput<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        Some(self.module)
+    }
 }
 
 impl fmt::Debug for IrModuleInput<'_> {
@@ -100,7 +109,6 @@ impl<'ctx> IrInput<'ctx> {
         }
         panic!("can't read from a module's input outside that module")
     }
-    /// returns the write end (the value from the external module)
     pub(crate) fn map_to_module_internal(
         &mut self,
         parent_module: Option<IrModuleRef<'ctx>>,
@@ -117,9 +125,7 @@ impl<'ctx> IrInput<'ctx> {
         assert_eq!(self.value_type(module.ctx()), module_input.value_type());
         match (&*self, parent_module) {
             (IrInput::Input { value }, Some(parent_module)) => {
-                if let Some(owning_module) = value.owning_module() {
-                    assert_eq!(owning_module, parent_module);
-                }
+                combine_owning_modules([Some(parent_module), value.owning_module()]);
             }
             (IrInput::Input { .. }, None) => {
                 panic!("input to top module must be an external input")
@@ -254,6 +260,12 @@ impl<'ctx> IrOutputRead<'ctx> {
     }
 }
 
+impl<'ctx> OwningModule<'ctx> for IrOutputRead<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.0.module()
+    }
+}
+
 impl<'ctx> Eq for IrOutputRead<'ctx> {}
 
 impl<'ctx> PartialEq for IrOutputRead<'ctx> {
@@ -308,14 +320,13 @@ impl<'ctx> IrOutput<'ctx> {
             IrOutput::ReadEnd(v) => v.0.value_type(),
         }
     }
-    /// returns the write end (the wire in the internal module)
     pub(crate) fn map_to_module_internal(
         &mut self,
         parent_module: Option<IrModuleRef<'ctx>>,
         module: IrModuleRef<'ctx>,
         index: usize,
         path: &str,
-    ) -> IrWireRef<'ctx> {
+    ) -> IrModuleOutputData<'ctx> {
         let expected_value_type = module.interface_types()[index]
             .output()
             .expect("expected output");
@@ -357,7 +368,7 @@ impl<'ctx> IrOutput<'ctx> {
             read_end.0.value_type(),
         );
         *self = IrOutput::WriteEnd(wire);
-        wire
+        IrModuleOutputData::new(read_end, wire)
     }
 }
 

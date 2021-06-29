@@ -5,9 +5,9 @@ use crate::{
     context::Intern,
     fmt_utils::debug_format_option_as_value_or_none,
     ir::{
-        module::IrModuleRef,
+        module::{combine_owning_modules, IrModuleRef, OwningModule},
         symbols::IrSymbol,
-        types::{IrValueType, IrValueTypeRef},
+        types::IrValueTypeRef,
         values::{IrValue, IrValueRef},
         SourceLocation,
     },
@@ -94,9 +94,7 @@ impl<'ctx> IrWire<'ctx> {
     #[track_caller]
     pub fn assign(&self, value: IrValueRef<'ctx>) {
         let value_type = value.get_type(self.module.ctx());
-        if let Some(owning_module) = value.owning_module() {
-            assert_eq!(self.module(), owning_module);
-        }
+        combine_owning_modules([Some(self.module()), value.owning_module()]);
         assert_eq!(self.value_type, value_type);
         if let Err(_) = self.assigned_value.set(value) {
             panic!("Wire already assigned");
@@ -117,6 +115,9 @@ impl<'ctx> IrWire<'ctx> {
             }
         }
         FmtWithoutName(self)
+    }
+    pub fn assigned_value(&self) -> Option<IrValueRef<'ctx>> {
+        self.assigned_value.get().copied()
     }
 }
 
@@ -143,6 +144,12 @@ impl<'ctx> PartialEq for IrWireRead<'ctx> {
 impl<'ctx> Hash for IrWireRead<'ctx> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (self.0 as *const IrWire<'ctx>).hash(state)
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for IrWireRead<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        Some(self.0.module)
     }
 }
 
@@ -179,29 +186,20 @@ impl<'ctx> IrReg<'ctx> {
         clk: IrValueRef<'ctx>,
         rst: Option<IrRegReset<'ctx>>,
     ) -> IrRegRef<'ctx> {
-        assert_eq!(
-            *clk.get_type(module.ctx()),
-            IrValueType::BitVector { bit_count: 1 }
-        );
-        if let Some(owning_module) = clk.owning_module() {
-            assert_eq!(module, owning_module);
-        }
+        assert!(clk.get_type(module.ctx()).is_bool());
+        combine_owning_modules([Some(module), clk.owning_module()]);
         if let Some(IrRegReset {
             reset_enable,
             reset_value,
         }) = rst
         {
-            assert_eq!(
-                *reset_enable.get_type(module.ctx()),
-                IrValueType::BitVector { bit_count: 1 }
-            );
-            if let Some(owning_module) = reset_enable.owning_module() {
-                assert_eq!(module, owning_module);
-            }
+            assert!(reset_enable.get_type(module.ctx()).is_bool());
             assert_eq!(reset_value.get_type(module.ctx()), value_type);
-            if let Some(owning_module) = reset_value.owning_module() {
-                assert_eq!(module, owning_module);
-            }
+            combine_owning_modules([
+                Some(module),
+                reset_enable.owning_module(),
+                reset_value.owning_module(),
+            ]);
         }
         let retval = module.ctx().registers_arena.alloc(Self {
             module,
@@ -239,9 +237,7 @@ impl<'ctx> IrReg<'ctx> {
     #[track_caller]
     pub fn assign_data_in(&self, data_in: IrValueRef<'ctx>) {
         let value_type = data_in.get_type(self.module.ctx());
-        if let Some(owning_module) = data_in.owning_module() {
-            assert_eq!(self.module(), owning_module);
-        }
+        combine_owning_modules([Some(self.module), data_in.owning_module()]);
         assert_eq!(self.value_type, value_type);
         if let Err(_) = self.data_in.set(data_in) {
             panic!("register's input already assigned");
@@ -316,6 +312,12 @@ pub type IrRegRef<'ctx> = &'ctx IrReg<'ctx>;
 
 #[derive(Clone, Copy)]
 pub struct IrRegOutput<'ctx>(pub IrRegRef<'ctx>);
+
+impl<'ctx> OwningModule<'ctx> for IrRegOutput<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        Some(self.0.module())
+    }
+}
 
 impl fmt::Debug for IrRegOutput<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

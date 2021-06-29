@@ -38,3 +38,27 @@ fn export_rtlil() {
         assert_display_formats_to!(export_rtlil, output, exported);
     });
 }
+
+#[test]
+fn export_rtlil_submodule() {
+    Context::with(|ctx: ContextRef<'_>| {
+        named!(let (top, io) = ctx.top_module());
+        named!(let (submodule, io) = top.submodule(io));
+        let TopIO {
+            cd,
+            input,
+            wire_output,
+            reg_output,
+        } = io;
+        named!(let wire = submodule.wire());
+        let wire = wire.assign(input.get());
+        wire_output.assign(wire.read());
+        named!(let reg = submodule.reg(cd.get(), MyValue::default()));
+        let reg = reg.assign_data_in(input.get());
+        reg_output.assign(reg.output());
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        assert_display_formats_to!(export_rtlil_submodule, output, exported);
+        assert_formats_to!(export_rtlil_submodule, top_0, top);
+        panic!("fix submodule outputs not connecting to top outputs due to duplicate wires")
+    });
+}

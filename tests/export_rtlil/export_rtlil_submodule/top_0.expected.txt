@@ -1,0 +1,456 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-16, 9),
+    parent: <None>,
+    interface_types: [
+        Input(
+            IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "clk",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "rst",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                ],
+            },
+        ),
+        Input(
+            IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "a",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "b",
+                        ty: Array {
+                            element: BitVector {
+                                bit_count: 8,
+                            },
+                            length: 3,
+                        },
+                    },
+                ],
+            },
+        ),
+        Output(
+            IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "a",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "b",
+                        ty: Array {
+                            element: BitVector {
+                                bit_count: 8,
+                            },
+                            length: 3,
+                        },
+                    },
+                ],
+            },
+        ),
+        Output(
+            IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "a",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "b",
+                        ty: Array {
+                            element: BitVector {
+                                bit_count: 8,
+                            },
+                            length: 3,
+                        },
+                    },
+                ],
+            },
+        ),
+    ],
+    interface: [
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "clk",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "rst",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
+                            },
+                        ],
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io.cd",
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "clk",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "rst",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        ),
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "a",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "b",
+                                ty: Array {
+                                    element: BitVector {
+                                        bit_count: 8,
+                                    },
+                                    length: 3,
+                                },
+                            },
+                        ],
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 1,
+                    path: "io.input",
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "a",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "b",
+                                ty: Array {
+                                    element: BitVector {
+                                        bit_count: 8,
+                                    },
+                                    length: 3,
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        ),
+        Output(
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: <None>,
+                        value_type: IrStructType {
+                            fields: [
+                                IrStructFieldType {
+                                    name: "a",
+                                    ty: BitVector {
+                                        bit_count: 1,
+                                    },
+                                },
+                                IrStructFieldType {
+                                    name: "b",
+                                    ty: Array {
+                                        element: BitVector {
+                                            bit_count: 8,
+                                        },
+                                        length: 3,
+                                    },
+                                },
+                            ],
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top",
+                            index: 2,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."io.wire_output",
+                    source_location: SourceLocation($FILE, $LINE-16, 9),
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "a",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "b",
+                                ty: Array {
+                                    element: BitVector {
+                                        bit_count: 8,
+                                    },
+                                    length: 3,
+                                },
+                            },
+                        ],
+                    },
+                    assigned_value: IrOutputRead(
+                        IrOutputReadData {
+                            module: "top",
+                            value_type: IrStructType {
+                                fields: [
+                                    IrStructFieldType {
+                                        name: "a",
+                                        ty: BitVector {
+                                            bit_count: 1,
+                                        },
+                                    },
+                                    IrStructFieldType {
+                                        name: "b",
+                                        ty: Array {
+                                            element: BitVector {
+                                                bit_count: 8,
+                                            },
+                                            length: 3,
+                                        },
+                                    },
+                                ],
+                            },
+                            write_data: IrOutputWriteData {
+                                writing_module: "top"."submodule",
+                                index: 2,
+                            },
+                        },
+                    ),
+                    ..
+                },
+            },
+        ),
+        Output(
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: <None>,
+                        value_type: IrStructType {
+                            fields: [
+                                IrStructFieldType {
+                                    name: "a",
+                                    ty: BitVector {
+                                        bit_count: 1,
+                                    },
+                                },
+                                IrStructFieldType {
+                                    name: "b",
+                                    ty: Array {
+                                        element: BitVector {
+                                            bit_count: 8,
+                                        },
+                                        length: 3,
+                                    },
+                                },
+                            ],
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top",
+                            index: 3,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."io.reg_output",
+                    source_location: SourceLocation($FILE, $LINE-16, 9),
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "a",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "b",
+                                ty: Array {
+                                    element: BitVector {
+                                        bit_count: 8,
+                                    },
+                                    length: 3,
+                                },
+                            },
+                        ],
+                    },
+                    assigned_value: IrOutputRead(
+                        IrOutputReadData {
+                            module: "top",
+                            value_type: IrStructType {
+                                fields: [
+                                    IrStructFieldType {
+                                        name: "a",
+                                        ty: BitVector {
+                                            bit_count: 1,
+                                        },
+                                    },
+                                    IrStructFieldType {
+                                        name: "b",
+                                        ty: Array {
+                                            element: BitVector {
+                                                bit_count: 8,
+                                            },
+                                            length: 3,
+                                        },
+                                    },
+                                ],
+                            },
+                            write_data: IrOutputWriteData {
+                                writing_module: "top"."submodule",
+                                index: 3,
+                            },
+                        },
+                    ),
+                    ..
+                },
+            },
+        ),
+    ],
+    wires: {
+        "io.wire_output": IrWire {
+            source_location: SourceLocation($FILE, $LINE-16, 9),
+            value_type: IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "a",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "b",
+                        ty: Array {
+                            element: BitVector {
+                                bit_count: 8,
+                            },
+                            length: 3,
+                        },
+                    },
+                ],
+            },
+            assigned_value: IrOutputRead(
+                IrOutputReadData {
+                    module: "top",
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "a",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "b",
+                                ty: Array {
+                                    element: BitVector {
+                                        bit_count: 8,
+                                    },
+                                    length: 3,
+                                },
+                            },
+                        ],
+                    },
+                    write_data: IrOutputWriteData {
+                        writing_module: "top"."submodule",
+                        index: 2,
+                    },
+                },
+            ),
+            ..
+        },
+        "io.reg_output": IrWire {
+            source_location: SourceLocation($FILE, $LINE-16, 9),
+            value_type: IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "a",
+                        ty: BitVector {
+                            bit_count: 1,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "b",
+                        ty: Array {
+                            element: BitVector {
+                                bit_count: 8,
+                            },
+                            length: 3,
+                        },
+                    },
+                ],
+            },
+            assigned_value: IrOutputRead(
+                IrOutputReadData {
+                    module: "top",
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "a",
+                                ty: BitVector {
+                                    bit_count: 1,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "b",
+                                ty: Array {
+                                    element: BitVector {
+                                        bit_count: 8,
+                                    },
+                                    length: 3,
+                                },
+                            },
+                        ],
+                    },
+                    write_data: IrOutputWriteData {
+                        writing_module: "top"."submodule",
+                        index: 3,
+                    },
+                },
+            ),
+            ..
+        },
+    },
+    registers: {},
+    ..
+}

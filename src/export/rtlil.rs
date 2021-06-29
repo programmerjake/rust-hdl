@@ -2,25 +2,38 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::Intern,
-    export::Exporter,
+    context::{ContextRef, Intern},
+    export::{
+        rtlil::id::{GlobalSymbolTable, RtlilId, SymbolTable},
+        Exporter,
+    },
     ir::{
         io::InOrOut,
-        logic::IrWireRef,
-        module::IrModuleRef,
-        types::{IrStructFieldType, IrStructType, IrValueType, IrValueTypeRef},
-        values::{IrValue, IrValueRef},
+        logic::IrRegReset,
+        module::{combine_owning_modules, IrModuleRef, OwningModule},
+        symbols::IrSymbolTable,
+        types::{IrStructType, IrValueType, IrValueTypeRef},
+        values::{IrValue, IrValueRef, LiteralBits, Mux},
         SourceLocation,
     },
+    prelude::UInt1,
 };
 use alloc::{
+    borrow::Cow,
     format,
     rc::Rc,
     string::{String, ToString},
     vec::Vec,
 };
-use core::fmt::{self, Write as _};
-use hashbrown::{HashMap, HashSet};
+use core::{
+    cell::{Cell, RefCell},
+    cmp::Ordering,
+    convert::{Infallible, TryFrom},
+    fmt::{self, Write as _},
+};
+use hashbrown::{hash_map::Entry, HashMap, HashSet};
+
+mod id;
 
 pub trait Write {
     type Error: fmt::Display + fmt::Debug + Send + 'static;
@@ -116,42 +129,6 @@ impl<W: Write + ?Sized> Writer<W> {
     }
 }
 
-struct RtlilId<'a>(&'a str);
-
-impl fmt::Display for RtlilId<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let id = self.0;
-        if id.is_empty() {
-            return write!(f, "$$");
-        }
-        match id.strip_prefix("#") {
-            Some(id) if !id.contains(|ch: char| !ch.is_ascii_digit()) => {
-                return write!(f, "${}", id);
-            }
-            _ => write!(f, "\\")?,
-        }
-        /// rtlil identifiers can't have some whitespace and other special characters, replace them with Unicode control pictures.
-        fn replace_char(ch: char) -> Option<char> {
-            Some(match ch {
-                '\0' => '\u{2400}',
-                '\t' => '\u{2409}',
-                '\n' => '\u{2424}',
-                '\r' => '\u{240D}',
-                ' ' => '\u{2423}',
-                _ => return None,
-            })
-        }
-        if id.contains(|ch| replace_char(ch).is_some()) {
-            for ch in id.chars() {
-                write!(f, "{}", replace_char(ch).unwrap_or(ch))?;
-            }
-            Ok(())
-        } else {
-            write!(f, "{}", id)
-        }
-    }
-}
-
 struct RtlilStr<'a>(&'a str);
 
 impl fmt::Display for RtlilStr<'_> {
@@ -182,6 +159,19 @@ impl fmt::Display for RtlilStr<'_> {
     }
 }
 
+struct RtlilLiteral<'a>(&'a LiteralBits);
+
+impl fmt::Display for RtlilLiteral<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{bit_count}'{value:0bit_count$}",
+            bit_count = usize::try_from(self.0.bit_count()).expect("value too big to write"),
+            value = self.0.value()
+        )
+    }
+}
+
 struct RtlilLocation<'ctx>(SourceLocation<'ctx>);
 
 impl fmt::Display for RtlilLocation<'_> {
@@ -196,20 +186,102 @@ impl fmt::Display for RtlilLocation<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RtlilWireType {
     bit_count: u32,
 }
 
 #[derive(Debug, Clone)]
-struct RtlilWire {
-    name: Rc<str>,
+struct RtlilWire<'ctx> {
+    name: RtlilId<'ctx>,
     ty: RtlilWireType,
+    io_index: Option<usize>,
+}
+
+struct ModuleData<'ctx> {
+    name: RtlilId<'ctx>,
+    symbol_table: SymbolTable<'ctx>,
+    interface: Rc<[InOrOut<Rc<[RtlilWire<'ctx>]>, Rc<[RtlilWire<'ctx>]>>]>,
+    added_to_module_worklist: Cell<bool>,
+    exported_as_submodule: Cell<bool>,
+    wires_for_values: RefCell<HashMap<IrValueRef<'ctx>, Rc<[RtlilWire<'ctx>]>>>,
+}
+
+impl<'ctx> ModuleData<'ctx> {
+    fn new(module: IrModuleRef<'ctx>, global_symbol_table: &GlobalSymbolTable<'ctx>) -> Self {
+        let symbol_table = SymbolTable::new(module);
+        let name = global_symbol_table.new_id(module.ctx(), module.path().to_string());
+        let mut wires_for_values = HashMap::new();
+        let mut io_index = 0usize;
+        let ir_interface = module.interface().expect("module is missing its interface");
+        let mut interface = Vec::with_capacity(ir_interface.len());
+        for io in ir_interface {
+            interface.push(match io {
+                InOrOut::Input(input) => {
+                    let mut wires = Vec::new();
+                    visit_wire_types_in_type(
+                        &input.external_value().value_type(module.ctx()),
+                        &mut input.module_input().path().to_string(),
+                        RelationToSelectedField::InSelectedField(&[]),
+                        &mut |ty, path, _relation_to_selected_field| {
+                            let name = symbol_table.new_id(module, path);
+                            wires.push(RtlilWire {
+                                name,
+                                ty,
+                                io_index: Some(io_index),
+                            });
+                            io_index += 1;
+                            Ok::<_, Infallible>(())
+                        },
+                    )
+                    .unwrap();
+                    let wires: Rc<[_]> = wires.into();
+                    wires_for_values.insert(
+                        IrValue::Input(input.module_input()).intern(module.ctx()),
+                        wires.clone(),
+                    );
+                    InOrOut::Input(wires)
+                }
+                InOrOut::Output(output) => {
+                    let mut wires = Vec::new();
+                    visit_wire_types_in_type(
+                        &output.wire().value_type(),
+                        &mut output.wire().name().to_string(),
+                        RelationToSelectedField::InSelectedField(&[]),
+                        &mut |ty, path, _relation_to_selected_field| {
+                            let name = symbol_table.new_id(module, path);
+                            wires.push(RtlilWire {
+                                name,
+                                ty,
+                                io_index: Some(io_index),
+                            });
+                            io_index += 1;
+                            Ok::<_, Infallible>(())
+                        },
+                    )
+                    .unwrap();
+                    let wires: Rc<[_]> = wires.into();
+                    wires_for_values.insert(output.wire().read(), wires.clone());
+                    InOrOut::Output(wires)
+                }
+            });
+        }
+        let interface = interface.into();
+        ModuleData {
+            name,
+            symbol_table,
+            interface,
+            added_to_module_worklist: Cell::new(false),
+            exported_as_submodule: Cell::new(false),
+            wires_for_values: RefCell::new(wires_for_values),
+        }
+    }
 }
 
 pub struct RtlilExporter<'ctx, W: Write + ?Sized> {
-    written_modules: HashSet<IrModuleRef<'ctx>>,
-    wires_for_values: HashMap<IrValueRef<'ctx>, Rc<[RtlilWire]>>,
+    modules: HashMap<IrModuleRef<'ctx>, Rc<ModuleData<'ctx>>>,
+    global_symbol_table: GlobalSymbolTable<'ctx>,
+    module_worklist: Vec<IrModuleRef<'ctx>>,
     writer: Writer<W>,
 }
 
@@ -219,8 +291,9 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
         W: Sized,
     {
         Self {
-            written_modules: HashSet::new(),
-            wires_for_values: HashMap::new(),
+            modules: HashMap::new(),
+            global_symbol_table: GlobalSymbolTable::default(),
+            module_worklist: Vec::new(),
             writer: Writer(writer),
         }
     }
@@ -230,6 +303,319 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
         W::Output: Sized,
     {
         self.writer.0.into_output()
+    }
+    fn get_module_data(&mut self, module: IrModuleRef<'ctx>) -> Rc<ModuleData<'ctx>> {
+        let global_symbol_table = &self.global_symbol_table;
+        self.modules
+            .entry(module)
+            .or_insert_with(|| Rc::new(ModuleData::new(module, global_symbol_table)))
+            .clone()
+    }
+    fn add_uniquified_symbol<'a>(
+        &mut self,
+        module: IrModuleRef<'ctx>,
+        name: impl Into<Cow<'a, str>>,
+    ) -> RtlilId<'ctx> {
+        self.get_module_data(module)
+            .symbol_table
+            .new_id(module, name.into())
+    }
+    fn new_anonymous_symbol(&mut self, module: IrModuleRef<'ctx>) -> RtlilId<'ctx> {
+        self.add_uniquified_symbol(module, "")
+    }
+    fn get_single_wire_for_value(
+        &mut self,
+        module: IrModuleRef<'ctx>,
+        value: IrValueRef<'ctx>,
+    ) -> Result<RtlilWire<'ctx>, W::Error> {
+        let wires = self.get_wires_for_value(module, value)?;
+        assert_eq!(wires.len(), 1);
+        Ok(wires[0].clone())
+    }
+    fn get_bool_wire_for_value(
+        &mut self,
+        module: IrModuleRef<'ctx>,
+        value: IrValueRef<'ctx>,
+    ) -> Result<RtlilWire<'ctx>, W::Error> {
+        let retval = self.get_single_wire_for_value(module, value)?;
+        assert_eq!(retval.ty.bit_count, 1);
+        Ok(retval)
+    }
+    fn export_submodule(
+        &mut self,
+        parent_module: IrModuleRef<'ctx>,
+        submodule: IrModuleRef<'ctx>,
+    ) -> Result<(), W::Error> {
+        let submodule_data = self.get_module_data(submodule);
+        if submodule_data.exported_as_submodule.replace(true) {
+            return Ok(());
+        }
+        self.add_module_to_worklist(submodule);
+        let submodule_ir_interface = submodule
+            .interface()
+            .expect("module is missing its interface");
+        struct Connection<'ctx> {
+            submodule_port: RtlilId<'ctx>,
+            parent_module_wire: RtlilId<'ctx>,
+        }
+        let mut connections = Vec::new();
+        for (submodule_ir_io, submodule_rtlil_io) in submodule_ir_interface
+            .iter()
+            .zip(submodule_data.interface.iter())
+        {
+            match submodule_ir_io {
+                InOrOut::Input(submodule_ir_input) => {
+                    let submodule_rtlil_input = submodule_rtlil_io.as_ref().input().unwrap();
+                    let parent_module_wires = self.get_wires_for_value(
+                        parent_module,
+                        submodule_ir_input
+                            .external_value()
+                            .get_wrapped_value()
+                            .expect("a submodule input can't be an external input"),
+                    )?;
+                    for (submodule_port, parent_module_wire) in
+                        submodule_rtlil_input.iter().zip(parent_module_wires.iter())
+                    {
+                        connections.push(Connection {
+                            submodule_port: submodule_port.name,
+                            parent_module_wire: parent_module_wire.name,
+                        });
+                    }
+                }
+                InOrOut::Output(submodule_ir_output) => {
+                    let submodule_rtlil_output = submodule_rtlil_io.as_ref().output().unwrap();
+                    let parent_module_wires = self.get_wires_for_value(
+                        parent_module,
+                        submodule_ir_output.output_read().read(),
+                    )?;
+                    for (submodule_port, parent_module_wire) in submodule_rtlil_output
+                        .iter()
+                        .zip(parent_module_wires.iter())
+                    {
+                        connections.push(Connection {
+                            submodule_port: submodule_port.name,
+                            parent_module_wire: parent_module_wire.name,
+                        });
+                    }
+                }
+            }
+        }
+        writeln!(
+            self.writer,
+            r"  attribute \src {}",
+            RtlilLocation(submodule.source_location())
+        )?;
+        let instance_name = self.add_uniquified_symbol(parent_module, &**submodule.name());
+        writeln!(
+            self.writer,
+            "  cell {} {}",
+            submodule_data.name, instance_name
+        )?;
+        for Connection {
+            submodule_port,
+            parent_module_wire,
+        } in connections
+        {
+            submodule_port.assert_module_is(submodule);
+            parent_module_wire.assert_module_is(parent_module);
+            writeln!(
+                self.writer,
+                r"    connect {} {}",
+                submodule_port, parent_module_wire,
+            )?;
+        }
+        writeln!(self.writer, "  end")
+    }
+    fn get_wires_for_value(
+        &mut self,
+        module: IrModuleRef<'ctx>,
+        value: IrValueRef<'ctx>,
+    ) -> Result<Rc<[RtlilWire<'ctx>]>, W::Error> {
+        combine_owning_modules([Some(module), value.owning_module()]);
+        let module_data = self.get_module_data(module);
+        if let Some(retval) = module_data.wires_for_values.borrow().get(&value) {
+            return Ok(retval.clone());
+        }
+        let wires: Rc<[RtlilWire<'ctx>]> = match *value {
+            IrValue::LiteralBits(ref v) => {
+                let name = self.new_anonymous_symbol(module);
+                writeln!(self.writer, "  wire width {} {}", v.bit_count(), name)?;
+                writeln!(self.writer, "  connect {} {}", name, RtlilLiteral(v))?;
+                Rc::new([RtlilWire {
+                    name,
+                    ty: RtlilWireType {
+                        bit_count: v.bit_count(),
+                    },
+                    io_index: None,
+                }])
+            }
+            IrValue::LiteralArray(v) => {
+                let mut wires = Vec::with_capacity(v.elements().len());
+                for element in v.elements().iter() {
+                    wires.extend_from_slice(&self.get_wires_for_value(module, *element)?);
+                }
+                wires.into()
+            }
+            IrValue::LiteralStruct(v) => {
+                let mut wires = Vec::with_capacity(v.fields().len());
+                for field in v.fields().iter() {
+                    wires.extend_from_slice(&self.get_wires_for_value(module, field.value)?);
+                }
+                wires.into()
+            }
+            IrValue::WireRead(v) => {
+                let mut wires = Vec::new();
+                visit_wire_types_in_type(
+                    &v.0.value_type(),
+                    &mut v.0.name().to_string(),
+                    RelationToSelectedField::InSelectedField(&[]),
+                    &mut |ty, path, _relation_to_selected_field| {
+                        let name = self.add_uniquified_symbol(module, path);
+                        wires.push(RtlilWire {
+                            name,
+                            ty,
+                            io_index: None,
+                        });
+                        Ok::<_, Infallible>(())
+                    },
+                )
+                .unwrap();
+                wires.into()
+            }
+            IrValue::Input(v) => panic!(
+                "input {:?} not available in module {:?}",
+                v.path(),
+                module.path()
+            ),
+            IrValue::OutputRead(v) => {
+                let write_data =
+                    v.0.write_data()
+                        .expect("can't read from an unconnected output");
+                let submodule = write_data.writing_module();
+                let submodule_data = self.get_module_data(submodule);
+                self.export_submodule(module, submodule)?;
+                let rtlil_submodule_output = submodule_data.interface[write_data.index()]
+                    .clone()
+                    .output()
+                    .unwrap();
+                let ir_submodule_interface = submodule
+                    .interface()
+                    .expect("module is missing its interface");
+                let ir_submodule_output = ir_submodule_interface[write_data.index()]
+                    .as_ref()
+                    .output()
+                    .unwrap();
+                let mut wires = Vec::with_capacity(rtlil_submodule_output.len());
+                visit_wire_types_in_type(
+                    &v.0.value_type(),
+                    &mut format!("{}.{}", submodule.name(), ir_submodule_output.wire().name()),
+                    RelationToSelectedField::InSelectedField(&[]),
+                    &mut |ty, path, _relation_to_selected_field| {
+                        let name = self.add_uniquified_symbol(module, path);
+                        wires.push(RtlilWire {
+                            name,
+                            ty,
+                            io_index: None,
+                        });
+                        writeln!(self.writer, "  wire width {} {}", ty.bit_count, name)
+                    },
+                )?;
+                wires.into()
+            }
+            IrValue::ExtractStructField(v) => {
+                let struct_wires = self.get_wires_for_value(module, v.struct_value())?;
+                let mut struct_wires = struct_wires.iter();
+                let mut wires = Vec::new();
+                visit_wire_types_in_type(
+                    &IrValueType::from(v.struct_type()),
+                    &mut String::new(),
+                    RelationToSelectedField::InSelectedField(&[v.field_index()]),
+                    &mut |_wire_type, _path, relation_to_selected_field| {
+                        let struct_wire = struct_wires.next().unwrap();
+                        if let RelationToSelectedField::InSelectedField(_) =
+                            relation_to_selected_field
+                        {
+                            wires.push(struct_wire.clone());
+                        }
+                        Ok::<_, Infallible>(())
+                    },
+                )
+                .unwrap();
+                wires.into()
+            }
+            IrValue::RegOutput(v) => {
+                let mut wires = Vec::new();
+                visit_wire_types_in_type(
+                    &v.0.value_type(),
+                    &mut v.0.name().to_string(),
+                    RelationToSelectedField::InSelectedField(&[]),
+                    &mut |ty, path, _relation_to_selected_field| {
+                        let name = self.add_uniquified_symbol(module, path);
+                        wires.push(RtlilWire {
+                            name,
+                            ty,
+                            io_index: None,
+                        });
+                        Ok::<_, Infallible>(())
+                    },
+                )
+                .unwrap();
+                wires.into()
+            }
+            IrValue::Mux(v) => {
+                let condition_wire = self.get_bool_wire_for_value(module, v.condition())?;
+                let true_value_wires = self.get_wires_for_value(module, v.true_value())?;
+                let false_value_wires = self.get_wires_for_value(module, v.false_value())?;
+                assert_eq!(true_value_wires.len(), false_value_wires.len());
+                let mut wires = Vec::with_capacity(true_value_wires.len());
+                for (true_value_wire, false_value_wire) in
+                    true_value_wires.iter().zip(false_value_wires.iter())
+                {
+                    assert_eq!(true_value_wire.ty, false_value_wire.ty);
+                    let name = self.new_anonymous_symbol(module);
+                    let cell_name = self.new_anonymous_symbol(module);
+                    let ty = true_value_wire.ty;
+                    writeln!(
+                        self.writer,
+                        r"  wire width {bit_count} {output}
+  cell $mux {cell_name}
+    parameter \WIDTH {bit_count}
+    connect \S {condition}
+    connect \A {false_value}
+    connect \B {true_value}
+    connect \Y {output}
+  end",
+                        cell_name = cell_name,
+                        bit_count = ty.bit_count,
+                        condition = condition_wire.name,
+                        false_value = false_value_wire.name,
+                        true_value = true_value_wire.name,
+                        output = name,
+                    )?;
+                    wires.push(RtlilWire {
+                        name,
+                        ty,
+                        io_index: None,
+                    });
+                }
+                wires.into()
+            }
+        };
+        let retval: Rc<[_]> = wires.into();
+        module_data
+            .wires_for_values
+            .borrow_mut()
+            .insert(value, retval.clone());
+        Ok(retval)
+    }
+    fn add_module_to_worklist(&mut self, module: IrModuleRef<'ctx>) {
+        if !self
+            .get_module_data(module)
+            .added_to_module_worklist
+            .replace(true)
+        {
+            self.module_worklist.push(module);
+        }
     }
 }
 
@@ -273,101 +659,117 @@ impl Drop for PathBuilder<'_> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum RelationToSelectedField<T> {
+    BeforeSelectedField,
+    InSelectedField(T),
+    AfterSelectedField,
+}
+
+impl<T> RelationToSelectedField<T> {
+    fn map<F: FnOnce(T) -> R, R>(self, f: F) -> RelationToSelectedField<R> {
+        self.and_then(|v| RelationToSelectedField::InSelectedField(f(v)))
+    }
+    fn and_then<F: FnOnce(T) -> RelationToSelectedField<R>, R>(
+        self,
+        f: F,
+    ) -> RelationToSelectedField<R> {
+        match self {
+            RelationToSelectedField::BeforeSelectedField => {
+                RelationToSelectedField::BeforeSelectedField
+            }
+            RelationToSelectedField::InSelectedField(v) => f(v),
+            RelationToSelectedField::AfterSelectedField => {
+                RelationToSelectedField::AfterSelectedField
+            }
+        }
+    }
+}
+
+fn visit_wire_types_in_type_field<'ctx, E>(
+    field_type: IrValueTypeRef<'ctx>,
+    field_index: usize,
+    field_path_builder: PathBuilder<'_>,
+    relation_to_selected_field: RelationToSelectedField<&[usize]>,
+    visitor: &mut impl FnMut(RtlilWireType, &str, RelationToSelectedField<()>) -> Result<(), E>,
+) -> Result<(), E> {
+    visit_wire_types_in_type(
+        &field_type,
+        field_path_builder,
+        relation_to_selected_field.and_then(|subfield_path| -> RelationToSelectedField<&[usize]> {
+            if let Some((&index, subfield_path)) = subfield_path.split_first() {
+                match field_index.cmp(&index) {
+                    Ordering::Less => RelationToSelectedField::BeforeSelectedField,
+                    Ordering::Equal => RelationToSelectedField::InSelectedField(subfield_path),
+                    Ordering::Greater => RelationToSelectedField::AfterSelectedField,
+                }
+            } else {
+                RelationToSelectedField::InSelectedField(&[])
+            }
+        }),
+        visitor,
+    )
+}
+
 fn visit_wire_types_in_type<'ctx, 'a, E>(
-    ty: IrValueTypeRef<'ctx>,
+    ty: &IrValueType<'ctx>,
     path_builder: impl Into<PathBuilder<'a>>,
-    visitor: &mut impl FnMut(RtlilWireType, &str) -> Result<(), E>,
+    relation_to_selected_field: RelationToSelectedField<&[usize]>,
+    visitor: &mut impl FnMut(RtlilWireType, &str, RelationToSelectedField<()>) -> Result<(), E>,
 ) -> Result<(), E> {
     let mut path_builder = path_builder.into();
     match *ty {
-        IrValueType::BitVector { bit_count } => {
-            visitor(RtlilWireType { bit_count }, path_builder.get())?
-        }
+        IrValueType::BitVector { bit_count } => visitor(
+            RtlilWireType { bit_count },
+            path_builder.get(),
+            relation_to_selected_field.map(|subfield_path| {
+                assert!(subfield_path.is_empty());
+            }),
+        )?,
         IrValueType::Array { element, length } => {
             for index in 0..length {
-                visit_wire_types_in_type(element, path_builder.push_array_index(index), visitor)?;
+                visit_wire_types_in_type_field(
+                    element,
+                    index,
+                    path_builder.push_array_index(index),
+                    relation_to_selected_field,
+                    visitor,
+                )?;
             }
         }
         IrValueType::Struct(IrStructType { fields }) => {
-            for &IrStructFieldType { name, ty } in &*fields {
-                visit_wire_types_in_type(ty, path_builder.push_struct_member(&name), visitor)?;
+            for (index, field) in fields.iter().enumerate() {
+                visit_wire_types_in_type_field(
+                    field.ty,
+                    index,
+                    path_builder.push_struct_member(&field.name),
+                    relation_to_selected_field,
+                    visitor,
+                )?;
             }
         }
     }
     Ok(())
 }
 
-impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
-    fn export_wire(
-        &mut self,
-        wire: IrWireRef<'ctx>,
-        mut io_index: Option<&mut usize>,
-    ) -> Result<(), W::Error> {
-        let key = wire.read();
-        if self.wires_for_values.contains_key(&key) {
-            return Ok(());
-        }
-        let mut wires = Vec::new();
-        visit_wire_types_in_type(
-            wire.value_type(),
-            &mut wire.name().to_string(),
-            &mut |ty, path| {
-                wires.push(RtlilWire {
-                    name: path.into(),
-                    ty,
-                });
-                writeln!(
-                    self.writer,
-                    r"  attribute \src {}",
-                    RtlilLocation(wire.source_location())
-                )?;
-                write!(self.writer, "  wire width {}", ty.bit_count)?;
-                if let Some(io_index) = io_index.as_deref_mut() {
-                    write!(self.writer, " output {}", io_index)?;
-                    *io_index += 1;
-                }
-                writeln!(self.writer, " {}", RtlilId(path))?;
-                Ok(())
-            },
-        )?;
-        self.wires_for_values.insert(key, wires.into());
-        Ok(())
-    }
-}
-
 impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
     type Error = W::Error;
 
     fn export_ir(&mut self, module: IrModuleRef<'ctx>) -> Result<(), Self::Error> {
-        if !self.written_modules.insert(module) {
-            return Ok(());
-        }
-        writeln!(self.writer, r#"attribute \generator "rust-hdl""#)?;
-        writeln!(
-            self.writer,
-            r"attribute \src {}",
-            RtlilLocation(module.source_location())
-        )?;
-        writeln!(
-            self.writer,
-            "module {}",
-            RtlilId(&module.path().to_string())
-        )?;
-        let ctx = module.ctx();
-        let interface = module.interface().expect("module is missing its interface");
-        let mut io_index = 0usize;
-        for io in interface {
-            match io {
-                InOrOut::Input(input) => {
-                    let mut wires = Vec::new();
-                    visit_wire_types_in_type(
-                        input.external_value().value_type(ctx),
-                        &mut input.module_input().path().to_string(),
-                        &mut |ty, path| {
-                            wires.push(RtlilWire {
-                                name: path.into(),
-                                ty,
-                            });
+        self.add_module_to_worklist(module);
+        while let Some(module) = self.module_worklist.pop() {
+            writeln!(self.writer, r#"attribute \generator "rust-hdl""#)?;
+            writeln!(
+                self.writer,
+                r"attribute \src {}",
+                RtlilLocation(module.source_location())
+            )?;
+            let module_data = self.get_module_data(module);
+            writeln!(self.writer, "module {}", module_data.name)?;
+            for io in module_data.interface.iter() {
+                match io {
+                    InOrOut::Input(input) => {
+                        for wire in input.iter() {
                             writeln!(
                                 self.writer,
                                 r"  attribute \src {}",
@@ -376,53 +778,96 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
                             writeln!(
                                 self.writer,
                                 "  wire width {} input {} {}",
-                                ty.bit_count,
-                                io_index,
-                                RtlilId(path)
+                                wire.ty.bit_count,
+                                wire.io_index.unwrap(),
+                                wire.name,
                             )?;
-                            io_index += 1;
-                            Ok(())
-                        },
-                    )?;
-                    self.wires_for_values.insert(
-                        IrValue::Input(input.module_input()).intern(ctx),
-                        wires.into(),
-                    );
+                        }
+                    }
+                    InOrOut::Output(_) => {}
                 }
-                InOrOut::Output(output) => self.export_wire(output, Some(&mut io_index))?,
             }
-        }
-        for wire in module.wires() {
-            self.export_wire(wire, None)?;
-        }
-        for reg in module.registers() {
-            let mut wires = Vec::new();
-            visit_wire_types_in_type(
-                reg.value_type(),
-                &mut reg.name().to_string(),
-                &mut |ty, path| {
-                    wires.push(RtlilWire {
-                        name: path.into(),
-                        ty,
-                    });
+            for wire in module.wires() {
+                let lhs_wires = self.get_wires_for_value(module, wire.read())?;
+                let rhs_wires = self.get_wires_for_value(
+                    module,
+                    wire.assigned_value().unwrap_or_else(|| {
+                        panic!(
+                            "{}: wire {:?} is not assigned a value",
+                            wire.source_location(),
+                            wire.path(),
+                        )
+                    }),
+                )?;
+                assert_eq!(lhs_wires.len(), rhs_wires.len());
+                for (lhs_wire, rhs_wire) in lhs_wires.iter().zip(rhs_wires.iter()) {
                     writeln!(
                         self.writer,
                         r"  attribute \src {}",
-                        RtlilLocation(reg.source_location())
+                        RtlilLocation(module.source_location())
                     )?;
+                    write!(self.writer, "  wire width {}", lhs_wire.ty.bit_count,)?;
+                    if let Some(io_index) = lhs_wire.io_index {
+                        write!(self.writer, " output {}", io_index)?;
+                    }
+                    writeln!(self.writer, " {}", lhs_wire.name)?;
+                    lhs_wire.name.assert_module_is(module);
+                    rhs_wire.name.assert_module_is(module);
+                    writeln!(self.writer, "  connect {} {}", lhs_wire.name, rhs_wire.name)?;
+                }
+            }
+            for reg in module.registers() {
+                let clk_wire = self.get_bool_wire_for_value(module, reg.clk())?;
+                let mut input_value = reg.data_in().unwrap_or_else(|| {
+                    panic!(
+                        "{}: reg {:?} is not assigned an input data value",
+                        reg.source_location(),
+                        reg.path(),
+                    )
+                });
+                if let Some(IrRegReset {
+                    reset_enable,
+                    reset_value,
+                }) = reg.rst()
+                {
+                    input_value = IrValue::from(Mux::new(
+                        module.ctx(),
+                        reset_enable,
+                        reset_value,
+                        input_value,
+                    ))
+                    .intern(module.ctx());
+                }
+                let input_wires = self.get_wires_for_value(module, input_value)?;
+                let output_wires = self.get_wires_for_value(module, reg.output())?;
+                assert_eq!(input_wires.len(), output_wires.len());
+                let clk_polarity = LiteralBits::from(UInt1::wrapping_new(1));
+                for (input_wire, output_wire) in input_wires.iter().zip(output_wires.iter()) {
+                    assert_eq!(input_wire.ty, output_wire.ty);
+                    let cell_name = self.add_uniquified_symbol(module, output_wire.name);
                     writeln!(
                         self.writer,
-                        "  wire width {} {}",
-                        ty.bit_count,
-                        RtlilId(path)
+                        r"  attribute \src {source_location}
+  cell $dff {cell_name}
+    parameter \WIDTH {bit_count}
+    parameter \CLK_POLARITY {clk_polarity}
+    connect \CLK {clk}
+    connect \D {d}
+    connect \Q {q}
+  end",
+                        source_location = RtlilLocation(reg.source_location()),
+                        cell_name = cell_name,
+                        bit_count = output_wire.ty.bit_count,
+                        clk_polarity = RtlilLiteral(&clk_polarity),
+                        clk = clk_wire.name,
+                        d = input_wire.name,
+                        q = output_wire.name,
                     )?;
-                    Ok(())
-                },
-            )?;
-            self.wires_for_values.insert(reg.output(), wires.into());
+                }
+            }
+            writeln!(self.writer, "end")?;
         }
-        // TODO: finish
-        writeln!(self.writer, "end")
+        Ok(())
     }
 }
 
@@ -448,24 +893,6 @@ impl<T: std::io::Write> RtlilExporter<'_, IOWrite<T>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_rtlil_id() {
-        assert_eq!(RtlilId("").to_string(), r"$$");
-        assert_eq!(RtlilId("abc").to_string(), r"\abc");
-        assert_eq!(RtlilId("abc\\def").to_string(), r"\abc\def");
-        assert_eq!(RtlilId("abc def").to_string(), r"\abc␣def");
-        assert_eq!(RtlilId("abc\rdef").to_string(), r"\abc␍def");
-        assert_eq!(RtlilId("abc\ndef").to_string(), r"\abc␤def");
-        assert_eq!(RtlilId("abc\tdef").to_string(), r"\abc␉def");
-        assert_eq!(RtlilId("abc\0def").to_string(), r"\abc␀def");
-        assert_eq!(RtlilId("⛄").to_string(), r"\⛄");
-        assert_eq!(RtlilId("😀").to_string(), r"\😀");
-        assert_eq!(RtlilId("abc#3").to_string(), r"\abc#3");
-        assert_eq!(RtlilId("#3").to_string(), r"$3");
-        assert_eq!(RtlilId("#123").to_string(), r"$123");
-        assert_eq!(RtlilId("#123a").to_string(), r"\#123a");
-    }
 
     #[test]
     fn test_rtlil_str() {

@@ -6,7 +6,7 @@ use crate::{
     ir::{
         io::{IrModuleInput, IrOutputRead},
         logic::{IrRegOutput, IrWireRead},
-        module::IrModuleRef,
+        module::{combine_owning_modules, IrModuleRef, OwningModule},
         types::{IrStructFieldType, IrStructType, IrValueType, IrValueTypeRef},
     },
     values::integer::{Int, IntShape, IntShapeTrait},
@@ -20,6 +20,12 @@ use num_traits::Zero;
 pub struct LiteralBits {
     bit_count: u32,
     value: BigUint,
+}
+
+impl<'ctx> OwningModule<'ctx> for LiteralBits {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        None
+    }
 }
 
 impl fmt::Debug for LiteralBits {
@@ -89,6 +95,12 @@ pub struct LiteralArray<'ctx> {
     elements: Interned<'ctx, [IrValueRef<'ctx>]>,
 }
 
+impl<'ctx> OwningModule<'ctx> for LiteralArray<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.owning_module
+    }
+}
+
 impl<'ctx> LiteralArray<'ctx> {
     pub fn new(
         ctx: ContextRef<'ctx>,
@@ -96,28 +108,18 @@ impl<'ctx> LiteralArray<'ctx> {
         elements: impl AsRef<[IrValueRef<'ctx>]>,
     ) -> Self {
         let elements = elements.as_ref();
-        let mut owning_module = None;
         for element in elements {
             assert_eq!(element.get_type(ctx), element_type);
-            if let Some(element_owning_module) = element.owning_module() {
-                match owning_module {
-                    Some(owning_module) => assert_eq!(element_owning_module, owning_module),
-                    None => owning_module = Some(element_owning_module),
-                }
-            }
         }
-        let elements = elements.intern(ctx);
+        let elements: Interned<'_, [_]> = elements.intern(ctx);
         Self {
             element_type,
-            owning_module,
+            owning_module: combine_owning_modules(elements.iter()),
             elements,
         }
     }
     pub fn element_type(self) -> IrValueTypeRef<'ctx> {
         self.element_type
-    }
-    pub fn owning_module(self) -> Option<IrModuleRef<'ctx>> {
-        self.owning_module
     }
     pub fn len(self) -> usize {
         self.elements.len()
@@ -160,12 +162,7 @@ impl<'ctx> LiteralStruct<'ctx> {
                 ty: field.value.get_type(ctx),
             };
             field_types.push(field_type);
-            if let Some(element_owning_module) = field.value.owning_module() {
-                match owning_module {
-                    Some(owning_module) => assert_eq!(element_owning_module, owning_module),
-                    None => owning_module = Some(element_owning_module),
-                }
-            }
+            owning_module = combine_owning_modules([owning_module, field.value.owning_module()]);
         }
         let fields = fields.intern(ctx);
         let field_types = field_types.intern(ctx);
@@ -180,11 +177,14 @@ impl<'ctx> LiteralStruct<'ctx> {
     pub fn ty(self) -> IrStructType<'ctx> {
         self.ty
     }
-    pub fn owning_module(self) -> Option<IrModuleRef<'ctx>> {
-        self.owning_module
-    }
     pub fn fields(self) -> Interned<'ctx, [LiteralStructField<'ctx>]> {
         self.fields
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for LiteralStruct<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.owning_module
     }
 }
 
@@ -262,6 +262,12 @@ impl<'ctx> ExtractStructField<'ctx> {
     }
 }
 
+impl<'ctx> OwningModule<'ctx> for ExtractStructField<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.struct_value.owning_module()
+    }
+}
+
 impl fmt::Debug for ExtractStructField<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ExtractStructField")
@@ -278,6 +284,60 @@ impl<'ctx> From<ExtractStructField<'ctx>> for IrValue<'ctx> {
     }
 }
 
+#[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
+pub struct Mux<'ctx> {
+    condition: IrValueRef<'ctx>,
+    value_type: IrValueTypeRef<'ctx>,
+    owning_module: Option<IrModuleRef<'ctx>>,
+    true_value: IrValueRef<'ctx>,
+    false_value: IrValueRef<'ctx>,
+}
+
+impl<'ctx> Mux<'ctx> {
+    pub fn new(
+        ctx: ContextRef<'ctx>,
+        condition: IrValueRef<'ctx>,
+        true_value: IrValueRef<'ctx>,
+        false_value: IrValueRef<'ctx>,
+    ) -> Self {
+        assert!(condition.get_type(ctx).is_bool());
+        let value_type = true_value.get_type(ctx);
+        assert_eq!(value_type, false_value.get_type(ctx));
+        let owning_module = combine_owning_modules([condition, true_value, false_value]);
+        Self {
+            condition,
+            value_type,
+            owning_module,
+            true_value,
+            false_value,
+        }
+    }
+    pub fn condition(self) -> IrValueRef<'ctx> {
+        self.condition
+    }
+    pub fn value_type(self) -> IrValueTypeRef<'ctx> {
+        self.value_type
+    }
+    pub fn true_value(self) -> IrValueRef<'ctx> {
+        self.true_value
+    }
+    pub fn false_value(self) -> IrValueRef<'ctx> {
+        self.false_value
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for Mux<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.owning_module
+    }
+}
+
+impl<'ctx> From<Mux<'ctx>> for IrValue<'ctx> {
+    fn from(v: Mux<'ctx>) -> Self {
+        IrValue::Mux(v)
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub enum IrValue<'ctx> {
     LiteralBits(LiteralBits),
@@ -288,6 +348,7 @@ pub enum IrValue<'ctx> {
     OutputRead(IrOutputRead<'ctx>),
     ExtractStructField(ExtractStructField<'ctx>),
     RegOutput(IrRegOutput<'ctx>),
+    Mux(Mux<'ctx>),
 }
 
 pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
@@ -317,18 +378,23 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::OutputRead(v) => v.0.value_type(),
             IrValue::ExtractStructField(v) => v.value_type(),
             IrValue::RegOutput(v) => v.0.value_type(),
+            IrValue::Mux(v) => v.value_type(),
         }
     }
-    pub fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+}
+
+impl<'ctx> OwningModule<'ctx> for IrValue<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
         match self {
-            IrValue::LiteralBits(_) => None,
-            IrValue::LiteralArray(array) => array.owning_module(),
-            IrValue::LiteralStruct(s) => s.owning_module(),
-            IrValue::WireRead(wire) => Some(wire.0.module()),
-            IrValue::Input(input) => Some(input.module()),
-            IrValue::OutputRead(output) => output.0.module(),
-            IrValue::ExtractStructField(v) => v.struct_value().owning_module(),
-            IrValue::RegOutput(v) => Some(v.0.module()),
+            IrValue::LiteralBits(v) => v.owning_module(),
+            IrValue::LiteralArray(v) => v.owning_module(),
+            IrValue::LiteralStruct(v) => v.owning_module(),
+            IrValue::WireRead(v) => v.owning_module(),
+            IrValue::Input(v) => v.owning_module(),
+            IrValue::OutputRead(v) => v.owning_module(),
+            IrValue::ExtractStructField(v) => v.owning_module(),
+            IrValue::RegOutput(v) => v.owning_module(),
+            IrValue::Mux(v) => v.owning_module(),
         }
     }
 }
@@ -344,6 +410,7 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::OutputRead(v) => v.fmt(f),
             IrValue::ExtractStructField(v) => v.fmt(f),
             IrValue::RegOutput(v) => v.fmt(f),
+            IrValue::Mux(v) => v.fmt(f),
         }
     }
 }

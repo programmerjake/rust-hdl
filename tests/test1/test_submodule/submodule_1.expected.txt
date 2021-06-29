@@ -42,17 +42,31 @@ IrModule {
             },
         ),
         Output(
-            IrWire {
-                path: "top"."submodule"."io.1",
-                source_location: SourceLocation($FILE, $LINE-8, 9),
-                value_type: BitVector {
-                    bit_count: 32,
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: "top",
+                        value_type: BitVector {
+                            bit_count: 32,
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top"."submodule",
+                            index: 1,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."submodule"."io.1",
+                    source_location: SourceLocation($FILE, $LINE-8, 9),
+                    value_type: BitVector {
+                        bit_count: 32,
+                    },
+                    assigned_value: LiteralBits {
+                        bit_count: 32,
+                        value: 0xdeadbeef,
+                    },
+                    ..
                 },
-                assigned_value: LiteralBits {
-                    bit_count: 32,
-                    value: 0xdeadbeef,
-                },
-                ..
             },
         ),
         Input(

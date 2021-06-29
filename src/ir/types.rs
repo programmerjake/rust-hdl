@@ -33,6 +33,12 @@ pub enum IrValueType<'ctx> {
     Struct(IrStructType<'ctx>),
 }
 
+impl<'ctx> IrValueType<'ctx> {
+    pub fn is_bool(self) -> bool {
+        matches!(self, Self::BitVector { bit_count: 1 })
+    }
+}
+
 impl fmt::Debug for IrValueType<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

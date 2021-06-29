@@ -2,11 +2,11 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::ContextRef,
+    context::{ContextRef, Internable, Interned},
     fmt_utils::{debug_format_option_as_value_or_none, NestedDebugTracking},
     io::{IOVisitor, IO},
     ir::{
-        io::{InOrOut, IrIOMutRef, IrInput, IrModuleInput},
+        io::{InOrOut, IrIOMutRef, IrInput, IrModuleInput, IrOutputRead},
         logic::{IrRegRef, IrWireRef},
         symbols::{IrSymbol, IrSymbolTable},
         types::IrValueTypeRef,
@@ -22,6 +22,53 @@ use core::{
     ops::Deref,
 };
 use once_cell::unsync::OnceCell;
+
+pub trait OwningModule<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>>;
+}
+
+impl<'ctx> OwningModule<'ctx> for IrModuleRef<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        Some(*self)
+    }
+}
+
+impl<'ctx, T: OwningModule<'ctx>> OwningModule<'ctx> for Option<T> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.as_ref().and_then(OwningModule::owning_module)
+    }
+}
+
+impl<'ctx, T: ?Sized + OwningModule<'ctx>> OwningModule<'ctx> for &'_ T {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        (**self).owning_module()
+    }
+}
+
+impl<'ctx, T: ?Sized + OwningModule<'ctx> + Internable<'ctx>> OwningModule<'ctx>
+    for Interned<'ctx, T>
+{
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        (**self).owning_module()
+    }
+}
+
+#[track_caller]
+pub fn combine_owning_modules<'ctx, T: OwningModule<'ctx>, I: IntoIterator<Item = T>>(
+    values: I,
+) -> Option<IrModuleRef<'ctx>> {
+    let mut owning_module = None::<IrModuleRef<'ctx>>;
+    for value in values {
+        match (owning_module, value.owning_module()) {
+            (Some(a), Some(b)) if a != b => {
+                panic!("owning modules don't match: {} != {}", a.path(), b.path())
+            }
+            (None, Some(v)) => owning_module = Some(v),
+            _ => {}
+        }
+    }
+    owning_module
+}
 
 #[derive(Debug, Clone)]
 pub struct IrModuleInputData<'ctx> {
@@ -44,6 +91,24 @@ impl<'ctx> IrModuleInputData<'ctx> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct IrModuleOutputData<'ctx> {
+    output_read: IrOutputRead<'ctx>,
+    wire: IrWireRef<'ctx>,
+}
+
+impl<'ctx> IrModuleOutputData<'ctx> {
+    pub fn new(output_read: IrOutputRead<'ctx>, wire: IrWireRef<'ctx>) -> Self {
+        Self { output_read, wire }
+    }
+    pub fn output_read(&self) -> IrOutputRead<'ctx> {
+        self.output_read
+    }
+    pub fn wire(&self) -> IrWireRef<'ctx> {
+        self.wire
+    }
+}
+
 pub struct IrModule<'ctx> {
     ctx: ContextRef<'ctx>,
     source_location: Cell<SourceLocation<'ctx>>,
@@ -52,7 +117,7 @@ pub struct IrModule<'ctx> {
     name: IrSymbol<'ctx>,
     symbol_table: IrSymbolTable<'ctx>,
     interface_types: Vec<InOrOut<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>>,
-    interface: OnceCell<Vec<InOrOut<IrModuleInputData<'ctx>, IrWireRef<'ctx>>>>,
+    interface: OnceCell<Vec<InOrOut<IrModuleInputData<'ctx>, IrModuleOutputData<'ctx>>>>,
     pub(crate) wires: RefCell<Vec<IrWireRef<'ctx>>>,
     pub(crate) registers: RefCell<Vec<IrRegRef<'ctx>>>,
     debug_formatting: Cell<bool>,
@@ -242,7 +307,9 @@ impl<'ctx> IrModule<'ctx> {
         let was_empty = self.interface.set(interface).is_ok();
         assert!(was_empty);
     }
-    pub fn interface(&self) -> Option<&[InOrOut<IrModuleInputData<'ctx>, IrWireRef<'ctx>>]> {
+    pub fn interface(
+        &self,
+    ) -> Option<&[InOrOut<IrModuleInputData<'ctx>, IrModuleOutputData<'ctx>>]> {
         self.interface.get().map(Deref::deref)
     }
     pub fn ctx(&self) -> ContextRef<'ctx> {

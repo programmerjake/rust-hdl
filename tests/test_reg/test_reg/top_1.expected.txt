@@ -77,20 +77,34 @@ IrModule {
             },
         ),
         Output(
-            IrWire {
-                path: "top"."io.output",
-                source_location: SourceLocation($FILE, $LINE-8, 9),
-                value_type: BitVector {
-                    bit_count: 1,
-                },
-                assigned_value: IrRegOutput {
-                    path: "top"."reg",
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: <None>,
+                        value_type: BitVector {
+                            bit_count: 1,
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top",
+                            index: 1,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."io.output",
+                    source_location: SourceLocation($FILE, $LINE-8, 9),
                     value_type: BitVector {
                         bit_count: 1,
                     },
+                    assigned_value: IrRegOutput {
+                        path: "top"."reg",
+                        value_type: BitVector {
+                            bit_count: 1,
+                        },
+                        ..
+                    },
                     ..
                 },
-                ..
             },
         ),
         Input(
