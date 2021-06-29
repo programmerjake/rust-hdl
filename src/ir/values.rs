@@ -7,7 +7,10 @@ use crate::{
         io::{IrModuleInput, IrOutputRead},
         logic::{IrRegOutput, IrWireRead},
         module::{combine_owning_modules, IrModuleRef, OwningModule},
-        types::{IrStructFieldType, IrStructType, IrValueType, IrValueTypeRef},
+        types::{
+            IrArrayType, IrBitVectorType, IrStructFieldType, IrStructType, IrValueType,
+            IrValueTypeRef,
+        },
     },
     values::integer::{Int, IntShape, IntShapeTrait},
 };
@@ -58,6 +61,11 @@ impl LiteralBits {
     }
     pub fn value(&self) -> &BigUint {
         &self.value
+    }
+    pub fn value_type(&self) -> IrBitVectorType {
+        IrBitVectorType {
+            bit_count: self.bit_count,
+        }
     }
     pub fn into_value(self) -> BigUint {
         self.value
@@ -124,6 +132,12 @@ impl<'ctx> LiteralArray<'ctx> {
     pub fn len(self) -> usize {
         self.elements.len()
     }
+    pub fn value_type(self) -> IrArrayType<'ctx> {
+        IrArrayType {
+            element: self.element_type,
+            length: self.len(),
+        }
+    }
     pub fn is_empty(self) -> bool {
         self.len() == 0
     }
@@ -146,7 +160,7 @@ pub struct LiteralStructField<'ctx> {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct LiteralStruct<'ctx> {
-    ty: IrStructType<'ctx>,
+    value_type: IrStructType<'ctx>,
     owning_module: Option<IrModuleRef<'ctx>>,
     fields: Interned<'ctx, [LiteralStructField<'ctx>]>,
 }
@@ -167,15 +181,15 @@ impl<'ctx> LiteralStruct<'ctx> {
         let fields = fields.intern(ctx);
         let field_types = field_types.intern(ctx);
         Self {
-            ty: IrStructType {
+            value_type: IrStructType {
                 fields: field_types,
             },
             owning_module,
             fields,
         }
     }
-    pub fn ty(self) -> IrStructType<'ctx> {
-        self.ty
+    pub fn value_type(self) -> IrStructType<'ctx> {
+        self.value_type
     }
     pub fn fields(self) -> Interned<'ctx, [LiteralStructField<'ctx>]> {
         self.fields
@@ -284,6 +298,78 @@ impl<'ctx> From<ExtractStructField<'ctx>> for IrValue<'ctx> {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+pub struct ExtractArrayElement<'ctx> {
+    array_value: IrValueRef<'ctx>,
+    array_type: IrArrayType<'ctx>,
+    element_index: usize,
+}
+
+impl<'ctx> ExtractArrayElement<'ctx> {
+    pub fn new(ctx: ContextRef<'ctx>, array_value: IrValueRef<'ctx>, element_index: usize) -> Self {
+        let array_type = match *array_value.get_type(ctx) {
+            IrValueType::Array(v) => v,
+            _ => panic!("value type is not a array"),
+        };
+        assert!(element_index < array_type.length);
+        Self {
+            array_value,
+            array_type,
+            element_index,
+        }
+    }
+    pub fn new_with_array_type_unchecked(
+        array_value: IrValueRef<'ctx>,
+        array_type: IrValueTypeRef<'ctx>,
+        element_index: usize,
+    ) -> Self {
+        let array_type = match *array_type {
+            IrValueType::Array(v) => v,
+            _ => panic!("value type is not a array"),
+        };
+        assert!(element_index < array_type.length);
+        Self {
+            array_value,
+            array_type,
+            element_index,
+        }
+    }
+    pub fn array_value(self) -> IrValueRef<'ctx> {
+        self.array_value
+    }
+    pub fn value_type(self) -> IrValueTypeRef<'ctx> {
+        self.array_type.element
+    }
+    pub fn array_type(self) -> IrArrayType<'ctx> {
+        self.array_type
+    }
+    pub fn element_index(self) -> usize {
+        self.element_index
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for ExtractArrayElement<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.array_value.owning_module()
+    }
+}
+
+impl fmt::Debug for ExtractArrayElement<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExtractArrayElement")
+            .field("array_value", &self.array_value())
+            .field("value_type", &self.value_type())
+            .field("element_index", &self.element_index())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'ctx> From<ExtractArrayElement<'ctx>> for IrValue<'ctx> {
+    fn from(v: ExtractArrayElement<'ctx>) -> Self {
+        Self::ExtractArrayElement(v)
+    }
+}
+
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
 pub struct Mux<'ctx> {
     condition: IrValueRef<'ctx>,
@@ -347,6 +433,7 @@ pub enum IrValue<'ctx> {
     Input(IrModuleInput<'ctx>),
     OutputRead(IrOutputRead<'ctx>),
     ExtractStructField(ExtractStructField<'ctx>),
+    ExtractArrayElement(ExtractArrayElement<'ctx>),
     RegOutput(IrRegOutput<'ctx>),
     Mux(Mux<'ctx>),
 }
@@ -363,20 +450,14 @@ fn check_types() {
 impl<'ctx> IrValue<'ctx> {
     pub fn get_type(&self, ctx: ContextRef<'ctx>) -> IrValueTypeRef<'ctx> {
         match self {
-            IrValue::LiteralBits(v) => IrValueType::BitVector {
-                bit_count: v.bit_count,
-            }
-            .intern(ctx),
-            IrValue::LiteralArray(v) => IrValueType::Array {
-                element: v.element_type(),
-                length: v.len(),
-            }
-            .intern(ctx),
-            IrValue::LiteralStruct(v) => IrValueType::from(v.ty()).intern(ctx),
+            IrValue::LiteralBits(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::LiteralArray(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::LiteralStruct(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::WireRead(v) => v.0.value_type(),
             IrValue::Input(v) => v.value_type(),
             IrValue::OutputRead(v) => v.0.value_type(),
             IrValue::ExtractStructField(v) => v.value_type(),
+            IrValue::ExtractArrayElement(v) => v.value_type(),
             IrValue::RegOutput(v) => v.0.value_type(),
             IrValue::Mux(v) => v.value_type(),
         }
@@ -393,6 +474,7 @@ impl<'ctx> OwningModule<'ctx> for IrValue<'ctx> {
             IrValue::Input(v) => v.owning_module(),
             IrValue::OutputRead(v) => v.owning_module(),
             IrValue::ExtractStructField(v) => v.owning_module(),
+            IrValue::ExtractArrayElement(v) => v.owning_module(),
             IrValue::RegOutput(v) => v.owning_module(),
             IrValue::Mux(v) => v.owning_module(),
         }
@@ -409,6 +491,7 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::Input(v) => v.fmt(f),
             IrValue::OutputRead(v) => v.fmt(f),
             IrValue::ExtractStructField(v) => v.fmt(f),
+            IrValue::ExtractArrayElement(v) => v.fmt(f),
             IrValue::RegOutput(v) => v.fmt(f),
             IrValue::Mux(v) => v.fmt(f),
         }

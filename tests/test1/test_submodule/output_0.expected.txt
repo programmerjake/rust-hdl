@@ -3,7 +3,7 @@ Output {
         IrWire {
             path: "top"."submodule"."io.1",
             source_location: SourceLocation($FILE, $LINE-5, 9),
-            value_type: BitVector {
+            value_type: IrBitVectorType {
                 bit_count: 32,
             },
             assigned_value: <None>,

@@ -12,7 +12,7 @@ use crate::{
         io::InOrOut,
         logic::IrRegReset,
         module::{combine_owning_modules, IrModuleRef, OwningModule},
-        types::{IrStructType, IrValueType, IrValueTypeRef},
+        types::{IrArrayType, IrBitVectorType, IrStructType, IrValueType, IrValueTypeRef},
         values::{IrValue, IrValueRef, LiteralBits, Mux},
         SourceLocation,
     },
@@ -550,6 +550,27 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 .unwrap();
                 wires.into()
             }
+            IrValue::ExtractArrayElement(v) => {
+                let array_wires = self.get_wires_for_value(module, v.array_value())?;
+                let mut array_wires = array_wires.iter();
+                let mut wires = Vec::new();
+                visit_wire_types_in_type(
+                    &IrValueType::from(v.array_type()),
+                    &mut String::new(),
+                    RelationToSelectedField::InSelectedField(&[v.element_index()]),
+                    &mut |_wire_type, _path, relation_to_selected_field| {
+                        let array_wire = array_wires.next().unwrap();
+                        if let RelationToSelectedField::InSelectedField(_) =
+                            relation_to_selected_field
+                        {
+                            wires.push(array_wire.clone());
+                        }
+                        Ok::<_, Infallible>(())
+                    },
+                )
+                .unwrap();
+                wires.into()
+            }
             IrValue::RegOutput(v) => {
                 let mut wires = Vec::new();
                 visit_wire_types_in_type(
@@ -731,14 +752,14 @@ fn visit_wire_types_in_type<'ctx, 'a, E>(
 ) -> Result<(), E> {
     let mut path_builder = path_builder.into();
     match *ty {
-        IrValueType::BitVector { bit_count } => visitor(
+        IrValueType::BitVector(IrBitVectorType { bit_count }) => visitor(
             RtlilWireType { bit_count },
             path_builder.get(),
             relation_to_selected_field.map(|subfield_path| {
                 assert!(subfield_path.is_empty());
             }),
         )?,
-        IrValueType::Array { element, length } => {
+        IrValueType::Array(IrArrayType { element, length }) => {
             for index in 0..length {
                 visit_wire_types_in_type_field(
                     element,

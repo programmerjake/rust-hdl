@@ -4,12 +4,12 @@ IrModule {
     parent: "top",
     interface_types: [
         Input(
-            BitVector {
+            IrBitVectorType {
                 bit_count: 1,
             },
         ),
         Output(
-            BitVector {
+            IrBitVectorType {
                 bit_count: 1,
             },
         ),
@@ -18,7 +18,7 @@ IrModule {
                 fields: [
                     IrStructFieldType {
                         name: "a",
-                        ty: BitVector {
+                        ty: IrBitVectorType {
                             bit_count: 1,
                         },
                     },
@@ -34,13 +34,13 @@ IrModule {
                             fields: [
                                 IrStructFieldType {
                                     name: "0",
-                                    ty: BitVector {
+                                    ty: IrBitVectorType {
                                         bit_count: 1,
                                     },
                                 },
                                 IrStructFieldType {
                                     name: "1",
-                                    ty: BitVector {
+                                    ty: IrBitVectorType {
                                         bit_count: 8,
                                     },
                                 },
@@ -64,7 +64,7 @@ IrModule {
                     module: "top"."submodule",
                     index: 0,
                     path: "io.a",
-                    value_type: BitVector {
+                    value_type: IrBitVectorType {
                         bit_count: 1,
                     },
                 },
@@ -75,7 +75,7 @@ IrModule {
                 output_read: IrOutputRead(
                     IrOutputReadData {
                         module: "top",
-                        value_type: BitVector {
+                        value_type: IrBitVectorType {
                             bit_count: 1,
                         },
                         write_data: IrOutputWriteData {
@@ -87,7 +87,7 @@ IrModule {
                 wire: IrWire {
                     path: "top"."submodule"."io.b",
                     source_location: SourceLocation($FILE, $LINE-2, 9),
-                    value_type: BitVector {
+                    value_type: IrBitVectorType {
                         bit_count: 1,
                     },
                     assigned_value: <None>,
@@ -104,7 +104,7 @@ IrModule {
                             fields: [
                                 IrStructFieldType {
                                     name: "a",
-                                    ty: BitVector {
+                                    ty: IrBitVectorType {
                                         bit_count: 1,
                                     },
                                 },
@@ -120,13 +120,13 @@ IrModule {
                                         fields: [
                                             IrStructFieldType {
                                                 name: "0",
-                                                ty: BitVector {
+                                                ty: IrBitVectorType {
                                                     bit_count: 1,
                                                 },
                                             },
                                             IrStructFieldType {
                                                 name: "1",
-                                                ty: BitVector {
+                                                ty: IrBitVectorType {
                                                     bit_count: 8,
                                                 },
                                             },
@@ -148,7 +148,7 @@ IrModule {
                         fields: [
                             IrStructFieldType {
                                 name: "a",
-                                ty: BitVector {
+                                ty: IrBitVectorType {
                                     bit_count: 1,
                                 },
                             },
@@ -164,13 +164,13 @@ IrModule {
                                     fields: [
                                         IrStructFieldType {
                                             name: "0",
-                                            ty: BitVector {
+                                            ty: IrBitVectorType {
                                                 bit_count: 1,
                                             },
                                         },
                                         IrStructFieldType {
                                             name: "1",
-                                            ty: BitVector {
+                                            ty: IrBitVectorType {
                                                 bit_count: 8,
                                             },
                                         },
@@ -188,7 +188,7 @@ IrModule {
     wires: {
         "io.b": IrWire {
             source_location: SourceLocation($FILE, $LINE-2, 9),
-            value_type: BitVector {
+            value_type: IrBitVectorType {
                 bit_count: 1,
             },
             assigned_value: <None>,
@@ -200,7 +200,7 @@ IrModule {
                 fields: [
                     IrStructFieldType {
                         name: "a",
-                        ty: BitVector {
+                        ty: IrBitVectorType {
                             bit_count: 1,
                         },
                     },
@@ -216,13 +216,13 @@ IrModule {
                             fields: [
                                 IrStructFieldType {
                                     name: "0",
-                                    ty: BitVector {
+                                    ty: IrBitVectorType {
                                         bit_count: 1,
                                     },
                                 },
                                 IrStructFieldType {
                                     name: "1",
-                                    ty: BitVector {
+                                    ty: IrBitVectorType {
                                         bit_count: 8,
                                     },
                                 },

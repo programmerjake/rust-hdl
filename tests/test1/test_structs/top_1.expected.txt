@@ -11,7 +11,7 @@ IrModule {
                 fields: [
                     IrStructFieldType {
                         name: "a",
-                        ty: BitVector {
+                        ty: IrBitVectorType {
                             bit_count: 1,
                         },
                     },
@@ -27,13 +27,13 @@ IrModule {
                             fields: [
                                 IrStructFieldType {
                                     name: "0",
-                                    ty: BitVector {
+                                    ty: IrBitVectorType {
                                         bit_count: 1,
                                     },
                                 },
                                 IrStructFieldType {
                                     name: "1",
-                                    ty: BitVector {
+                                    ty: IrBitVectorType {
                                         bit_count: 8,
                                     },
                                 },

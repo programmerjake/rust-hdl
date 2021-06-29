@@ -1,13 +1,13 @@
 Val {
     ir: IrRegOutput {
         path: "top"."reg",
-        value_type: BitVector {
+        value_type: IrBitVectorType {
             bit_count: 1,
         },
         ..
     },
     value_type: ValueType(
-        BitVector {
+        IrBitVectorType {
             bit_count: 1,
         },
     ),

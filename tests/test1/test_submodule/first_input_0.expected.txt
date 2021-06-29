@@ -4,13 +4,13 @@ Input {
             module: "top"."submodule",
             index: 0,
             path: "io.0",
-            value_type: BitVector {
+            value_type: IrBitVectorType {
                 bit_count: 1,
             },
         },
     },
     value_type: ValueType(
-        BitVector {
+        IrBitVectorType {
             bit_count: 1,
         },
     ),

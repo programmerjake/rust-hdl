@@ -2,14 +2,14 @@ Reg {
     ir: IrReg {
         path: "top"."reg",
         source_location: SourceLocation($FILE, $LINE-6, 9),
-        value_type: BitVector {
+        value_type: IrBitVectorType {
             bit_count: 1,
         },
         data_in: IrModuleInput {
             module: "top",
             index: 2,
             path: "io.input",
-            value_type: BitVector {
+            value_type: IrBitVectorType {
                 bit_count: 1,
             },
         },
@@ -22,13 +22,13 @@ Reg {
                     fields: [
                         IrStructFieldType {
                             name: "clk",
-                            ty: BitVector {
+                            ty: IrBitVectorType {
                                 bit_count: 1,
                             },
                         },
                         IrStructFieldType {
                             name: "rst",
-                            ty: BitVector {
+                            ty: IrBitVectorType {
                                 bit_count: 1,
                             },
                         },
@@ -37,7 +37,7 @@ Reg {
             },
             struct_field_type: IrStructFieldType {
                 name: "clk",
-                ty: BitVector {
+                ty: IrBitVectorType {
                     bit_count: 1,
                 },
             },
@@ -53,13 +53,13 @@ Reg {
                     fields: [
                         IrStructFieldType {
                             name: "clk",
-                            ty: BitVector {
+                            ty: IrBitVectorType {
                                 bit_count: 1,
                             },
                         },
                         IrStructFieldType {
                             name: "rst",
-                            ty: BitVector {
+                            ty: IrBitVectorType {
                                 bit_count: 1,
                             },
                         },
@@ -68,7 +68,7 @@ Reg {
             },
             struct_field_type: IrStructFieldType {
                 name: "rst",
-                ty: BitVector {
+                ty: IrBitVectorType {
                     bit_count: 1,
                 },
             },

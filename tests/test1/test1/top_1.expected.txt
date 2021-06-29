@@ -7,8 +7,8 @@ IrModule {
     wires: {
         "wire": IrWire {
             source_location: SourceLocation($FILE, $LINE-1, 9),
-            value_type: Array {
-                element: BitVector {
+            value_type: IrArrayType {
+                element: IrBitVectorType {
                     bit_count: 1,
                 },
                 length: 4,

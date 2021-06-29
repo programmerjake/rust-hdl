@@ -21,36 +21,47 @@ impl<'ctx> From<IrStructType<'ctx>> for IrValueType<'ctx> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct IrArrayType<'ctx> {
+    pub element: IrValueTypeRef<'ctx>,
+    pub length: usize,
+}
+
+impl<'ctx> From<IrArrayType<'ctx>> for IrValueType<'ctx> {
+    fn from(v: IrArrayType<'ctx>) -> Self {
+        Self::Array(v)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct IrBitVectorType {
+    pub bit_count: u32,
+}
+
+impl From<IrBitVectorType> for IrValueType<'_> {
+    fn from(v: IrBitVectorType) -> Self {
+        Self::BitVector(v)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IrValueType<'ctx> {
-    BitVector {
-        bit_count: u32,
-    },
-    Array {
-        element: IrValueTypeRef<'ctx>,
-        length: usize,
-    },
+    BitVector(IrBitVectorType),
+    Array(IrArrayType<'ctx>),
     Struct(IrStructType<'ctx>),
 }
 
 impl<'ctx> IrValueType<'ctx> {
     pub fn is_bool(self) -> bool {
-        matches!(self, Self::BitVector { bit_count: 1 })
+        matches!(self, Self::BitVector(IrBitVectorType { bit_count: 1 }))
     }
 }
 
 impl fmt::Debug for IrValueType<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IrValueType::BitVector { bit_count } => f
-                .debug_struct("BitVector")
-                .field("bit_count", bit_count)
-                .finish(),
-            IrValueType::Array { element, length } => f
-                .debug_struct("Array")
-                .field("element", element)
-                .field("length", length)
-                .finish(),
+            IrValueType::BitVector(v) => v.fmt(f),
+            IrValueType::Array(v) => v.fmt(f),
             IrValueType::Struct(v) => v.fmt(f),
         }
     }

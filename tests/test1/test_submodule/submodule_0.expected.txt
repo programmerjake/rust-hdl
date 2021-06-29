@@ -4,18 +4,18 @@ IrModule {
     parent: "top",
     interface_types: [
         Input(
-            BitVector {
+            IrBitVectorType {
                 bit_count: 1,
             },
         ),
         Output(
-            BitVector {
+            IrBitVectorType {
                 bit_count: 32,
             },
         ),
         Input(
-            Array {
-                element: BitVector {
+            IrArrayType {
+                element: IrBitVectorType {
                     bit_count: 8,
                 },
                 length: 1,
@@ -35,7 +35,7 @@ IrModule {
                     module: "top"."submodule",
                     index: 0,
                     path: "io.0",
-                    value_type: BitVector {
+                    value_type: IrBitVectorType {
                         bit_count: 1,
                     },
                 },
@@ -46,7 +46,7 @@ IrModule {
                 output_read: IrOutputRead(
                     IrOutputReadData {
                         module: "top",
-                        value_type: BitVector {
+                        value_type: IrBitVectorType {
                             bit_count: 32,
                         },
                         write_data: IrOutputWriteData {
@@ -58,7 +58,7 @@ IrModule {
                 wire: IrWire {
                     path: "top"."submodule"."io.1",
                     source_location: SourceLocation($FILE, $LINE-2, 9),
-                    value_type: BitVector {
+                    value_type: IrBitVectorType {
                         bit_count: 32,
                     },
                     assigned_value: <None>,
@@ -70,7 +70,7 @@ IrModule {
             IrModuleInputData {
                 external_value: Input {
                     value: LiteralArray {
-                        element_type: BitVector {
+                        element_type: IrBitVectorType {
                             bit_count: 8,
                         },
                         owning_module: None,
@@ -86,8 +86,8 @@ IrModule {
                     module: "top"."submodule",
                     index: 2,
                     path: "io.2",
-                    value_type: Array {
-                        element: BitVector {
+                    value_type: IrArrayType {
+                        element: IrBitVectorType {
                             bit_count: 8,
                         },
                         length: 1,
@@ -99,7 +99,7 @@ IrModule {
     wires: {
         "io.1": IrWire {
             source_location: SourceLocation($FILE, $LINE-2, 9),
-            value_type: BitVector {
+            value_type: IrBitVectorType {
                 bit_count: 32,
             },
             assigned_value: <None>,

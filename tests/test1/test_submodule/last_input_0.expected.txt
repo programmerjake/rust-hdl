@@ -4,8 +4,8 @@ Input {
             module: "top"."submodule",
             index: 2,
             path: "io.2",
-            value_type: Array {
-                element: BitVector {
+            value_type: IrArrayType {
+                element: IrBitVectorType {
                     bit_count: 8,
                 },
                 length: 1,
@@ -13,8 +13,8 @@ Input {
         },
     },
     value_type: ValueType(
-        Array {
-            element: BitVector {
+        IrArrayType {
+            element: IrBitVectorType {
                 bit_count: 8,
             },
             length: 1,
