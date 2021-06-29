@@ -27,9 +27,9 @@ use alloc::{
 };
 use core::{
     cell::{Cell, RefCell},
-    cmp::Ordering,
     convert::{Infallible, TryFrom},
     fmt::{self, Write as _},
+    ops::Range,
 };
 use hashbrown::HashMap;
 
@@ -223,7 +223,7 @@ impl<'ctx> ModuleData<'ctx> {
                     visit_wire_types_in_type(
                         &input.external_value().value_type(module.ctx()),
                         &mut input.module_input().path().to_string(),
-                        RelationToSelectedField::InSelectedField(&[]),
+                        RelationToSelectedField::InSelectedField(&[0; 0]),
                         &mut |ty, path, _relation_to_selected_field| {
                             let name = symbol_table.new_id(module, path);
                             wires.push(RtlilWire {
@@ -248,7 +248,7 @@ impl<'ctx> ModuleData<'ctx> {
                     visit_wire_types_in_type(
                         &output.wire().value_type(),
                         &mut output.wire().name().to_string(),
-                        RelationToSelectedField::InSelectedField(&[]),
+                        RelationToSelectedField::InSelectedField(&[0; 0]),
                         &mut |ty, path, _relation_to_selected_field| {
                             let name = symbol_table.new_id(module, path);
                             wires.push(RtlilWire {
@@ -468,7 +468,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 visit_wire_types_in_type(
                     &v.0.value_type(),
                     &mut v.0.name().to_string(),
-                    RelationToSelectedField::InSelectedField(&[]),
+                    RelationToSelectedField::InSelectedField(&[0; 0]),
                     &mut |ty, path, _relation_to_selected_field| {
                         let name = self.add_uniquified_symbol(module, path);
                         writeln!(
@@ -516,7 +516,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 visit_wire_types_in_type(
                     &v.0.value_type(),
                     &mut format!("{}.{}", submodule.name(), ir_submodule_output.wire().name()),
-                    RelationToSelectedField::InSelectedField(&[]),
+                    RelationToSelectedField::InSelectedField(&[0; 0]),
                     &mut |ty, path, _relation_to_selected_field| {
                         let name = self.add_uniquified_symbol(module, path);
                         wires.push(RtlilWire {
@@ -571,12 +571,33 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 .unwrap();
                 wires.into()
             }
+            IrValue::SliceArray(v) => {
+                let array_wires = self.get_wires_for_value(module, v.array_value())?;
+                let mut array_wires = array_wires.iter();
+                let mut wires = Vec::new();
+                visit_wire_types_in_type(
+                    &IrValueType::from(v.array_type()),
+                    &mut String::new(),
+                    RelationToSelectedField::InSelectedField(&[v.element_indexes()]),
+                    &mut |_wire_type, _path, relation_to_selected_field| {
+                        let array_wire = array_wires.next().unwrap();
+                        if let RelationToSelectedField::InSelectedField(_) =
+                            relation_to_selected_field
+                        {
+                            wires.push(array_wire.clone());
+                        }
+                        Ok::<_, Infallible>(())
+                    },
+                )
+                .unwrap();
+                wires.into()
+            }
             IrValue::RegOutput(v) => {
                 let mut wires = Vec::new();
                 visit_wire_types_in_type(
                     &v.0.value_type(),
                     &mut v.0.name().to_string(),
-                    RelationToSelectedField::InSelectedField(&[]),
+                    RelationToSelectedField::InSelectedField(&[0; 0]),
                     &mut |ty, path, _relation_to_selected_field| {
                         let name = self.add_uniquified_symbol(module, path);
                         writeln!(
@@ -719,22 +740,41 @@ impl<T> RelationToSelectedField<T> {
     }
 }
 
-fn visit_wire_types_in_type_field<'ctx, E>(
+trait FieldRange {
+    fn field_range(&self) -> Range<usize>;
+}
+
+impl FieldRange for usize {
+    fn field_range(&self) -> Range<usize> {
+        *self..(1 + *self)
+    }
+}
+
+impl FieldRange for Range<usize> {
+    fn field_range(&self) -> Range<usize> {
+        self.clone()
+    }
+}
+
+fn visit_wire_types_in_type_field<'ctx, E, FR: FieldRange>(
     field_type: IrValueTypeRef<'ctx>,
     field_index: usize,
     field_path_builder: PathBuilder<'_>,
-    relation_to_selected_field: RelationToSelectedField<&[usize]>,
+    relation_to_selected_field: RelationToSelectedField<&[FR]>,
     visitor: &mut impl FnMut(RtlilWireType, &str, RelationToSelectedField<()>) -> Result<(), E>,
 ) -> Result<(), E> {
     visit_wire_types_in_type(
         &field_type,
         field_path_builder,
-        relation_to_selected_field.and_then(|subfield_path| -> RelationToSelectedField<&[usize]> {
-            if let Some((&index, subfield_path)) = subfield_path.split_first() {
-                match field_index.cmp(&index) {
-                    Ordering::Less => RelationToSelectedField::BeforeSelectedField,
-                    Ordering::Equal => RelationToSelectedField::InSelectedField(subfield_path),
-                    Ordering::Greater => RelationToSelectedField::AfterSelectedField,
+        relation_to_selected_field.and_then(|subfield_path| -> RelationToSelectedField<&[FR]> {
+            if let Some((indexes, subfield_path)) = subfield_path.split_first() {
+                let indexes = indexes.field_range();
+                if field_index < indexes.start {
+                    RelationToSelectedField::BeforeSelectedField
+                } else if field_index >= indexes.end {
+                    RelationToSelectedField::AfterSelectedField
+                } else {
+                    RelationToSelectedField::InSelectedField(subfield_path)
                 }
             } else {
                 RelationToSelectedField::InSelectedField(&[])
@@ -744,10 +784,10 @@ fn visit_wire_types_in_type_field<'ctx, E>(
     )
 }
 
-fn visit_wire_types_in_type<'ctx, 'a, E>(
+fn visit_wire_types_in_type<'ctx, 'a, E, FR: FieldRange>(
     ty: &IrValueType<'ctx>,
     path_builder: impl Into<PathBuilder<'a>>,
-    relation_to_selected_field: RelationToSelectedField<&[usize]>,
+    relation_to_selected_field: RelationToSelectedField<&[FR]>,
     visitor: &mut impl FnMut(RtlilWireType, &str, RelationToSelectedField<()>) -> Result<(), E>,
 ) -> Result<(), E> {
     let mut path_builder = path_builder.into();

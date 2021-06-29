@@ -15,7 +15,7 @@ use crate::{
     values::integer::{Int, IntShape, IntShapeTrait},
 };
 use alloc::vec::Vec;
-use core::{convert::TryInto, fmt};
+use core::{convert::TryInto, fmt, ops::Range};
 use num_bigint::BigUint;
 use num_traits::Zero;
 
@@ -229,16 +229,7 @@ pub struct ExtractStructField<'ctx> {
 
 impl<'ctx> ExtractStructField<'ctx> {
     pub fn new(ctx: ContextRef<'ctx>, struct_value: IrValueRef<'ctx>, field_index: usize) -> Self {
-        let struct_type = match *struct_value.get_type(ctx) {
-            IrValueType::Struct(v) => v,
-            _ => panic!("value type is not a struct"),
-        };
-        assert!(field_index < struct_type.fields.len());
-        Self {
-            struct_value,
-            struct_type,
-            field_index,
-        }
+        Self::new_with_struct_type_unchecked(struct_value, struct_value.get_type(ctx), field_index)
     }
     pub fn new_with_struct_type_unchecked(
         struct_value: IrValueRef<'ctx>,
@@ -307,16 +298,7 @@ pub struct ExtractArrayElement<'ctx> {
 
 impl<'ctx> ExtractArrayElement<'ctx> {
     pub fn new(ctx: ContextRef<'ctx>, array_value: IrValueRef<'ctx>, element_index: usize) -> Self {
-        let array_type = match *array_value.get_type(ctx) {
-            IrValueType::Array(v) => v,
-            _ => panic!("value type is not a array"),
-        };
-        assert!(element_index < array_type.length);
-        Self {
-            array_value,
-            array_type,
-            element_index,
-        }
+        Self::new_with_array_type_unchecked(array_value, array_value.get_type(ctx), element_index)
     }
     pub fn new_with_array_type_unchecked(
         array_value: IrValueRef<'ctx>,
@@ -367,6 +349,83 @@ impl fmt::Debug for ExtractArrayElement<'_> {
 impl<'ctx> From<ExtractArrayElement<'ctx>> for IrValue<'ctx> {
     fn from(v: ExtractArrayElement<'ctx>) -> Self {
         Self::ExtractArrayElement(v)
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+pub struct SliceArray<'ctx> {
+    array_value: IrValueRef<'ctx>,
+    array_type: IrArrayType<'ctx>,
+    element_start_index: usize,
+    element_end_index: usize,
+}
+
+impl<'ctx> SliceArray<'ctx> {
+    pub fn new(
+        ctx: ContextRef<'ctx>,
+        array_value: IrValueRef<'ctx>,
+        element_indexes: Range<usize>,
+    ) -> Self {
+        Self::new_with_array_type_unchecked(array_value, array_value.get_type(ctx), element_indexes)
+    }
+    pub fn new_with_array_type_unchecked(
+        array_value: IrValueRef<'ctx>,
+        array_type: IrValueTypeRef<'ctx>,
+        element_indexes: Range<usize>,
+    ) -> Self {
+        let array_type = match *array_type {
+            IrValueType::Array(v) => v,
+            _ => panic!("value type is not a array"),
+        };
+        let Range {
+            start: element_start_index,
+            end: element_end_index,
+        } = element_indexes;
+        assert!(element_end_index <= array_type.length);
+        assert!(element_start_index <= element_end_index);
+        Self {
+            array_value,
+            array_type,
+            element_start_index,
+            element_end_index,
+        }
+    }
+    pub fn array_value(self) -> IrValueRef<'ctx> {
+        self.array_value
+    }
+    pub fn value_type(self) -> IrArrayType<'ctx> {
+        IrArrayType {
+            element: self.array_type.element,
+            length: self.element_indexes().len(),
+        }
+    }
+    pub fn array_type(self) -> IrArrayType<'ctx> {
+        self.array_type
+    }
+    pub fn element_indexes(self) -> Range<usize> {
+        self.element_start_index..self.element_end_index
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for SliceArray<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.array_value.owning_module()
+    }
+}
+
+impl fmt::Debug for SliceArray<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SliceArray")
+            .field("array_value", &self.array_value())
+            .field("value_type", &self.value_type())
+            .field("element_indexes", &self.element_indexes())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'ctx> From<SliceArray<'ctx>> for IrValue<'ctx> {
+    fn from(v: SliceArray<'ctx>) -> Self {
+        Self::SliceArray(v)
     }
 }
 
@@ -434,6 +493,7 @@ pub enum IrValue<'ctx> {
     OutputRead(IrOutputRead<'ctx>),
     ExtractStructField(ExtractStructField<'ctx>),
     ExtractArrayElement(ExtractArrayElement<'ctx>),
+    SliceArray(SliceArray<'ctx>),
     RegOutput(IrRegOutput<'ctx>),
     Mux(Mux<'ctx>),
 }
@@ -458,6 +518,7 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::OutputRead(v) => v.0.value_type(),
             IrValue::ExtractStructField(v) => v.value_type(),
             IrValue::ExtractArrayElement(v) => v.value_type(),
+            IrValue::SliceArray(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::RegOutput(v) => v.0.value_type(),
             IrValue::Mux(v) => v.value_type(),
         }
@@ -475,6 +536,7 @@ impl<'ctx> OwningModule<'ctx> for IrValue<'ctx> {
             IrValue::OutputRead(v) => v.owning_module(),
             IrValue::ExtractStructField(v) => v.owning_module(),
             IrValue::ExtractArrayElement(v) => v.owning_module(),
+            IrValue::SliceArray(v) => v.owning_module(),
             IrValue::RegOutput(v) => v.owning_module(),
             IrValue::Mux(v) => v.owning_module(),
         }
@@ -492,6 +554,7 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::OutputRead(v) => v.fmt(f),
             IrValue::ExtractStructField(v) => v.fmt(f),
             IrValue::ExtractArrayElement(v) => v.fmt(f),
+            IrValue::SliceArray(v) => v.fmt(f),
             IrValue::RegOutput(v) => v.fmt(f),
             IrValue::Mux(v) => v.fmt(f),
         }
