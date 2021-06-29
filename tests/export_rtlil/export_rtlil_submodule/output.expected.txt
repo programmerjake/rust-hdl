@@ -13,37 +13,37 @@ module \top
   wire width 8 input 4 \io.input.b[1]
   attribute \src "$FILE:$LINE-15.9"
   wire width 8 input 5 \io.input.b[2]
+  attribute \src "$FILE:$LINE-15.9"
+  wire width 1 output 6 \io.wire_output.a
+  attribute \src "$FILE:$LINE-15.9"
+  wire width 8 output 7 \io.wire_output.b[0]
+  attribute \src "$FILE:$LINE-15.9"
+  wire width 8 output 8 \io.wire_output.b[1]
+  attribute \src "$FILE:$LINE-15.9"
+  wire width 8 output 9 \io.wire_output.b[2]
+  attribute \src "$FILE:$LINE-15.9"
+  wire width 1 output 10 \io.reg_output.a
+  attribute \src "$FILE:$LINE-15.9"
+  wire width 8 output 11 \io.reg_output.b[0]
+  attribute \src "$FILE:$LINE-15.9"
+  wire width 8 output 12 \io.reg_output.b[1]
+  attribute \src "$FILE:$LINE-15.9"
+  wire width 8 output 13 \io.reg_output.b[2]
   wire width 1 \submodule.io.wire_output.a
   wire width 8 \submodule.io.wire_output.b[0]
   wire width 8 \submodule.io.wire_output.b[1]
   wire width 8 \submodule.io.wire_output.b[2]
-  attribute \src "$FILE:$LINE-15.9"
-  wire width 1 output 6 \io.wire_output.a
   connect \io.wire_output.a \submodule.io.wire_output.a
-  attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 7 \io.wire_output.b[0]
   connect \io.wire_output.b[0] \submodule.io.wire_output.b[0]
-  attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 8 \io.wire_output.b[1]
   connect \io.wire_output.b[1] \submodule.io.wire_output.b[1]
-  attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 9 \io.wire_output.b[2]
   connect \io.wire_output.b[2] \submodule.io.wire_output.b[2]
   wire width 1 \submodule.io.reg_output.a
   wire width 8 \submodule.io.reg_output.b[0]
   wire width 8 \submodule.io.reg_output.b[1]
   wire width 8 \submodule.io.reg_output.b[2]
-  attribute \src "$FILE:$LINE-15.9"
-  wire width 1 output 10 \io.reg_output.a
   connect \io.reg_output.a \submodule.io.reg_output.a
-  attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 11 \io.reg_output.b[0]
   connect \io.reg_output.b[0] \submodule.io.reg_output.b[0]
-  attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 12 \io.reg_output.b[1]
   connect \io.reg_output.b[1] \submodule.io.reg_output.b[1]
-  attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 13 \io.reg_output.b[2]
   connect \io.reg_output.b[2] \submodule.io.reg_output.b[2]
   attribute \src "$FILE:$LINE-14.9"
   cell \top.submodule \submodule
@@ -80,39 +80,47 @@ module \top.submodule
   wire width 8 input 5 \io.input.b[2]
   attribute \src "$FILE:$LINE-14.9"
   wire width 1 output 6 \io.wire_output.a
-  connect \io.wire_output.a \wire.a
   attribute \src "$FILE:$LINE-14.9"
   wire width 8 output 7 \io.wire_output.b[0]
-  connect \io.wire_output.b[0] \wire.b[0]
   attribute \src "$FILE:$LINE-14.9"
   wire width 8 output 8 \io.wire_output.b[1]
-  connect \io.wire_output.b[1] \wire.b[1]
   attribute \src "$FILE:$LINE-14.9"
   wire width 8 output 9 \io.wire_output.b[2]
-  connect \io.wire_output.b[2] \wire.b[2]
   attribute \src "$FILE:$LINE-14.9"
   wire width 1 output 10 \io.reg_output.a
-  connect \io.reg_output.a \reg.a
   attribute \src "$FILE:$LINE-14.9"
   wire width 8 output 11 \io.reg_output.b[0]
-  connect \io.reg_output.b[0] \reg.b[0]
   attribute \src "$FILE:$LINE-14.9"
   wire width 8 output 12 \io.reg_output.b[1]
-  connect \io.reg_output.b[1] \reg.b[1]
   attribute \src "$FILE:$LINE-14.9"
   wire width 8 output 13 \io.reg_output.b[2]
-  connect \io.reg_output.b[2] \reg.b[2]
-  attribute \src "$FILE:$LINE-14.9"
+  attribute \src "$FILE:$LINE-7.9"
   wire width 1 \wire.a
-  connect \wire.a \io.input.a
-  attribute \src "$FILE:$LINE-14.9"
+  attribute \src "$FILE:$LINE-7.9"
   wire width 8 \wire.b[0]
-  connect \wire.b[0] \io.input.b[0]
-  attribute \src "$FILE:$LINE-14.9"
+  attribute \src "$FILE:$LINE-7.9"
   wire width 8 \wire.b[1]
-  connect \wire.b[1] \io.input.b[1]
-  attribute \src "$FILE:$LINE-14.9"
+  attribute \src "$FILE:$LINE-7.9"
   wire width 8 \wire.b[2]
+  connect \io.wire_output.a \wire.a
+  connect \io.wire_output.b[0] \wire.b[0]
+  connect \io.wire_output.b[1] \wire.b[1]
+  connect \io.wire_output.b[2] \wire.b[2]
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 1 \reg.a
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 8 \reg.b[0]
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 8 \reg.b[1]
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 8 \reg.b[2]
+  connect \io.reg_output.a \reg.a
+  connect \io.reg_output.b[0] \reg.b[0]
+  connect \io.reg_output.b[1] \reg.b[1]
+  connect \io.reg_output.b[2] \reg.b[2]
+  connect \wire.a \io.input.a
+  connect \wire.b[0] \io.input.b[0]
+  connect \wire.b[1] \io.input.b[1]
   connect \wire.b[2] \io.input.b[2]
   wire width 1 $0
   connect $0 1'0

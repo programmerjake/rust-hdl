@@ -471,15 +471,20 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     RelationToSelectedField::InSelectedField(&[]),
                     &mut |ty, path, _relation_to_selected_field| {
                         let name = self.add_uniquified_symbol(module, path);
+                        writeln!(
+                            self.writer,
+                            r"  attribute \src {}",
+                            RtlilLocation(v.0.source_location())
+                        )?;
+                        writeln!(self.writer, "  wire width {} {}", ty.bit_count, name)?;
                         wires.push(RtlilWire {
                             name,
                             ty,
                             io_index: None,
                         });
-                        Ok::<_, Infallible>(())
+                        Ok(())
                     },
-                )
-                .unwrap();
+                )?;
                 wires.into()
             }
             IrValue::Input(v) => panic!(
@@ -553,15 +558,20 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     RelationToSelectedField::InSelectedField(&[]),
                     &mut |ty, path, _relation_to_selected_field| {
                         let name = self.add_uniquified_symbol(module, path);
+                        writeln!(
+                            self.writer,
+                            r"  attribute \src {}",
+                            RtlilLocation(v.0.source_location())
+                        )?;
+                        writeln!(self.writer, "  wire width {} {}", ty.bit_count, name)?;
                         wires.push(RtlilWire {
                             name,
                             ty,
                             io_index: None,
                         });
-                        Ok::<_, Infallible>(())
+                        Ok(())
                     },
-                )
-                .unwrap();
+                )?;
                 wires.into()
             }
             IrValue::Mux(v) => {
@@ -760,13 +770,13 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
     fn export_ir(&mut self, module: IrModuleRef<'ctx>) -> Result<(), Self::Error> {
         self.add_module_to_worklist(module);
         while let Some(module) = self.module_worklist.pop() {
+            let module_data = self.get_module_data(module);
             writeln!(self.writer, r#"attribute \generator "rust-hdl""#)?;
             writeln!(
                 self.writer,
                 r"attribute \src {}",
                 RtlilLocation(module.source_location())
             )?;
-            let module_data = self.get_module_data(module);
             writeln!(self.writer, "module {}", module_data.name)?;
             for io in module_data.interface.iter() {
                 match io {
@@ -786,7 +796,22 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
                             )?;
                         }
                     }
-                    InOrOut::Output(_) => {}
+                    InOrOut::Output(output) => {
+                        for wire in output.iter() {
+                            writeln!(
+                                self.writer,
+                                r"  attribute \src {}",
+                                RtlilLocation(module.source_location())
+                            )?;
+                            writeln!(
+                                self.writer,
+                                "  wire width {} output {} {}",
+                                wire.ty.bit_count,
+                                wire.io_index.unwrap(),
+                                wire.name,
+                            )?;
+                        }
+                    }
                 }
             }
             for wire in module.wires() {
@@ -803,16 +828,6 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
                 )?;
                 assert_eq!(lhs_wires.len(), rhs_wires.len());
                 for (lhs_wire, rhs_wire) in lhs_wires.iter().zip(rhs_wires.iter()) {
-                    writeln!(
-                        self.writer,
-                        r"  attribute \src {}",
-                        RtlilLocation(module.source_location())
-                    )?;
-                    write!(self.writer, "  wire width {}", lhs_wire.ty.bit_count,)?;
-                    if let Some(io_index) = lhs_wire.io_index {
-                        write!(self.writer, " output {}", io_index)?;
-                    }
-                    writeln!(self.writer, " {}", lhs_wire.name)?;
                     lhs_wire.name.assert_module_is(module);
                     rhs_wire.name.assert_module_is(module);
                     writeln!(self.writer, "  connect {} {}", lhs_wire.name, rhs_wire.name)?;
