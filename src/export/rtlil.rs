@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
+//! Exporter for Yosys's RTLIL/ILANG
 
 use crate::{
     context::Intern,
@@ -279,6 +280,7 @@ impl<'ctx> ModuleData<'ctx> {
     }
 }
 
+/// Exporter for Yosys's RTLIL/ILANG
 pub struct RtlilExporter<'ctx, W: Write + ?Sized> {
     modules: HashMap<IrModuleRef<'ctx>, Rc<ModuleData<'ctx>>>,
     global_symbol_table: GlobalSymbolTable<'ctx>,
