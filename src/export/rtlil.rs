@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Intern},
+    context::Intern,
     export::{
         rtlil::id::{GlobalSymbolTable, RtlilId, SymbolTable},
         Exporter,
@@ -11,7 +11,6 @@ use crate::{
         io::InOrOut,
         logic::IrRegReset,
         module::{combine_owning_modules, IrModuleRef, OwningModule},
-        symbols::IrSymbolTable,
         types::{IrStructType, IrValueType, IrValueTypeRef},
         values::{IrValue, IrValueRef, LiteralBits, Mux},
         SourceLocation,
@@ -26,13 +25,12 @@ use alloc::{
     vec::Vec,
 };
 use core::{
-    borrow::BorrowMut,
     cell::{Cell, RefCell},
     cmp::Ordering,
     convert::{Infallible, TryFrom},
     fmt::{self, Write as _},
 };
-use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use hashbrown::HashMap;
 
 mod id;
 
