@@ -95,6 +95,8 @@ macro_rules! field_enum {
 /// You can also use it to get a field's field (or a field of a field's field, and so on):
 /// or `field!((val_expr).field1.subfield2)`
 ///
+/// [`Val`]: crate::prelude::Val
+///
 /// Example:
 /// ```
 /// # use rust_hdl::prelude::*;
