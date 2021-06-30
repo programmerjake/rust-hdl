@@ -10,7 +10,7 @@ use crate::{
             IrValueTypeRef,
         },
         values::{
-            ExtractStructField, IrValue, IrValueRef, LiteralArray, LiteralStruct,
+            ExtractStructField, IrValue, IrValueRef, LiteralArray, LiteralBits, LiteralStruct,
             LiteralStructField,
         },
     },
@@ -133,7 +133,7 @@ impl<'ctx> Value<'ctx> for bool {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
         Val::from_ir_unchecked(
             ctx,
-            IrValue::LiteralBits(UInt1::unchecked_new(*self as u8).into()).intern(ctx),
+            IrValue::LiteralBits(LiteralBits::new_bool(*self)).intern(ctx),
         )
     }
     fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {

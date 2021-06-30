@@ -13,7 +13,10 @@ use crate::{
         logic::IrRegReset,
         module::{combine_owning_modules, IrModuleRef, OwningModule},
         types::{IrArrayType, IrBitVectorType, IrStructType, IrValueType, IrValueTypeRef},
-        values::{IrValue, IrValueRef, LiteralBits, Mux},
+        values::{
+            BoolOutBinOpKind, BoolOutUnOpKind, IrValue, IrValueRef, LiteralBits, Mux,
+            SameSizeBinOpKind, SameSizeUnOpKind,
+        },
         SourceLocation,
     },
     prelude::UInt1,
@@ -702,13 +705,206 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     Rc::new([])
                 }
             }
+            IrValue::SameSizeBinOp(v) => {
+                if let Some(bit_count) = NonZeroU32::new(v.value_type().bit_count) {
+                    let lhs_wire = self.get_single_wire_for_value(module, v.lhs())?;
+                    let rhs_wire = self.get_single_wire_for_value(module, v.rhs())?;
+                    let name = self.new_anonymous_symbol(module);
+                    writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
+                    let cell_name = self.new_anonymous_symbol(module);
+                    let mut lhs_signed = false;
+                    let rhs_signed = false;
+                    let cell_kind = match v.kind() {
+                        SameSizeBinOpKind::Add => "$add",
+                        SameSizeBinOpKind::Sub => "$sub",
+                        SameSizeBinOpKind::Mul => "$mul",
+                        SameSizeBinOpKind::And => "$and",
+                        SameSizeBinOpKind::Or => "$or",
+                        SameSizeBinOpKind::Xor => "$xor",
+                        SameSizeBinOpKind::ShiftLeft => "$shl",
+                        SameSizeBinOpKind::UnsignedShiftRight => "$shr",
+                        SameSizeBinOpKind::SignedShiftRight => {
+                            lhs_signed = true;
+                            "$sshr"
+                        }
+                    };
+                    writeln!(
+                        self.writer,
+                        r"  cell {cell_kind} {cell_name}
+    parameter \A_SIGNED {lhs_signed}
+    parameter \A_WIDTH {bit_count}
+    parameter \B_SIGNED {rhs_signed}
+    parameter \B_WIDTH {bit_count}
+    parameter \Y_WIDTH {bit_count}
+    connect \A {lhs}
+    connect \B {rhs}
+    connect \Y {name}
+  end",
+                        cell_kind = cell_kind,
+                        cell_name = cell_name,
+                        lhs_signed = &(lhs_signed as u8),
+                        bit_count = bit_count,
+                        rhs_signed = &(rhs_signed as u8),
+                        lhs = lhs_wire.name,
+                        rhs = rhs_wire.name,
+                        name = name,
+                    )?;
+                    Rc::new([RtlilWire {
+                        ty: RtlilWireType { bit_count },
+                        name,
+                        io_index: None,
+                    }])
+                } else {
+                    Rc::new([])
+                }
+            }
+            IrValue::SameSizeUnOp(v) => {
+                if let Some(bit_count) = NonZeroU32::new(v.value_type().bit_count) {
+                    let input_wire = self.get_single_wire_for_value(module, v.input())?;
+                    let name = self.new_anonymous_symbol(module);
+                    writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
+                    let cell_name = self.new_anonymous_symbol(module);
+                    let signed = false;
+                    let cell_kind = match v.kind() {
+                        SameSizeUnOpKind::Not => "$not",
+                        SameSizeUnOpKind::Neg => "$neg",
+                    };
+                    writeln!(
+                        self.writer,
+                        r"  cell {cell_kind} {cell_name}
+    parameter \A_SIGNED {signed}
+    parameter \A_WIDTH {bit_count}
+    parameter \Y_WIDTH {bit_count}
+    connect \A {input}
+    connect \Y {name}
+  end",
+                        cell_kind = cell_kind,
+                        cell_name = cell_name,
+                        signed = &(signed as u8),
+                        bit_count = bit_count,
+                        input = input_wire.name,
+                        name = name,
+                    )?;
+                    Rc::new([RtlilWire {
+                        ty: RtlilWireType { bit_count },
+                        name,
+                        io_index: None,
+                    }])
+                } else {
+                    Rc::new([])
+                }
+            }
+            IrValue::BoolOutBinOp(v) => {
+                if let Some(input_bit_count) = NonZeroU32::new(v.value_type().bit_count) {
+                    let lhs_wire = self.get_single_wire_for_value(module, v.lhs())?;
+                    let rhs_wire = self.get_single_wire_for_value(module, v.rhs())?;
+                    let name = self.new_anonymous_symbol(module);
+                    writeln!(self.writer, "  wire width 1 {}", name)?;
+                    let cell_name = self.new_anonymous_symbol(module);
+                    let mut lhs_signed = false;
+                    let mut rhs_signed = false;
+                    let cell_kind = match v.kind() {
+                        BoolOutBinOpKind::CompareEq => "$eq",
+                        BoolOutBinOpKind::CompareULt => "$lt",
+                        BoolOutBinOpKind::CompareSLt => {
+                            lhs_signed = true;
+                            rhs_signed = true;
+                            "$lt"
+                        }
+                    };
+                    writeln!(
+                        self.writer,
+                        r"  cell {cell_kind} {cell_name}
+    parameter \A_SIGNED {lhs_signed}
+    parameter \A_WIDTH {input_bit_count}
+    parameter \B_SIGNED {rhs_signed}
+    parameter \B_WIDTH {input_bit_count}
+    parameter \Y_WIDTH 1
+    connect \A {lhs}
+    connect \B {rhs}
+    connect \Y {name}
+  end",
+                        cell_kind = cell_kind,
+                        cell_name = cell_name,
+                        lhs_signed = &(lhs_signed as u8),
+                        input_bit_count = input_bit_count,
+                        rhs_signed = &(rhs_signed as u8),
+                        lhs = lhs_wire.name,
+                        rhs = rhs_wire.name,
+                        name = name,
+                    )?;
+                    Rc::new([RtlilWire {
+                        ty: RtlilWireType {
+                            bit_count: NonZeroU32::new(1).unwrap(),
+                        },
+                        name,
+                        io_index: None,
+                    }])
+                } else {
+                    let retval = match v.kind() {
+                        BoolOutBinOpKind::CompareEq => true,
+                        BoolOutBinOpKind::CompareULt => false,
+                        BoolOutBinOpKind::CompareSLt => false,
+                    };
+                    self.get_wires_for_value(
+                        module,
+                        IrValue::LiteralBits(LiteralBits::new_bool(retval)).intern(module.ctx()),
+                    )?
+                }
+            }
+            IrValue::BoolOutUnOp(v) => {
+                if let Some(input_bit_count) = NonZeroU32::new(v.value_type().bit_count) {
+                    let input_wire = self.get_single_wire_for_value(module, v.input())?;
+                    let name = self.new_anonymous_symbol(module);
+                    writeln!(self.writer, "  wire width 1 {}", name)?;
+                    let cell_name = self.new_anonymous_symbol(module);
+                    let signed = false;
+                    let cell_kind = match v.kind() {
+                        BoolOutUnOpKind::ReduceXor => "$reduce_xor",
+                        BoolOutUnOpKind::ReduceAnd => "$reduce_and",
+                        BoolOutUnOpKind::ReduceOr => "$reduce_or",
+                    };
+                    writeln!(
+                        self.writer,
+                        r"  cell {cell_kind} {cell_name}
+    parameter \A_SIGNED {signed}
+    parameter \A_WIDTH {input_bit_count}
+    parameter \Y_WIDTH 1
+    connect \A {input}
+    connect \Y {name}
+  end",
+                        cell_kind = cell_kind,
+                        cell_name = cell_name,
+                        signed = &(signed as u8),
+                        input_bit_count = input_bit_count,
+                        input = input_wire.name,
+                        name = name,
+                    )?;
+                    Rc::new([RtlilWire {
+                        ty: RtlilWireType {
+                            bit_count: NonZeroU32::new(1).unwrap(),
+                        },
+                        name,
+                        io_index: None,
+                    }])
+                } else {
+                    let retval = match v.kind() {
+                        BoolOutUnOpKind::ReduceXor => false,
+                        BoolOutUnOpKind::ReduceAnd => false,
+                        BoolOutUnOpKind::ReduceOr => false,
+                    };
+                    self.get_wires_for_value(
+                        module,
+                        IrValue::LiteralBits(LiteralBits::new_bool(retval)).intern(module.ctx()),
+                    )?
+                }
+            }
         };
-        let retval: Rc<[_]> = wires.into();
         module_data
             .wires_for_values
             .borrow_mut()
-            .insert(value, retval.clone());
-        Ok(retval)
+            .insert(value, wires.clone());
+        Ok(wires)
     }
     fn add_module_to_worklist(&mut self, module: IrModuleRef<'ctx>) {
         if !self

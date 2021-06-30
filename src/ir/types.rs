@@ -55,6 +55,12 @@ impl<'ctx> IrValueType<'ctx> {
     pub fn is_bool(self) -> bool {
         matches!(self, Self::BitVector(IrBitVectorType { bit_count: 1 }))
     }
+    pub fn bit_vector(self) -> Option<IrBitVectorType> {
+        match self {
+            IrValueType::BitVector(v) => Some(v),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Debug for IrValueType<'_> {

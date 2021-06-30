@@ -55,6 +55,12 @@ impl LiteralBits {
             value: BigUint::zero(),
         }
     }
+    pub fn new_bool(v: bool) -> Self {
+        Self {
+            bit_count: 1,
+            value: BigUint::from(v as u8),
+        }
+    }
     pub fn to_int(self, signed: bool) -> Int {
         let LiteralBits { value, bit_count } = self;
         Int::unchecked_new_with_shape(value, IntShape { bit_count, signed })
@@ -441,6 +447,7 @@ pub struct SliceBitVector<'ctx> {
 
 impl<'ctx> SliceBitVector<'ctx> {
     /// bit_indexes is in LSB0 order
+    #[track_caller]
     pub fn new(
         ctx: ContextRef<'ctx>,
         base_value: IrValueRef<'ctx>,
@@ -449,15 +456,15 @@ impl<'ctx> SliceBitVector<'ctx> {
         Self::new_with_bit_vector_type_unchecked(base_value, base_value.get_type(ctx), bit_indexes)
     }
     /// bit_indexes is in LSB0 order
+    #[track_caller]
     pub fn new_with_bit_vector_type_unchecked(
         base_value: IrValueRef<'ctx>,
         base_type: IrValueTypeRef<'ctx>,
         bit_indexes: Range<u32>,
     ) -> Self {
-        let base_type = match *base_type {
-            IrValueType::BitVector(v) => v,
-            _ => panic!("base value type is not a bit vector"),
-        };
+        let base_type = base_type
+            .bit_vector()
+            .expect("base value type is not a bit vector");
         let Range {
             start: bit_start_index,
             end: bit_end_index,
@@ -577,18 +584,14 @@ impl<'ctx> ConcatBitVectors<'ctx> {
         let bit_vectors = bit_vectors.as_ref();
         let mut value_type = IrBitVectorType { bit_count: 0 };
         for bit_vector in bit_vectors {
-            match *bit_vector.get_type(ctx) {
-                IrValueType::BitVector(IrBitVectorType { bit_count }) => {
-                    value_type.bit_count = value_type
-                        .bit_count
-                        .checked_add(bit_count)
-                        .expect("too many bits in bit vector");
-                }
-                bit_vector_type => panic!(
-                    "invalid type -- must be a bit vector: {:?}",
-                    bit_vector_type
-                ),
-            }
+            let IrBitVectorType { bit_count } = bit_vector
+                .get_type(ctx)
+                .bit_vector()
+                .expect("input type must be a bit vector");
+            value_type.bit_count = value_type
+                .bit_count
+                .checked_add(bit_count)
+                .expect("too many bits in bit vector");
         }
         let owning_module = combine_owning_modules(bit_vectors);
         Self {
@@ -617,6 +620,257 @@ impl<'ctx> From<ConcatBitVectors<'ctx>> for IrValue<'ctx> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SameSizeBinOpKind {
+    Add,
+    Sub,
+    Mul,
+    And,
+    Or,
+    Xor,
+    ShiftLeft,
+    UnsignedShiftRight,
+    SignedShiftRight,
+}
+
+#[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
+pub struct SameSizeBinOp<'ctx> {
+    kind: SameSizeBinOpKind,
+    value_type: IrBitVectorType,
+    owning_module: Option<IrModuleRef<'ctx>>,
+    lhs: IrValueRef<'ctx>,
+    rhs: IrValueRef<'ctx>,
+}
+
+impl<'ctx> SameSizeBinOp<'ctx> {
+    /// for all binary operations, both inputs and the output type must match
+    #[track_caller]
+    pub fn new(
+        ctx: ContextRef<'ctx>,
+        kind: SameSizeBinOpKind,
+        lhs: IrValueRef<'ctx>,
+        rhs: IrValueRef<'ctx>,
+    ) -> Self {
+        let value_type = lhs
+            .get_type(ctx)
+            .bit_vector()
+            .expect("lhs type must be a bit vector");
+        let rhs_value_type = rhs
+            .get_type(ctx)
+            .bit_vector()
+            .expect("rhs type must be a bit vector");
+        assert_eq!(value_type, rhs_value_type);
+        let owning_module = combine_owning_modules([lhs, rhs]);
+        Self {
+            kind,
+            value_type,
+            owning_module,
+            lhs,
+            rhs,
+        }
+    }
+    pub fn kind(self) -> SameSizeBinOpKind {
+        self.kind
+    }
+    pub fn value_type(self) -> IrBitVectorType {
+        self.value_type
+    }
+    pub fn lhs(self) -> IrValueRef<'ctx> {
+        self.lhs
+    }
+    pub fn rhs(self) -> IrValueRef<'ctx> {
+        self.rhs
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for SameSizeBinOp<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.owning_module
+    }
+}
+
+impl<'ctx> From<SameSizeBinOp<'ctx>> for IrValue<'ctx> {
+    fn from(v: SameSizeBinOp<'ctx>) -> Self {
+        IrValue::SameSizeBinOp(v)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SameSizeUnOpKind {
+    Not,
+    Neg,
+}
+
+#[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
+pub struct SameSizeUnOp<'ctx> {
+    kind: SameSizeUnOpKind,
+    value_type: IrBitVectorType,
+    input: IrValueRef<'ctx>,
+}
+
+impl<'ctx> SameSizeUnOp<'ctx> {
+    /// for all unary operations, the input and the output type match
+    #[track_caller]
+    pub fn new(ctx: ContextRef<'ctx>, kind: SameSizeUnOpKind, input: IrValueRef<'ctx>) -> Self {
+        let value_type = input
+            .get_type(ctx)
+            .bit_vector()
+            .expect("input type must be a bit vector");
+        Self {
+            kind,
+            value_type,
+            input,
+        }
+    }
+    pub fn kind(self) -> SameSizeUnOpKind {
+        self.kind
+    }
+    pub fn value_type(self) -> IrBitVectorType {
+        self.value_type
+    }
+    pub fn input(self) -> IrValueRef<'ctx> {
+        self.input
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for SameSizeUnOp<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.input.owning_module()
+    }
+}
+
+impl<'ctx> From<SameSizeUnOp<'ctx>> for IrValue<'ctx> {
+    fn from(v: SameSizeUnOp<'ctx>) -> Self {
+        IrValue::SameSizeUnOp(v)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BoolOutBinOpKind {
+    CompareEq,
+    CompareULt,
+    CompareSLt,
+}
+
+#[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
+pub struct BoolOutBinOp<'ctx> {
+    kind: BoolOutBinOpKind,
+    input_type: IrBitVectorType,
+    owning_module: Option<IrModuleRef<'ctx>>,
+    lhs: IrValueRef<'ctx>,
+    rhs: IrValueRef<'ctx>,
+}
+
+impl<'ctx> BoolOutBinOp<'ctx> {
+    /// for all binary operations, both inputs and the output type must match
+    #[track_caller]
+    pub fn new(
+        ctx: ContextRef<'ctx>,
+        kind: BoolOutBinOpKind,
+        lhs: IrValueRef<'ctx>,
+        rhs: IrValueRef<'ctx>,
+    ) -> Self {
+        let input_type = lhs
+            .get_type(ctx)
+            .bit_vector()
+            .expect("lhs type must be a bit vector");
+        let rhs_value_type = rhs
+            .get_type(ctx)
+            .bit_vector()
+            .expect("rhs type must be a bit vector");
+        assert_eq!(input_type, rhs_value_type);
+        let owning_module = combine_owning_modules([lhs, rhs]);
+        Self {
+            kind,
+            input_type,
+            owning_module,
+            lhs,
+            rhs,
+        }
+    }
+    pub fn kind(self) -> BoolOutBinOpKind {
+        self.kind
+    }
+    pub fn input_type(self) -> IrBitVectorType {
+        self.input_type
+    }
+    pub fn value_type(self) -> IrBitVectorType {
+        IrBitVectorType { bit_count: 1 }
+    }
+    pub fn lhs(self) -> IrValueRef<'ctx> {
+        self.lhs
+    }
+    pub fn rhs(self) -> IrValueRef<'ctx> {
+        self.rhs
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for BoolOutBinOp<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.owning_module
+    }
+}
+
+impl<'ctx> From<BoolOutBinOp<'ctx>> for IrValue<'ctx> {
+    fn from(v: BoolOutBinOp<'ctx>) -> Self {
+        IrValue::BoolOutBinOp(v)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BoolOutUnOpKind {
+    ReduceXor,
+    ReduceAnd,
+    ReduceOr,
+}
+
+#[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
+pub struct BoolOutUnOp<'ctx> {
+    kind: BoolOutUnOpKind,
+    input_type: IrBitVectorType,
+    input: IrValueRef<'ctx>,
+}
+
+impl<'ctx> BoolOutUnOp<'ctx> {
+    /// for all unary operations, the input and the output type match
+    #[track_caller]
+    pub fn new(ctx: ContextRef<'ctx>, kind: BoolOutUnOpKind, input: IrValueRef<'ctx>) -> Self {
+        let input_type = input
+            .get_type(ctx)
+            .bit_vector()
+            .expect("input type must be a bit vector");
+        Self {
+            kind,
+            input_type,
+            input,
+        }
+    }
+    pub fn kind(self) -> BoolOutUnOpKind {
+        self.kind
+    }
+    pub fn input_type(self) -> IrBitVectorType {
+        self.input_type
+    }
+    pub fn value_type(self) -> IrBitVectorType {
+        IrBitVectorType { bit_count: 1 }
+    }
+    pub fn input(self) -> IrValueRef<'ctx> {
+        self.input
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for BoolOutUnOp<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.input.owning_module()
+    }
+}
+
+impl<'ctx> From<BoolOutUnOp<'ctx>> for IrValue<'ctx> {
+    fn from(v: BoolOutUnOp<'ctx>) -> Self {
+        IrValue::BoolOutUnOp(v)
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub enum IrValue<'ctx> {
     LiteralBits(LiteralBits),
@@ -632,6 +886,10 @@ pub enum IrValue<'ctx> {
     Mux(Mux<'ctx>),
     ConcatBitVectors(ConcatBitVectors<'ctx>),
     SliceBitVector(SliceBitVector<'ctx>),
+    SameSizeBinOp(SameSizeBinOp<'ctx>),
+    SameSizeUnOp(SameSizeUnOp<'ctx>),
+    BoolOutBinOp(BoolOutBinOp<'ctx>),
+    BoolOutUnOp(BoolOutUnOp<'ctx>),
 }
 
 pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
@@ -659,6 +917,10 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::Mux(v) => v.value_type(),
             IrValue::ConcatBitVectors(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::SliceBitVector(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::SameSizeBinOp(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::SameSizeUnOp(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::BoolOutBinOp(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::BoolOutUnOp(v) => IrValueType::from(v.value_type()).intern(ctx),
         }
     }
 }
@@ -679,6 +941,10 @@ impl<'ctx> OwningModule<'ctx> for IrValue<'ctx> {
             IrValue::Mux(v) => v.owning_module(),
             IrValue::ConcatBitVectors(v) => v.owning_module(),
             IrValue::SliceBitVector(v) => v.owning_module(),
+            IrValue::SameSizeBinOp(v) => v.owning_module(),
+            IrValue::SameSizeUnOp(v) => v.owning_module(),
+            IrValue::BoolOutBinOp(v) => v.owning_module(),
+            IrValue::BoolOutUnOp(v) => v.owning_module(),
         }
     }
 }
@@ -699,6 +965,10 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::Mux(v) => v.fmt(f),
             IrValue::ConcatBitVectors(v) => v.fmt(f),
             IrValue::SliceBitVector(v) => v.fmt(f),
+            IrValue::SameSizeBinOp(v) => v.fmt(f),
+            IrValue::SameSizeUnOp(v) => v.fmt(f),
+            IrValue::BoolOutBinOp(v) => v.fmt(f),
+            IrValue::BoolOutUnOp(v) => v.fmt(f),
         }
     }
 }
