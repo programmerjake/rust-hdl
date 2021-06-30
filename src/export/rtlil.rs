@@ -680,6 +680,28 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     Rc::new([])
                 }
             }
+            IrValue::SliceBitVector(v) => {
+                if let Some(bit_count) = NonZeroU32::new(v.value_type().bit_count) {
+                    let base_wire = self.get_single_wire_for_value(module, v.base_value())?;
+                    let name = self.new_anonymous_symbol(module);
+                    writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
+                    // convert to an inclusive range
+                    let last_bit_index = v.bit_indexes().end - 1;
+                    let first_bit_index = v.bit_indexes().start;
+                    writeln!(
+                        self.writer,
+                        "  connect {} {} [{}:{}]",
+                        name, base_wire.name, last_bit_index, first_bit_index
+                    )?;
+                    Rc::new([RtlilWire {
+                        ty: RtlilWireType { bit_count },
+                        name,
+                        io_index: None,
+                    }])
+                } else {
+                    Rc::new([])
+                }
+            }
         };
         let retval: Rc<[_]> = wires.into();
         module_data

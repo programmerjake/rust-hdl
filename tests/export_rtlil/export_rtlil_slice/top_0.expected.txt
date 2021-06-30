@@ -1,0 +1,101 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-8, 9),
+    parent: <None>,
+    interface_types: [
+        Input(
+            IrBitVectorType {
+                bit_count: 32,
+            },
+        ),
+        Output(
+            IrBitVectorType {
+                bit_count: 8,
+            },
+        ),
+    ],
+    interface: [
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrBitVectorType {
+                        bit_count: 32,
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io.i",
+                    value_type: IrBitVectorType {
+                        bit_count: 32,
+                    },
+                },
+            },
+        ),
+        Output(
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: <None>,
+                        value_type: IrBitVectorType {
+                            bit_count: 8,
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top",
+                            index: 1,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."io.o",
+                    source_location: SourceLocation($FILE, $LINE-8, 9),
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                    },
+                    assigned_value: SliceBitVector {
+                        base_value: IrModuleInput {
+                            module: "top",
+                            index: 0,
+                            path: "io.i",
+                            value_type: IrBitVectorType {
+                                bit_count: 32,
+                            },
+                        },
+                        value_type: IrBitVectorType {
+                            bit_count: 8,
+                        },
+                        bit_indexes: 8..16,
+                        ..
+                    },
+                    ..
+                },
+            },
+        ),
+    ],
+    wires: {
+        "io.o": IrWire {
+            source_location: SourceLocation($FILE, $LINE-8, 9),
+            value_type: IrBitVectorType {
+                bit_count: 8,
+            },
+            assigned_value: SliceBitVector {
+                base_value: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io.i",
+                    value_type: IrBitVectorType {
+                        bit_count: 32,
+                    },
+                },
+                value_type: IrBitVectorType {
+                    bit_count: 8,
+                },
+                bit_indexes: 8..16,
+                ..
+            },
+            ..
+        },
+    },
+    registers: {},
+    ..
+}

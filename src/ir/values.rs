@@ -429,6 +429,87 @@ impl<'ctx> From<SliceArray<'ctx>> for IrValue<'ctx> {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+pub struct SliceBitVector<'ctx> {
+    base_value: IrValueRef<'ctx>,
+    base_type: IrBitVectorType,
+    /// first bit index in LSB0 order
+    bit_start_index: u32,
+    /// one-after-end bit index in LSB0 order
+    bit_end_index: u32,
+}
+
+impl<'ctx> SliceBitVector<'ctx> {
+    /// bit_indexes is in LSB0 order
+    pub fn new(
+        ctx: ContextRef<'ctx>,
+        base_value: IrValueRef<'ctx>,
+        bit_indexes: Range<u32>,
+    ) -> Self {
+        Self::new_with_bit_vector_type_unchecked(base_value, base_value.get_type(ctx), bit_indexes)
+    }
+    /// bit_indexes is in LSB0 order
+    pub fn new_with_bit_vector_type_unchecked(
+        base_value: IrValueRef<'ctx>,
+        base_type: IrValueTypeRef<'ctx>,
+        bit_indexes: Range<u32>,
+    ) -> Self {
+        let base_type = match *base_type {
+            IrValueType::BitVector(v) => v,
+            _ => panic!("base value type is not a bit vector"),
+        };
+        let Range {
+            start: bit_start_index,
+            end: bit_end_index,
+        } = bit_indexes;
+        assert!(bit_end_index <= base_type.bit_count);
+        assert!(bit_start_index <= bit_end_index);
+        Self {
+            base_value,
+            base_type,
+            bit_start_index,
+            bit_end_index,
+        }
+    }
+    pub fn base_value(self) -> IrValueRef<'ctx> {
+        self.base_value
+    }
+    pub fn value_type(self) -> IrBitVectorType {
+        IrBitVectorType {
+            bit_count: self.bit_end_index - self.bit_start_index,
+        }
+    }
+    pub fn base_type(self) -> IrBitVectorType {
+        self.base_type
+    }
+    /// bit_indexes is in LSB0 order
+    pub fn bit_indexes(self) -> Range<u32> {
+        self.bit_start_index..self.bit_end_index
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for SliceBitVector<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.base_value.owning_module()
+    }
+}
+
+impl fmt::Debug for SliceBitVector<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SliceBitVector")
+            .field("base_value", &self.base_value())
+            .field("value_type", &self.value_type())
+            .field("bit_indexes", &self.bit_indexes())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'ctx> From<SliceBitVector<'ctx>> for IrValue<'ctx> {
+    fn from(v: SliceBitVector<'ctx>) -> Self {
+        Self::SliceBitVector(v)
+    }
+}
+
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
 pub struct Mux<'ctx> {
     condition: IrValueRef<'ctx>,
@@ -550,6 +631,7 @@ pub enum IrValue<'ctx> {
     RegOutput(IrRegOutput<'ctx>),
     Mux(Mux<'ctx>),
     ConcatBitVectors(ConcatBitVectors<'ctx>),
+    SliceBitVector(SliceBitVector<'ctx>),
 }
 
 pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
@@ -576,6 +658,7 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::RegOutput(v) => v.0.value_type(),
             IrValue::Mux(v) => v.value_type(),
             IrValue::ConcatBitVectors(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::SliceBitVector(v) => IrValueType::from(v.value_type()).intern(ctx),
         }
     }
 }
@@ -595,6 +678,7 @@ impl<'ctx> OwningModule<'ctx> for IrValue<'ctx> {
             IrValue::RegOutput(v) => v.owning_module(),
             IrValue::Mux(v) => v.owning_module(),
             IrValue::ConcatBitVectors(v) => v.owning_module(),
+            IrValue::SliceBitVector(v) => v.owning_module(),
         }
     }
 }
@@ -614,6 +698,7 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::RegOutput(v) => v.fmt(f),
             IrValue::Mux(v) => v.fmt(f),
             IrValue::ConcatBitVectors(v) => v.fmt(f),
+            IrValue::SliceBitVector(v) => v.fmt(f),
         }
     }
 }
