@@ -61,6 +61,18 @@ impl<'ctx> IrValueType<'ctx> {
             _ => None,
         }
     }
+    pub fn array(self) -> Option<IrArrayType<'ctx>> {
+        match self {
+            IrValueType::Array(v) => Some(v),
+            _ => None,
+        }
+    }
+    pub fn struct_(self) -> Option<IrStructType<'ctx>> {
+        match self {
+            IrValueType::Struct(v) => Some(v),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Debug for IrValueType<'_> {

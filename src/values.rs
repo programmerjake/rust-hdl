@@ -15,7 +15,7 @@ use crate::{
         },
     },
 };
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 use core::{
     convert::Infallible,
     fmt,
@@ -159,28 +159,36 @@ impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
     }
 }
 
+fn array_get_value<'ctx, A: AsRef<[T]> + Value<'ctx>, T: Value<'ctx>>(
+    this: &A,
+    ctx: ContextRef<'ctx>,
+) -> Val<'ctx, A> {
+    let mut element_type = T::static_value_type(ctx);
+    let elements: Vec<_> = this
+        .as_ref()
+        .iter()
+        .map(|element| {
+            let element = element.get_value(ctx);
+            if let Some(element_type) = element_type {
+                assert_eq!(element_type, element.value_type());
+            } else {
+                element_type = Some(element.value_type());
+            }
+            element.ir()
+        })
+        .collect();
+    let element_type = element_type
+        .expect("can't calculate the value type for a zero-length array of a dynamic type")
+        .ir();
+    Val::from_ir_unchecked(
+        ctx,
+        IrValue::LiteralArray(LiteralArray::new(ctx, element_type, elements)).intern(ctx),
+    )
+}
+
 impl<'ctx, T: Value<'ctx>, const N: usize> Value<'ctx> for [T; N] {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
-        let mut element_type = T::static_value_type(ctx);
-        let elements: Vec<_> = self
-            .iter()
-            .map(|element| {
-                let element = element.get_value(ctx);
-                if let Some(element_type) = element_type {
-                    assert_eq!(element_type, element.value_type());
-                } else {
-                    element_type = Some(element.value_type());
-                }
-                element.ir()
-            })
-            .collect();
-        let element_type = element_type
-            .expect("can't calculate the value type for a zero-length array of a dynamic type")
-            .ir();
-        Val::from_ir_unchecked(
-            ctx,
-            IrValue::LiteralArray(LiteralArray::new(ctx, element_type, elements)).intern(ctx),
-        )
+        array_get_value(self, ctx)
     }
     fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
         let element_type = T::static_value_type(ctx)?;
@@ -192,6 +200,70 @@ impl<'ctx, T: Value<'ctx>, const N: usize> Value<'ctx> for [T; N] {
             })
             .intern(ctx),
         ))
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, const N: usize> From<Val<'ctx, [T; N]>> for Val<'ctx, Box<[T]>> {
+    fn from(v: Val<'ctx, [T; N]>) -> Self {
+        Val::from_ir_and_type_unchecked(v.ir(), v.value_type().into())
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, const N: usize> From<Val<'ctx, [T; N]>> for Val<'ctx, Vec<T>> {
+    fn from(v: Val<'ctx, [T; N]>) -> Self {
+        Val::from_ir_and_type_unchecked(v.ir(), v.value_type().into())
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> From<Val<'ctx, Vec<T>>> for Val<'ctx, Box<[T]>> {
+    fn from(v: Val<'ctx, Vec<T>>) -> Self {
+        Val::from_ir_and_type_unchecked(v.ir(), v.value_type().into())
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> From<Val<'ctx, Box<[T]>>> for Val<'ctx, Vec<T>> {
+    fn from(v: Val<'ctx, Box<[T]>>) -> Self {
+        Val::from_ir_and_type_unchecked(v.ir(), v.value_type().into())
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, const N: usize> From<ValueType<'ctx, [T; N]>>
+    for ValueType<'ctx, Box<[T]>>
+{
+    fn from(v: ValueType<'ctx, [T; N]>) -> Self {
+        ValueType::from_ir_unchecked(v.ctx(), v.ir())
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, const N: usize> From<ValueType<'ctx, [T; N]>>
+    for ValueType<'ctx, Vec<T>>
+{
+    fn from(v: ValueType<'ctx, [T; N]>) -> Self {
+        ValueType::from_ir_unchecked(v.ctx(), v.ir())
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> From<ValueType<'ctx, Vec<T>>> for ValueType<'ctx, Box<[T]>> {
+    fn from(v: ValueType<'ctx, Vec<T>>) -> Self {
+        ValueType::from_ir_unchecked(v.ctx(), v.ir())
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> From<ValueType<'ctx, Box<[T]>>> for ValueType<'ctx, Vec<T>> {
+    fn from(v: ValueType<'ctx, Box<[T]>>) -> Self {
+        ValueType::from_ir_unchecked(v.ctx(), v.ir())
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> Value<'ctx> for Box<[T]> {
+    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
+        array_get_value(self, ctx)
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> Value<'ctx> for Vec<T> {
+    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
+        array_get_value(self, ctx)
     }
 }
 
@@ -328,3 +400,5 @@ pub use integer::{
     Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, UInt, UInt1, UInt128, UInt16, UInt32,
     UInt64, UInt8,
 };
+
+pub mod ops;
