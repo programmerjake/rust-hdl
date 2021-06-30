@@ -4,6 +4,7 @@ Reg {
         source_location: SourceLocation($FILE, $LINE-2, 9),
         value_type: IrBitVectorType {
             bit_count: 1,
+            signed: false,
         },
         data_in: <None>,
         clk: ExtractStructField {
@@ -17,12 +18,14 @@ Reg {
                             name: "clk",
                             ty: IrBitVectorType {
                                 bit_count: 1,
+                                signed: false,
                             },
                         },
                         IrStructFieldType {
                             name: "rst",
                             ty: IrBitVectorType {
                                 bit_count: 1,
+                                signed: false,
                             },
                         },
                     ],
@@ -32,6 +35,7 @@ Reg {
                 name: "clk",
                 ty: IrBitVectorType {
                     bit_count: 1,
+                    signed: false,
                 },
             },
             field_index: 0,
@@ -48,12 +52,14 @@ Reg {
                             name: "clk",
                             ty: IrBitVectorType {
                                 bit_count: 1,
+                                signed: false,
                             },
                         },
                         IrStructFieldType {
                             name: "rst",
                             ty: IrBitVectorType {
                                 bit_count: 1,
+                                signed: false,
                             },
                         },
                     ],
@@ -63,14 +69,14 @@ Reg {
                 name: "rst",
                 ty: IrBitVectorType {
                     bit_count: 1,
+                    signed: false,
                 },
             },
             field_index: 1,
             ..
         },
         reset_value: LiteralBits {
-            bit_count: 1,
-            value: 0x0,
+            value: 0x0_u1,
         },
         ..
     },

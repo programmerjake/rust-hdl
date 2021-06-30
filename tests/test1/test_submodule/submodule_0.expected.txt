@@ -6,17 +6,20 @@ IrModule {
         Input(
             IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
         ),
         Output(
             IrBitVectorType {
                 bit_count: 32,
+                signed: false,
             },
         ),
         Input(
             IrArrayType {
                 element: IrBitVectorType {
                     bit_count: 8,
+                    signed: true,
                 },
                 length: 1,
             },
@@ -27,8 +30,7 @@ IrModule {
             IrModuleInputData {
                 external_value: Input {
                     value: LiteralBits {
-                        bit_count: 1,
-                        value: 0x1,
+                        value: 0x1_u1,
                     },
                 },
                 module_input: IrModuleInput {
@@ -37,6 +39,7 @@ IrModule {
                     path: "io.0",
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                 },
             },
@@ -48,6 +51,7 @@ IrModule {
                         module: "top",
                         value_type: IrBitVectorType {
                             bit_count: 32,
+                            signed: false,
                         },
                         write_data: IrOutputWriteData {
                             writing_module: "top"."submodule",
@@ -60,6 +64,7 @@ IrModule {
                     source_location: SourceLocation($FILE, $LINE-2, 9),
                     value_type: IrBitVectorType {
                         bit_count: 32,
+                        signed: false,
                     },
                     assigned_value: <None>,
                     ..
@@ -72,12 +77,12 @@ IrModule {
                     value: LiteralArray {
                         element_type: IrBitVectorType {
                             bit_count: 8,
+                            signed: true,
                         },
                         owning_module: None,
                         elements: [
                             LiteralBits {
-                                bit_count: 8,
-                                value: 0x23,
+                                value: 0x23_i8,
                             },
                         ],
                     },
@@ -89,6 +94,7 @@ IrModule {
                     value_type: IrArrayType {
                         element: IrBitVectorType {
                             bit_count: 8,
+                            signed: true,
                         },
                         length: 1,
                     },
@@ -101,6 +107,7 @@ IrModule {
             source_location: SourceLocation($FILE, $LINE-2, 9),
             value_type: IrBitVectorType {
                 bit_count: 32,
+                signed: false,
             },
             assigned_value: <None>,
             ..

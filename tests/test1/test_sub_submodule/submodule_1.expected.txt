@@ -6,11 +6,13 @@ IrModule {
         Input(
             IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
         ),
         Output(
             IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
         ),
     ],
@@ -19,8 +21,7 @@ IrModule {
             IrModuleInputData {
                 external_value: Input {
                     value: LiteralBits {
-                        bit_count: 1,
-                        value: 0x1,
+                        value: 0x1_u1,
                     },
                 },
                 module_input: IrModuleInput {
@@ -29,6 +30,7 @@ IrModule {
                     path: "io.0",
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                 },
             },
@@ -40,6 +42,7 @@ IrModule {
                         module: "top",
                         value_type: IrBitVectorType {
                             bit_count: 1,
+                            signed: false,
                         },
                         write_data: IrOutputWriteData {
                             writing_module: "top"."submodule",
@@ -52,12 +55,14 @@ IrModule {
                     source_location: SourceLocation($FILE, $LINE-5, 9),
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                     assigned_value: IrOutputRead(
                         IrOutputReadData {
                             module: "top"."submodule",
                             value_type: IrBitVectorType {
                                 bit_count: 1,
+                                signed: false,
                             },
                             write_data: IrOutputWriteData {
                                 writing_module: "top"."submodule"."sub_submodule",
@@ -75,12 +80,14 @@ IrModule {
             source_location: SourceLocation($FILE, $LINE-5, 9),
             value_type: IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
             assigned_value: IrOutputRead(
                 IrOutputReadData {
                     module: "top"."submodule",
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                     write_data: IrOutputWriteData {
                         writing_module: "top"."submodule"."sub_submodule",

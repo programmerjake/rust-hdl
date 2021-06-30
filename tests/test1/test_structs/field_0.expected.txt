@@ -9,6 +9,7 @@ Val {
                             name: "a",
                             ty: IrBitVectorType {
                                 bit_count: 1,
+                                signed: false,
                             },
                         },
                         IrStructFieldType {
@@ -25,12 +26,14 @@ Val {
                                         name: "0",
                                         ty: IrBitVectorType {
                                             bit_count: 1,
+                                            signed: false,
                                         },
                                     },
                                     IrStructFieldType {
                                         name: "1",
                                         ty: IrBitVectorType {
                                             bit_count: 8,
+                                            signed: true,
                                         },
                                     },
                                 ],
@@ -48,12 +51,14 @@ Val {
                             name: "0",
                             ty: IrBitVectorType {
                                 bit_count: 1,
+                                signed: false,
                             },
                         },
                         IrStructFieldType {
                             name: "1",
                             ty: IrBitVectorType {
                                 bit_count: 8,
+                                signed: true,
                             },
                         },
                     ],
@@ -66,6 +71,7 @@ Val {
             name: "1",
             ty: IrBitVectorType {
                 bit_count: 8,
+                signed: true,
             },
         },
         field_index: 1,
@@ -74,6 +80,7 @@ Val {
     value_type: ValueType(
         IrBitVectorType {
             bit_count: 8,
+            signed: true,
         },
     ),
 }

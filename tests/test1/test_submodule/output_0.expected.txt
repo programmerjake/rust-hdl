@@ -5,6 +5,7 @@ Output {
             source_location: SourceLocation($FILE, $LINE-5, 9),
             value_type: IrBitVectorType {
                 bit_count: 32,
+                signed: false,
             },
             assigned_value: <None>,
             ..

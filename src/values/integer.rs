@@ -4,6 +4,7 @@
 use core::{
     convert::identity,
     fmt,
+    hash::{Hash, Hasher},
     ops::{
         Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Mul,
         MulAssign, Neg, Not, Sub, SubAssign,
@@ -28,7 +29,7 @@ impl fmt::Display for IntShape {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstIntShape<const BIT_COUNT: u32, const SIGNED: bool>;
 
 pub trait IntShapeTrait: Copy + fmt::Debug {
@@ -108,6 +109,21 @@ pub type I128Shape = ConstIntShape<128, true>;
 pub struct Int<Shape: IntShapeTrait = IntShape> {
     value: BigInt,
     shape: Shape,
+}
+
+impl<Shape: IntShapeTrait> PartialEq for Int<Shape> {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape.shape() == other.shape.shape() && self.value == other.value
+    }
+}
+
+impl<Shape: IntShapeTrait> Eq for Int<Shape> {}
+
+impl<Shape: IntShapeTrait> Hash for Int<Shape> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.shape.shape().hash(state);
+        self.value.hash(state);
+    }
 }
 
 impl<Shape: IntShapeTrait> fmt::Display for Int<Shape> {

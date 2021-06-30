@@ -10,6 +10,7 @@ IrModule {
             value_type: IrArrayType {
                 element: IrBitVectorType {
                     bit_count: 1,
+                    signed: false,
                 },
                 length: 4,
             },

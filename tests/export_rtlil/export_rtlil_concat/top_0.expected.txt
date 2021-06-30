@@ -6,21 +6,25 @@ IrModule {
         Input(
             IrBitVectorType {
                 bit_count: 8,
+                signed: false,
             },
         ),
         Input(
             IrBitVectorType {
                 bit_count: 8,
+                signed: false,
             },
         ),
         Input(
             IrBitVectorType {
                 bit_count: 8,
+                signed: false,
             },
         ),
         Output(
             IrBitVectorType {
                 bit_count: 24,
+                signed: false,
             },
         ),
     ],
@@ -30,6 +34,7 @@ IrModule {
                 external_value: ExternalInput {
                     value_type: IrBitVectorType {
                         bit_count: 8,
+                        signed: false,
                     },
                 },
                 module_input: IrModuleInput {
@@ -38,6 +43,7 @@ IrModule {
                     path: "io.a",
                     value_type: IrBitVectorType {
                         bit_count: 8,
+                        signed: false,
                     },
                 },
             },
@@ -47,6 +53,7 @@ IrModule {
                 external_value: ExternalInput {
                     value_type: IrBitVectorType {
                         bit_count: 8,
+                        signed: false,
                     },
                 },
                 module_input: IrModuleInput {
@@ -55,6 +62,7 @@ IrModule {
                     path: "io.b",
                     value_type: IrBitVectorType {
                         bit_count: 8,
+                        signed: false,
                     },
                 },
             },
@@ -64,6 +72,7 @@ IrModule {
                 external_value: ExternalInput {
                     value_type: IrBitVectorType {
                         bit_count: 8,
+                        signed: false,
                     },
                 },
                 module_input: IrModuleInput {
@@ -72,6 +81,7 @@ IrModule {
                     path: "io.c",
                     value_type: IrBitVectorType {
                         bit_count: 8,
+                        signed: false,
                     },
                 },
             },
@@ -83,6 +93,7 @@ IrModule {
                         module: <None>,
                         value_type: IrBitVectorType {
                             bit_count: 24,
+                            signed: false,
                         },
                         write_data: IrOutputWriteData {
                             writing_module: "top",
@@ -95,10 +106,12 @@ IrModule {
                     source_location: SourceLocation($FILE, $LINE-12, 9),
                     value_type: IrBitVectorType {
                         bit_count: 24,
+                        signed: false,
                     },
                     assigned_value: ConcatBitVectors {
                         value_type: IrBitVectorType {
                             bit_count: 24,
+                            signed: false,
                         },
                         owning_module: Some(
                             IrModule {
@@ -113,6 +126,7 @@ IrModule {
                                 path: "io.a",
                                 value_type: IrBitVectorType {
                                     bit_count: 8,
+                                    signed: false,
                                 },
                             },
                             IrModuleInput {
@@ -121,6 +135,7 @@ IrModule {
                                 path: "io.b",
                                 value_type: IrBitVectorType {
                                     bit_count: 8,
+                                    signed: false,
                                 },
                             },
                             IrModuleInput {
@@ -129,6 +144,7 @@ IrModule {
                                 path: "io.c",
                                 value_type: IrBitVectorType {
                                     bit_count: 8,
+                                    signed: false,
                                 },
                             },
                         ],
@@ -143,10 +159,12 @@ IrModule {
             source_location: SourceLocation($FILE, $LINE-12, 9),
             value_type: IrBitVectorType {
                 bit_count: 24,
+                signed: false,
             },
             assigned_value: ConcatBitVectors {
                 value_type: IrBitVectorType {
                     bit_count: 24,
+                    signed: false,
                 },
                 owning_module: Some(
                     IrModule {
@@ -161,6 +179,7 @@ IrModule {
                         path: "io.a",
                         value_type: IrBitVectorType {
                             bit_count: 8,
+                            signed: false,
                         },
                     },
                     IrModuleInput {
@@ -169,6 +188,7 @@ IrModule {
                         path: "io.b",
                         value_type: IrBitVectorType {
                             bit_count: 8,
+                            signed: false,
                         },
                     },
                     IrModuleInput {
@@ -177,6 +197,7 @@ IrModule {
                         path: "io.c",
                         value_type: IrBitVectorType {
                             bit_count: 8,
+                            signed: false,
                         },
                     },
                 ],

@@ -6,11 +6,13 @@ IrModule {
         Input(
             IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
         ),
         Output(
             IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
         ),
         Output(
@@ -20,6 +22,7 @@ IrModule {
                         name: "a",
                         ty: IrBitVectorType {
                             bit_count: 1,
+                            signed: false,
                         },
                     },
                     IrStructFieldType {
@@ -36,12 +39,14 @@ IrModule {
                                     name: "0",
                                     ty: IrBitVectorType {
                                         bit_count: 1,
+                                        signed: false,
                                     },
                                 },
                                 IrStructFieldType {
                                     name: "1",
                                     ty: IrBitVectorType {
                                         bit_count: 8,
+                                        signed: true,
                                     },
                                 },
                             ],
@@ -56,8 +61,7 @@ IrModule {
             IrModuleInputData {
                 external_value: Input {
                     value: LiteralBits {
-                        bit_count: 1,
-                        value: 0x0,
+                        value: 0x0_u1,
                     },
                 },
                 module_input: IrModuleInput {
@@ -66,6 +70,7 @@ IrModule {
                     path: "io.a",
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                 },
             },
@@ -77,6 +82,7 @@ IrModule {
                         module: "top",
                         value_type: IrBitVectorType {
                             bit_count: 1,
+                            signed: false,
                         },
                         write_data: IrOutputWriteData {
                             writing_module: "top"."submodule",
@@ -89,6 +95,7 @@ IrModule {
                     source_location: SourceLocation($FILE, $LINE-2, 9),
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                     assigned_value: <None>,
                     ..
@@ -106,6 +113,7 @@ IrModule {
                                     name: "a",
                                     ty: IrBitVectorType {
                                         bit_count: 1,
+                                        signed: false,
                                     },
                                 },
                                 IrStructFieldType {
@@ -122,12 +130,14 @@ IrModule {
                                                 name: "0",
                                                 ty: IrBitVectorType {
                                                     bit_count: 1,
+                                                    signed: false,
                                                 },
                                             },
                                             IrStructFieldType {
                                                 name: "1",
                                                 ty: IrBitVectorType {
                                                     bit_count: 8,
+                                                    signed: true,
                                                 },
                                             },
                                         ],
@@ -150,6 +160,7 @@ IrModule {
                                 name: "a",
                                 ty: IrBitVectorType {
                                     bit_count: 1,
+                                    signed: false,
                                 },
                             },
                             IrStructFieldType {
@@ -166,12 +177,14 @@ IrModule {
                                             name: "0",
                                             ty: IrBitVectorType {
                                                 bit_count: 1,
+                                                signed: false,
                                             },
                                         },
                                         IrStructFieldType {
                                             name: "1",
                                             ty: IrBitVectorType {
                                                 bit_count: 8,
+                                                signed: true,
                                             },
                                         },
                                     ],
@@ -190,6 +203,7 @@ IrModule {
             source_location: SourceLocation($FILE, $LINE-2, 9),
             value_type: IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
             assigned_value: <None>,
             ..
@@ -202,6 +216,7 @@ IrModule {
                         name: "a",
                         ty: IrBitVectorType {
                             bit_count: 1,
+                            signed: false,
                         },
                     },
                     IrStructFieldType {
@@ -218,12 +233,14 @@ IrModule {
                                     name: "0",
                                     ty: IrBitVectorType {
                                         bit_count: 1,
+                                        signed: false,
                                     },
                                 },
                                 IrStructFieldType {
                                     name: "1",
                                     ty: IrBitVectorType {
                                         bit_count: 8,
+                                        signed: true,
                                     },
                                 },
                             ],

@@ -139,7 +139,11 @@ impl<'ctx> Value<'ctx> for bool {
     fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
         Some(ValueType::from_ir_unchecked(
             ctx,
-            IrValueType::BitVector(IrBitVectorType { bit_count: 1 }).intern(ctx),
+            IrValueType::BitVector(IrBitVectorType {
+                bit_count: 1,
+                signed: false,
+            })
+            .intern(ctx),
         ))
     }
 }
@@ -149,10 +153,12 @@ impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
         Val::from_ir_unchecked(ctx, IrValue::LiteralBits(self.clone().into()).intern(ctx))
     }
     fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+        let static_shape = Shape::static_shape()?;
         Some(ValueType::from_ir_unchecked(
             ctx,
             IrValueType::BitVector(IrBitVectorType {
-                bit_count: Shape::static_shape()?.bit_count,
+                bit_count: static_shape.bit_count,
+                signed: static_shape.signed,
             })
             .intern(ctx),
         ))

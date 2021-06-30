@@ -3,12 +3,14 @@ Val {
         path: "top"."reg",
         value_type: IrBitVectorType {
             bit_count: 1,
+            signed: false,
         },
         ..
     },
     value_type: ValueType(
         IrBitVectorType {
             bit_count: 1,
+            signed: false,
         },
     ),
 }

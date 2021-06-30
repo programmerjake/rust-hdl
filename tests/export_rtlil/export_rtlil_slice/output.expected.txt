@@ -1,9 +1,9 @@
 attribute \generator "rust-hdl"
-attribute \src "$FILE:$LINE-7.9"
+attribute \src "$FILE:$LINE-4.9"
 module \top
-  attribute \src "$FILE:$LINE-7.9"
+  attribute \src "$FILE:$LINE-4.9"
   wire width 32 input 0 \io.i
-  attribute \src "$FILE:$LINE-7.9"
+  attribute \src "$FILE:$LINE-4.9"
   wire width 8 output 1 \io.o
   wire width 8 $0
   connect $0 \io.i [15:8]

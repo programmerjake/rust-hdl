@@ -36,6 +36,7 @@ impl<'ctx> From<IrArrayType<'ctx>> for IrValueType<'ctx> {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct IrBitVectorType {
     pub bit_count: u32,
+    pub signed: bool,
 }
 
 impl From<IrBitVectorType> for IrValueType<'_> {
@@ -53,7 +54,13 @@ pub enum IrValueType<'ctx> {
 
 impl<'ctx> IrValueType<'ctx> {
     pub fn is_bool(self) -> bool {
-        matches!(self, Self::BitVector(IrBitVectorType { bit_count: 1 }))
+        matches!(
+            self,
+            Self::BitVector(IrBitVectorType {
+                bit_count: 1,
+                signed: false
+            })
+        )
     }
     pub fn bit_vector(self) -> Option<IrBitVectorType> {
         match self {

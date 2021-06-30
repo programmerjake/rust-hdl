@@ -10,30 +10,28 @@ IrModule {
             value_type: IrArrayType {
                 element: IrBitVectorType {
                     bit_count: 1,
+                    signed: false,
                 },
                 length: 4,
             },
             assigned_value: LiteralArray {
                 element_type: IrBitVectorType {
                     bit_count: 1,
+                    signed: false,
                 },
                 owning_module: None,
                 elements: [
                     LiteralBits {
-                        bit_count: 1,
-                        value: 0x1,
+                        value: 0x1_u1,
                     },
                     LiteralBits {
-                        bit_count: 1,
-                        value: 0x0,
+                        value: 0x0_u1,
                     },
                     LiteralBits {
-                        bit_count: 1,
-                        value: 0x1,
+                        value: 0x1_u1,
                     },
                     LiteralBits {
-                        bit_count: 1,
-                        value: 0x1,
+                        value: 0x1_u1,
                     },
                 ],
             },

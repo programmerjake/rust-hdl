@@ -19,7 +19,8 @@ use crate::{
         },
         SourceLocation,
     },
-    prelude::UInt1,
+    prelude::{Int, UInt1},
+    values::integer::IntShape,
 };
 use alloc::{
     borrow::Cow,
@@ -171,7 +172,7 @@ impl fmt::Display for RtlilLiteral<'_> {
             f,
             "{bit_count}'{value:0bit_count$}",
             bit_count = usize::try_from(self.0.bit_count()).expect("value too big to write"),
-            value = self.0.value()
+            value = self.0.value().clone().wrap_to_unsigned().value()
         )
     }
 }
@@ -330,21 +331,28 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
     fn new_anonymous_symbol(&mut self, module: IrModuleRef<'ctx>) -> RtlilId<'ctx> {
         self.add_uniquified_symbol(module, "")
     }
-    fn get_single_wire_for_value(
+    fn get_int_wire_for_value(
         &mut self,
         module: IrModuleRef<'ctx>,
         value: IrValueRef<'ctx>,
-    ) -> Result<RtlilWire<'ctx>, W::Error> {
+    ) -> Result<Option<RtlilWire<'ctx>>, W::Error> {
         let wires = self.get_wires_for_value(module, value)?;
-        assert_eq!(wires.len(), 1);
-        Ok(wires[0].clone())
+        if value.get_type(module.ctx()).bit_vector().unwrap().bit_count != 0 {
+            assert_eq!(wires.len(), 1);
+            Ok(Some(wires[0].clone()))
+        } else {
+            assert!(wires.is_empty());
+            Ok(None)
+        }
     }
     fn get_bool_wire_for_value(
         &mut self,
         module: IrModuleRef<'ctx>,
         value: IrValueRef<'ctx>,
     ) -> Result<RtlilWire<'ctx>, W::Error> {
-        let retval = self.get_single_wire_for_value(module, value)?;
+        let retval = self
+            .get_int_wire_for_value(module, value)?
+            .expect("expected 1-bit wire");
         assert_eq!(retval.ty.bit_count.get(), 1);
         Ok(retval)
     }
@@ -665,12 +673,12 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     let wires = v
                         .bit_vectors()
                         .iter()
-                        .map(|bit_vector| self.get_single_wire_for_value(module, *bit_vector))
+                        .map(|bit_vector| self.get_int_wire_for_value(module, *bit_vector))
                         .collect::<Result<Vec<_>, W::Error>>()?;
                     let name = self.new_anonymous_symbol(module);
                     writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
                     write!(self.writer, "  connect {} {{", name)?;
-                    for wire in wires.into_iter().rev() {
+                    for wire in wires.into_iter().rev().flatten() {
                         write!(self.writer, " {}", wire.name)?;
                     }
                     writeln!(self.writer, " }}")?;
@@ -685,7 +693,9 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
             }
             IrValue::SliceBitVector(v) => {
                 if let Some(bit_count) = NonZeroU32::new(v.value_type().bit_count) {
-                    let base_wire = self.get_single_wire_for_value(module, v.base_value())?;
+                    let base_wire = self
+                        .get_int_wire_for_value(module, v.base_value())?
+                        .unwrap();
                     let name = self.new_anonymous_symbol(module);
                     writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
                     // convert to an inclusive range
@@ -707,8 +717,8 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
             }
             IrValue::SameSizeBinOp(v) => {
                 if let Some(bit_count) = NonZeroU32::new(v.value_type().bit_count) {
-                    let lhs_wire = self.get_single_wire_for_value(module, v.lhs())?;
-                    let rhs_wire = self.get_single_wire_for_value(module, v.rhs())?;
+                    let lhs_wire = self.get_int_wire_for_value(module, v.lhs())?.unwrap();
+                    let rhs_wire = self.get_int_wire_for_value(module, v.rhs())?.unwrap();
                     let name = self.new_anonymous_symbol(module);
                     writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
                     let cell_name = self.new_anonymous_symbol(module);
@@ -722,8 +732,8 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                         SameSizeBinOpKind::Or => "$or",
                         SameSizeBinOpKind::Xor => "$xor",
                         SameSizeBinOpKind::ShiftLeft => "$shl",
-                        SameSizeBinOpKind::UnsignedShiftRight => "$shr",
-                        SameSizeBinOpKind::SignedShiftRight => {
+                        SameSizeBinOpKind::LogicalShiftRight => "$shr",
+                        SameSizeBinOpKind::ArithmeticShiftRight => {
                             lhs_signed = true;
                             "$sshr"
                         }
@@ -760,7 +770,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
             }
             IrValue::SameSizeUnOp(v) => {
                 if let Some(bit_count) = NonZeroU32::new(v.value_type().bit_count) {
-                    let input_wire = self.get_single_wire_for_value(module, v.input())?;
+                    let input_wire = self.get_int_wire_for_value(module, v.input())?.unwrap();
                     let name = self.new_anonymous_symbol(module);
                     writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
                     let cell_name = self.new_anonymous_symbol(module);
@@ -796,8 +806,8 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
             }
             IrValue::BoolOutBinOp(v) => {
                 if let Some(input_bit_count) = NonZeroU32::new(v.value_type().bit_count) {
-                    let lhs_wire = self.get_single_wire_for_value(module, v.lhs())?;
-                    let rhs_wire = self.get_single_wire_for_value(module, v.rhs())?;
+                    let lhs_wire = self.get_int_wire_for_value(module, v.lhs())?.unwrap();
+                    let rhs_wire = self.get_int_wire_for_value(module, v.rhs())?.unwrap();
                     let name = self.new_anonymous_symbol(module);
                     writeln!(self.writer, "  wire width 1 {}", name)?;
                     let cell_name = self.new_anonymous_symbol(module);
@@ -805,8 +815,8 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     let mut rhs_signed = false;
                     let cell_kind = match v.kind() {
                         BoolOutBinOpKind::CompareEq => "$eq",
-                        BoolOutBinOpKind::CompareULt => "$lt",
-                        BoolOutBinOpKind::CompareSLt => {
+                        BoolOutBinOpKind::CompareUnsignedLt => "$lt",
+                        BoolOutBinOpKind::CompareSignedLt => {
                             lhs_signed = true;
                             rhs_signed = true;
                             "$lt"
@@ -843,8 +853,8 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 } else {
                     let retval = match v.kind() {
                         BoolOutBinOpKind::CompareEq => true,
-                        BoolOutBinOpKind::CompareULt => false,
-                        BoolOutBinOpKind::CompareSLt => false,
+                        BoolOutBinOpKind::CompareUnsignedLt => false,
+                        BoolOutBinOpKind::CompareSignedLt => false,
                     };
                     self.get_wires_for_value(
                         module,
@@ -854,7 +864,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
             }
             IrValue::BoolOutUnOp(v) => {
                 if let Some(input_bit_count) = NonZeroU32::new(v.value_type().bit_count) {
-                    let input_wire = self.get_single_wire_for_value(module, v.input())?;
+                    let input_wire = self.get_int_wire_for_value(module, v.input())?.unwrap();
                     let name = self.new_anonymous_symbol(module);
                     writeln!(self.writer, "  wire width 1 {}", name)?;
                     let cell_name = self.new_anonymous_symbol(module);
@@ -897,6 +907,55 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                         module,
                         IrValue::LiteralBits(LiteralBits::new_bool(retval)).intern(module.ctx()),
                     )?
+                }
+            }
+            IrValue::ConvertIntWrapping(v) => {
+                if v.value_type() == v.input_type() {
+                    self.get_wires_for_value(module, v.input())?
+                } else if let Some(bit_count) = NonZeroU32::new(v.value_type().bit_count) {
+                    if let Some(input_wire) = self.get_int_wire_for_value(module, value)? {
+                        let name = self.new_anonymous_symbol(module);
+                        writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
+                        let cell_name = self.new_anonymous_symbol(module);
+                        writeln!(
+                            self.writer,
+                            r"  cell $pos {cell_name}
+        parameter \A_SIGNED {signed}
+        parameter \A_WIDTH {input_bit_count}
+        parameter \Y_WIDTH {bit_count}
+        connect \A {input}
+        connect \Y {name}
+      end",
+                            cell_name = cell_name,
+                            signed = &(v.input_type().signed as u8),
+                            input_bit_count = v.input_type().bit_count,
+                            bit_count = bit_count,
+                            input = input_wire.name,
+                            name = name,
+                        )?;
+                        Rc::new([RtlilWire {
+                            ty: RtlilWireType { bit_count },
+                            name,
+                            io_index: None,
+                        }])
+                    } else {
+                        self.get_wires_for_value(
+                            module,
+                            IrValue::LiteralBits(
+                                Int::wrapping_with_shape(
+                                    0,
+                                    IntShape {
+                                        bit_count: v.value_type().bit_count,
+                                        signed: v.value_type().signed,
+                                    },
+                                )
+                                .into(),
+                            )
+                            .intern(module.ctx()),
+                        )?
+                    }
+                } else {
+                    Rc::new([])
                 }
             }
         };
@@ -1036,7 +1095,10 @@ fn visit_wire_types_in_type<'ctx, 'a, E, FR: FieldRange>(
 ) -> Result<(), E> {
     let mut path_builder = path_builder.into();
     match *ty {
-        IrValueType::BitVector(IrBitVectorType { bit_count }) => {
+        IrValueType::BitVector(IrBitVectorType {
+            bit_count,
+            signed: _,
+        }) => {
             if let Some(bit_count) = NonZeroU32::new(bit_count) {
                 visitor(
                     RtlilWireType { bit_count },

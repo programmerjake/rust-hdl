@@ -10,12 +10,14 @@ IrModule {
                         name: "clk",
                         ty: IrBitVectorType {
                             bit_count: 1,
+                            signed: false,
                         },
                     },
                     IrStructFieldType {
                         name: "rst",
                         ty: IrBitVectorType {
                             bit_count: 1,
+                            signed: false,
                         },
                     },
                 ],
@@ -24,11 +26,13 @@ IrModule {
         Output(
             IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
         ),
         Input(
             IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
         ),
     ],
@@ -42,12 +46,14 @@ IrModule {
                                 name: "clk",
                                 ty: IrBitVectorType {
                                     bit_count: 1,
+                                    signed: false,
                                 },
                             },
                             IrStructFieldType {
                                 name: "rst",
                                 ty: IrBitVectorType {
                                     bit_count: 1,
+                                    signed: false,
                                 },
                             },
                         ],
@@ -63,12 +69,14 @@ IrModule {
                                 name: "clk",
                                 ty: IrBitVectorType {
                                     bit_count: 1,
+                                    signed: false,
                                 },
                             },
                             IrStructFieldType {
                                 name: "rst",
                                 ty: IrBitVectorType {
                                     bit_count: 1,
+                                    signed: false,
                                 },
                             },
                         ],
@@ -83,6 +91,7 @@ IrModule {
                         module: <None>,
                         value_type: IrBitVectorType {
                             bit_count: 1,
+                            signed: false,
                         },
                         write_data: IrOutputWriteData {
                             writing_module: "top",
@@ -95,6 +104,7 @@ IrModule {
                     source_location: SourceLocation($FILE, $LINE-2, 9),
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                     assigned_value: <None>,
                     ..
@@ -106,6 +116,7 @@ IrModule {
                 external_value: ExternalInput {
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                 },
                 module_input: IrModuleInput {
@@ -114,6 +125,7 @@ IrModule {
                     path: "io.input",
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                 },
             },
@@ -124,6 +136,7 @@ IrModule {
             source_location: SourceLocation($FILE, $LINE-2, 9),
             value_type: IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
             assigned_value: <None>,
             ..
@@ -134,6 +147,7 @@ IrModule {
             source_location: SourceLocation($FILE, $LINE-1, 9),
             value_type: IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
             data_in: <None>,
             clk: ExtractStructField {
@@ -147,12 +161,14 @@ IrModule {
                                 name: "clk",
                                 ty: IrBitVectorType {
                                     bit_count: 1,
+                                    signed: false,
                                 },
                             },
                             IrStructFieldType {
                                 name: "rst",
                                 ty: IrBitVectorType {
                                     bit_count: 1,
+                                    signed: false,
                                 },
                             },
                         ],
@@ -162,6 +178,7 @@ IrModule {
                     name: "clk",
                     ty: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                 },
                 field_index: 0,
@@ -178,12 +195,14 @@ IrModule {
                                 name: "clk",
                                 ty: IrBitVectorType {
                                     bit_count: 1,
+                                    signed: false,
                                 },
                             },
                             IrStructFieldType {
                                 name: "rst",
                                 ty: IrBitVectorType {
                                     bit_count: 1,
+                                    signed: false,
                                 },
                             },
                         ],
@@ -193,14 +212,14 @@ IrModule {
                     name: "rst",
                     ty: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                 },
                 field_index: 1,
                 ..
             },
             reset_value: LiteralBits {
-                bit_count: 1,
-                value: 0x0,
+                value: 0x0_u1,
             },
             ..
         },

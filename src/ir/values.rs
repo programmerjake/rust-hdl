@@ -15,14 +15,11 @@ use crate::{
     values::integer::{Int, IntShape, IntShapeTrait},
 };
 use alloc::vec::Vec;
-use core::{convert::TryInto, fmt, ops::Range};
-use num_bigint::BigUint;
-use num_traits::Zero;
+use core::{fmt, ops::Range};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct LiteralBits {
-    bit_count: u32,
-    value: BigUint,
+    value: Int,
 }
 
 impl<'ctx> OwningModule<'ctx> for LiteralBits {
@@ -42,7 +39,6 @@ impl fmt::Debug for LiteralBits {
             }
         }
         f.debug_struct("LiteralBits")
-            .field("bit_count", &self.bit_count)
             .field("value", &DebugAsHex { this: self })
             .finish()
     }
@@ -51,33 +47,43 @@ impl fmt::Debug for LiteralBits {
 impl LiteralBits {
     pub fn new() -> Self {
         Self {
-            bit_count: 0,
-            value: BigUint::zero(),
+            value: Int::wrapping_with_shape(
+                0,
+                IntShape {
+                    bit_count: 0,
+                    signed: false,
+                },
+            ),
         }
     }
     pub fn new_bool(v: bool) -> Self {
         Self {
-            bit_count: 1,
-            value: BigUint::from(v as u8),
+            value: Int::wrapping_with_shape(
+                v as u8,
+                IntShape {
+                    bit_count: 1,
+                    signed: false,
+                },
+            ),
         }
     }
-    pub fn to_int(self, signed: bool) -> Int {
-        let LiteralBits { value, bit_count } = self;
-        Int::unchecked_new_with_shape(value, IntShape { bit_count, signed })
-    }
-    pub fn value(&self) -> &BigUint {
+    pub fn value(&self) -> &Int {
         &self.value
     }
     pub fn value_type(&self) -> IrBitVectorType {
         IrBitVectorType {
-            bit_count: self.bit_count,
+            bit_count: self.value.shape().bit_count,
+            signed: self.value.shape().signed,
         }
     }
-    pub fn into_value(self) -> BigUint {
+    pub fn into_value(self) -> Int {
         self.value
     }
     pub fn bit_count(&self) -> u32 {
-        self.bit_count
+        self.value.shape().bit_count
+    }
+    pub fn signed(&self) -> bool {
+        self.value.shape().signed
     }
 }
 
@@ -89,10 +95,9 @@ impl Default for LiteralBits {
 
 impl<Shape: IntShapeTrait> From<Int<Shape>> for LiteralBits {
     fn from(value: Int<Shape>) -> Self {
-        let value = value.wrap_to_unsigned();
-        let IntShape { bit_count, .. } = value.shape().shape();
-        let value = value.into_value().try_into().unwrap();
-        Self { value, bit_count }
+        Self {
+            value: value.into_dyn(),
+        }
     }
 }
 
@@ -484,6 +489,7 @@ impl<'ctx> SliceBitVector<'ctx> {
     pub fn value_type(self) -> IrBitVectorType {
         IrBitVectorType {
             bit_count: self.bit_end_index - self.bit_start_index,
+            signed: false,
         }
     }
     pub fn base_type(self) -> IrBitVectorType {
@@ -582,9 +588,12 @@ impl<'ctx> ConcatBitVectors<'ctx> {
     #[track_caller]
     pub fn new(ctx: ContextRef<'ctx>, bit_vectors: impl AsRef<[IrValueRef<'ctx>]>) -> Self {
         let bit_vectors = bit_vectors.as_ref();
-        let mut value_type = IrBitVectorType { bit_count: 0 };
+        let mut value_type = IrBitVectorType {
+            bit_count: 0,
+            signed: false,
+        };
         for bit_vector in bit_vectors {
-            let IrBitVectorType { bit_count } = bit_vector
+            let IrBitVectorType { bit_count, .. } = bit_vector
                 .get_type(ctx)
                 .bit_vector()
                 .expect("input type must be a bit vector");
@@ -629,8 +638,8 @@ pub enum SameSizeBinOpKind {
     Or,
     Xor,
     ShiftLeft,
-    UnsignedShiftRight,
-    SignedShiftRight,
+    LogicalShiftRight,
+    ArithmeticShiftRight,
 }
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
@@ -748,8 +757,8 @@ impl<'ctx> From<SameSizeUnOp<'ctx>> for IrValue<'ctx> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BoolOutBinOpKind {
     CompareEq,
-    CompareULt,
-    CompareSLt,
+    CompareUnsignedLt,
+    CompareSignedLt,
 }
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
@@ -762,7 +771,6 @@ pub struct BoolOutBinOp<'ctx> {
 }
 
 impl<'ctx> BoolOutBinOp<'ctx> {
-    /// for all binary operations, both inputs and the output type must match
     #[track_caller]
     pub fn new(
         ctx: ContextRef<'ctx>,
@@ -795,7 +803,10 @@ impl<'ctx> BoolOutBinOp<'ctx> {
         self.input_type
     }
     pub fn value_type(self) -> IrBitVectorType {
-        IrBitVectorType { bit_count: 1 }
+        IrBitVectorType {
+            bit_count: 1,
+            signed: false,
+        }
     }
     pub fn lhs(self) -> IrValueRef<'ctx> {
         self.lhs
@@ -832,7 +843,6 @@ pub struct BoolOutUnOp<'ctx> {
 }
 
 impl<'ctx> BoolOutUnOp<'ctx> {
-    /// for all unary operations, the input and the output type match
     #[track_caller]
     pub fn new(ctx: ContextRef<'ctx>, kind: BoolOutUnOpKind, input: IrValueRef<'ctx>) -> Self {
         let input_type = input
@@ -852,7 +862,10 @@ impl<'ctx> BoolOutUnOp<'ctx> {
         self.input_type
     }
     pub fn value_type(self) -> IrBitVectorType {
-        IrBitVectorType { bit_count: 1 }
+        IrBitVectorType {
+            bit_count: 1,
+            signed: false,
+        }
     }
     pub fn input(self) -> IrValueRef<'ctx> {
         self.input
@@ -868,6 +881,53 @@ impl<'ctx> OwningModule<'ctx> for BoolOutUnOp<'ctx> {
 impl<'ctx> From<BoolOutUnOp<'ctx>> for IrValue<'ctx> {
     fn from(v: BoolOutUnOp<'ctx>) -> Self {
         IrValue::BoolOutUnOp(v)
+    }
+}
+
+#[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
+pub struct ConvertIntWrapping<'ctx> {
+    value_type: IrBitVectorType,
+    input_type: IrBitVectorType,
+    input: IrValueRef<'ctx>,
+}
+
+impl<'ctx> ConvertIntWrapping<'ctx> {
+    #[track_caller]
+    pub fn new(
+        ctx: ContextRef<'ctx>,
+        value_type: IrBitVectorType,
+        input: IrValueRef<'ctx>,
+    ) -> Self {
+        let input_type = input
+            .get_type(ctx)
+            .bit_vector()
+            .expect("input type must be a bit vector");
+        Self {
+            value_type,
+            input_type,
+            input,
+        }
+    }
+    pub fn input_type(self) -> IrBitVectorType {
+        self.input_type
+    }
+    pub fn value_type(self) -> IrBitVectorType {
+        self.value_type
+    }
+    pub fn input(self) -> IrValueRef<'ctx> {
+        self.input
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for ConvertIntWrapping<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.input.owning_module()
+    }
+}
+
+impl<'ctx> From<ConvertIntWrapping<'ctx>> for IrValue<'ctx> {
+    fn from(v: ConvertIntWrapping<'ctx>) -> Self {
+        IrValue::ConvertIntWrapping(v)
     }
 }
 
@@ -890,6 +950,7 @@ pub enum IrValue<'ctx> {
     SameSizeUnOp(SameSizeUnOp<'ctx>),
     BoolOutBinOp(BoolOutBinOp<'ctx>),
     BoolOutUnOp(BoolOutUnOp<'ctx>),
+    ConvertIntWrapping(ConvertIntWrapping<'ctx>),
 }
 
 pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
@@ -921,6 +982,7 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::SameSizeUnOp(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::BoolOutBinOp(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::BoolOutUnOp(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::ConvertIntWrapping(v) => IrValueType::from(v.value_type()).intern(ctx),
         }
     }
 }
@@ -945,6 +1007,7 @@ impl<'ctx> OwningModule<'ctx> for IrValue<'ctx> {
             IrValue::SameSizeUnOp(v) => v.owning_module(),
             IrValue::BoolOutBinOp(v) => v.owning_module(),
             IrValue::BoolOutUnOp(v) => v.owning_module(),
+            IrValue::ConvertIntWrapping(v) => v.owning_module(),
         }
     }
 }
@@ -969,6 +1032,7 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::SameSizeUnOp(v) => v.fmt(f),
             IrValue::BoolOutBinOp(v) => v.fmt(f),
             IrValue::BoolOutUnOp(v) => v.fmt(f),
+            IrValue::ConvertIntWrapping(v) => v.fmt(f),
         }
     }
 }

@@ -13,6 +13,7 @@ IrModule {
                         name: "a",
                         ty: IrBitVectorType {
                             bit_count: 1,
+                            signed: false,
                         },
                     },
                     IrStructFieldType {
@@ -29,12 +30,14 @@ IrModule {
                                     name: "0",
                                     ty: IrBitVectorType {
                                         bit_count: 1,
+                                        signed: false,
                                     },
                                 },
                                 IrStructFieldType {
                                     name: "1",
                                     ty: IrBitVectorType {
                                         bit_count: 8,
+                                        signed: true,
                                     },
                                 },
                             ],

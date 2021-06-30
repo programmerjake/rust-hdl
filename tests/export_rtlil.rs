@@ -3,7 +3,7 @@
 use rust_hdl::{
     context::Intern,
     export::rtlil::RtlilExporter,
-    ir::values::{ConcatBitVectors, IrValue, SliceBitVector},
+    ir::values::{ConcatBitVectors, IrValue},
     prelude::*,
 };
 #[macro_use]
@@ -104,10 +104,7 @@ fn export_rtlil_slice() {
         }
         named!(let (top, io) = ctx.top_module());
         let TopIO { i, o } = io;
-        o.assign(Val::from_ir_unchecked(
-            ctx,
-            IrValue::from(SliceBitVector::new(ctx, i.get().ir(), 8..16)).intern(ctx),
-        ));
+        o.assign(i.get().slice(8..16).wrap_into());
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(export_rtlil_slice, output, exported);
         assert_formats_to!(export_rtlil_slice, top_0, top);

@@ -6,11 +6,13 @@ IrModule {
         Input(
             IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
         ),
         Output(
             IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
         ),
     ],
@@ -24,6 +26,7 @@ IrModule {
                         path: "io.0",
                         value_type: IrBitVectorType {
                             bit_count: 1,
+                            signed: false,
                         },
                     },
                 },
@@ -33,6 +36,7 @@ IrModule {
                     path: "io.0",
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                 },
             },
@@ -44,6 +48,7 @@ IrModule {
                         module: "top"."submodule",
                         value_type: IrBitVectorType {
                             bit_count: 1,
+                            signed: false,
                         },
                         write_data: IrOutputWriteData {
                             writing_module: "top"."submodule"."sub_submodule",
@@ -56,6 +61,7 @@ IrModule {
                     source_location: SourceLocation($FILE, $LINE-3, 9),
                     value_type: IrBitVectorType {
                         bit_count: 1,
+                        signed: false,
                     },
                     assigned_value: <None>,
                     ..
@@ -68,6 +74,7 @@ IrModule {
             source_location: SourceLocation($FILE, $LINE-3, 9),
             value_type: IrBitVectorType {
                 bit_count: 1,
+                signed: false,
             },
             assigned_value: <None>,
             ..
