@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
-use rust_hdl::{export::rtlil::RtlilExporter, prelude::*};
+use rust_hdl::{
+    context::Intern,
+    export::rtlil::RtlilExporter,
+    ir::values::{ConcatBitVectors, IrValue},
+    prelude::*,
+};
 #[macro_use]
 mod common;
 
@@ -8,6 +13,7 @@ mod common;
 struct MyValue {
     a: bool,
     b: [Int8; 3],
+    c: UInt<0>,
 }
 
 #[derive(IO, PlainIO)]
@@ -59,5 +65,31 @@ fn export_rtlil_submodule() {
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(export_rtlil_submodule, output, exported);
         assert_formats_to!(export_rtlil_submodule, top_0, top);
+    });
+}
+
+#[test]
+fn export_rtlil_concat() {
+    Context::with(|ctx: ContextRef<'_>| {
+        #[derive(IO, PlainIO)]
+        struct TopIO<'ctx> {
+            a: Input<'ctx, UInt8>,
+            b: Input<'ctx, UInt8>,
+            c: Input<'ctx, UInt8>,
+            o: Output<'ctx, UInt<24>>,
+        }
+        named!(let (top, io) = ctx.top_module());
+        let TopIO { a, b, c, o } = io;
+        o.assign(Val::from_ir_unchecked(
+            ctx,
+            IrValue::from(ConcatBitVectors::new(
+                ctx,
+                [a.get().ir(), b.get().ir(), c.get().ir()],
+            ))
+            .intern(ctx),
+        ));
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        assert_display_formats_to!(export_rtlil_concat, output, exported);
+        assert_formats_to!(export_rtlil_concat, top_0, top);
     });
 }

@@ -1,0 +1,189 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-12, 9),
+    parent: <None>,
+    interface_types: [
+        Input(
+            IrBitVectorType {
+                bit_count: 8,
+            },
+        ),
+        Input(
+            IrBitVectorType {
+                bit_count: 8,
+            },
+        ),
+        Input(
+            IrBitVectorType {
+                bit_count: 8,
+            },
+        ),
+        Output(
+            IrBitVectorType {
+                bit_count: 24,
+            },
+        ),
+    ],
+    interface: [
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io.a",
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                    },
+                },
+            },
+        ),
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 1,
+                    path: "io.b",
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                    },
+                },
+            },
+        ),
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 2,
+                    path: "io.c",
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                    },
+                },
+            },
+        ),
+        Output(
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: <None>,
+                        value_type: IrBitVectorType {
+                            bit_count: 24,
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top",
+                            index: 3,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."io.o",
+                    source_location: SourceLocation($FILE, $LINE-12, 9),
+                    value_type: IrBitVectorType {
+                        bit_count: 24,
+                    },
+                    assigned_value: ConcatBitVectors {
+                        value_type: IrBitVectorType {
+                            bit_count: 24,
+                        },
+                        owning_module: Some(
+                            IrModule {
+                                path: "top",
+                                ..
+                            },
+                        ),
+                        bit_vectors: [
+                            IrModuleInput {
+                                module: "top",
+                                index: 0,
+                                path: "io.a",
+                                value_type: IrBitVectorType {
+                                    bit_count: 8,
+                                },
+                            },
+                            IrModuleInput {
+                                module: "top",
+                                index: 1,
+                                path: "io.b",
+                                value_type: IrBitVectorType {
+                                    bit_count: 8,
+                                },
+                            },
+                            IrModuleInput {
+                                module: "top",
+                                index: 2,
+                                path: "io.c",
+                                value_type: IrBitVectorType {
+                                    bit_count: 8,
+                                },
+                            },
+                        ],
+                    },
+                    ..
+                },
+            },
+        ),
+    ],
+    wires: {
+        "io.o": IrWire {
+            source_location: SourceLocation($FILE, $LINE-12, 9),
+            value_type: IrBitVectorType {
+                bit_count: 24,
+            },
+            assigned_value: ConcatBitVectors {
+                value_type: IrBitVectorType {
+                    bit_count: 24,
+                },
+                owning_module: Some(
+                    IrModule {
+                        path: "top",
+                        ..
+                    },
+                ),
+                bit_vectors: [
+                    IrModuleInput {
+                        module: "top",
+                        index: 0,
+                        path: "io.a",
+                        value_type: IrBitVectorType {
+                            bit_count: 8,
+                        },
+                    },
+                    IrModuleInput {
+                        module: "top",
+                        index: 1,
+                        path: "io.b",
+                        value_type: IrBitVectorType {
+                            bit_count: 8,
+                        },
+                    },
+                    IrModuleInput {
+                        module: "top",
+                        index: 2,
+                        path: "io.c",
+                        value_type: IrBitVectorType {
+                            bit_count: 8,
+                        },
+                    },
+                ],
+            },
+            ..
+        },
+    },
+    registers: {},
+    ..
+}

@@ -483,6 +483,59 @@ impl<'ctx> From<Mux<'ctx>> for IrValue<'ctx> {
     }
 }
 
+#[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
+pub struct ConcatBitVectors<'ctx> {
+    value_type: IrBitVectorType,
+    owning_module: Option<IrModuleRef<'ctx>>,
+    bit_vectors: Interned<'ctx, [IrValueRef<'ctx>]>,
+}
+
+impl<'ctx> ConcatBitVectors<'ctx> {
+    #[track_caller]
+    pub fn new(ctx: ContextRef<'ctx>, bit_vectors: impl AsRef<[IrValueRef<'ctx>]>) -> Self {
+        let bit_vectors = bit_vectors.as_ref();
+        let mut value_type = IrBitVectorType { bit_count: 0 };
+        for bit_vector in bit_vectors {
+            match *bit_vector.get_type(ctx) {
+                IrValueType::BitVector(IrBitVectorType { bit_count }) => {
+                    value_type.bit_count = value_type
+                        .bit_count
+                        .checked_add(bit_count)
+                        .expect("too many bits in bit vector");
+                }
+                bit_vector_type => panic!(
+                    "invalid type -- must be a bit vector: {:?}",
+                    bit_vector_type
+                ),
+            }
+        }
+        let owning_module = combine_owning_modules(bit_vectors);
+        Self {
+            value_type,
+            owning_module,
+            bit_vectors: bit_vectors.intern(ctx),
+        }
+    }
+    pub fn value_type(self) -> IrBitVectorType {
+        self.value_type
+    }
+    pub fn bit_vectors(self) -> Interned<'ctx, [IrValueRef<'ctx>]> {
+        self.bit_vectors
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for ConcatBitVectors<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.owning_module
+    }
+}
+
+impl<'ctx> From<ConcatBitVectors<'ctx>> for IrValue<'ctx> {
+    fn from(v: ConcatBitVectors<'ctx>) -> Self {
+        IrValue::ConcatBitVectors(v)
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub enum IrValue<'ctx> {
     LiteralBits(LiteralBits),
@@ -496,6 +549,7 @@ pub enum IrValue<'ctx> {
     SliceArray(SliceArray<'ctx>),
     RegOutput(IrRegOutput<'ctx>),
     Mux(Mux<'ctx>),
+    ConcatBitVectors(ConcatBitVectors<'ctx>),
 }
 
 pub type IrValueRef<'ctx> = Interned<'ctx, IrValue<'ctx>>;
@@ -521,6 +575,7 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::SliceArray(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::RegOutput(v) => v.0.value_type(),
             IrValue::Mux(v) => v.value_type(),
+            IrValue::ConcatBitVectors(v) => IrValueType::from(v.value_type()).intern(ctx),
         }
     }
 }
@@ -539,6 +594,7 @@ impl<'ctx> OwningModule<'ctx> for IrValue<'ctx> {
             IrValue::SliceArray(v) => v.owning_module(),
             IrValue::RegOutput(v) => v.owning_module(),
             IrValue::Mux(v) => v.owning_module(),
+            IrValue::ConcatBitVectors(v) => v.owning_module(),
         }
     }
 }
@@ -557,6 +613,7 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::SliceArray(v) => v.fmt(f),
             IrValue::RegOutput(v) => v.fmt(f),
             IrValue::Mux(v) => v.fmt(f),
+            IrValue::ConcatBitVectors(v) => v.fmt(f),
         }
     }
 }

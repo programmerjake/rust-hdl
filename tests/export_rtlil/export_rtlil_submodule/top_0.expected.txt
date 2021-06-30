@@ -39,6 +39,12 @@ IrModule {
                             length: 3,
                         },
                     },
+                    IrStructFieldType {
+                        name: "c",
+                        ty: IrBitVectorType {
+                            bit_count: 0,
+                        },
+                    },
                 ],
             },
         ),
@@ -60,6 +66,12 @@ IrModule {
                             length: 3,
                         },
                     },
+                    IrStructFieldType {
+                        name: "c",
+                        ty: IrBitVectorType {
+                            bit_count: 0,
+                        },
+                    },
                 ],
             },
         ),
@@ -79,6 +91,12 @@ IrModule {
                                 bit_count: 8,
                             },
                             length: 3,
+                        },
+                    },
+                    IrStructFieldType {
+                        name: "c",
+                        ty: IrBitVectorType {
+                            bit_count: 0,
                         },
                     },
                 ],
@@ -149,6 +167,12 @@ IrModule {
                                     length: 3,
                                 },
                             },
+                            IrStructFieldType {
+                                name: "c",
+                                ty: IrBitVectorType {
+                                    bit_count: 0,
+                                },
+                            },
                         ],
                     },
                 },
@@ -171,6 +195,12 @@ IrModule {
                                         bit_count: 8,
                                     },
                                     length: 3,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "c",
+                                ty: IrBitVectorType {
+                                    bit_count: 0,
                                 },
                             },
                         ],
@@ -198,6 +228,12 @@ IrModule {
                                             bit_count: 8,
                                         },
                                         length: 3,
+                                    },
+                                },
+                                IrStructFieldType {
+                                    name: "c",
+                                    ty: IrBitVectorType {
+                                        bit_count: 0,
                                     },
                                 },
                             ],
@@ -228,6 +264,12 @@ IrModule {
                                     length: 3,
                                 },
                             },
+                            IrStructFieldType {
+                                name: "c",
+                                ty: IrBitVectorType {
+                                    bit_count: 0,
+                                },
+                            },
                         ],
                     },
                     assigned_value: IrOutputRead(
@@ -248,6 +290,12 @@ IrModule {
                                                 bit_count: 8,
                                             },
                                             length: 3,
+                                        },
+                                    },
+                                    IrStructFieldType {
+                                        name: "c",
+                                        ty: IrBitVectorType {
+                                            bit_count: 0,
                                         },
                                     },
                                 ],
@@ -284,6 +332,12 @@ IrModule {
                                         length: 3,
                                     },
                                 },
+                                IrStructFieldType {
+                                    name: "c",
+                                    ty: IrBitVectorType {
+                                        bit_count: 0,
+                                    },
+                                },
                             ],
                         },
                         write_data: IrOutputWriteData {
@@ -312,6 +366,12 @@ IrModule {
                                     length: 3,
                                 },
                             },
+                            IrStructFieldType {
+                                name: "c",
+                                ty: IrBitVectorType {
+                                    bit_count: 0,
+                                },
+                            },
                         ],
                     },
                     assigned_value: IrOutputRead(
@@ -332,6 +392,12 @@ IrModule {
                                                 bit_count: 8,
                                             },
                                             length: 3,
+                                        },
+                                    },
+                                    IrStructFieldType {
+                                        name: "c",
+                                        ty: IrBitVectorType {
+                                            bit_count: 0,
                                         },
                                     },
                                 ],
@@ -367,6 +433,12 @@ IrModule {
                             length: 3,
                         },
                     },
+                    IrStructFieldType {
+                        name: "c",
+                        ty: IrBitVectorType {
+                            bit_count: 0,
+                        },
+                    },
                 ],
             },
             assigned_value: IrOutputRead(
@@ -387,6 +459,12 @@ IrModule {
                                         bit_count: 8,
                                     },
                                     length: 3,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "c",
+                                ty: IrBitVectorType {
+                                    bit_count: 0,
                                 },
                             },
                         ],
@@ -418,6 +496,12 @@ IrModule {
                             length: 3,
                         },
                     },
+                    IrStructFieldType {
+                        name: "c",
+                        ty: IrBitVectorType {
+                            bit_count: 0,
+                        },
+                    },
                 ],
             },
             assigned_value: IrOutputRead(
@@ -438,6 +522,12 @@ IrModule {
                                         bit_count: 8,
                                     },
                                     length: 3,
+                                },
+                            },
+                            IrStructFieldType {
+                                name: "c",
+                                ty: IrBitVectorType {
+                                    bit_count: 0,
                                 },
                             },
                         ],

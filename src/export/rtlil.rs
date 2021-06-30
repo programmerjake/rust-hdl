@@ -29,6 +29,7 @@ use core::{
     cell::{Cell, RefCell},
     convert::{Infallible, TryFrom},
     fmt::{self, Write as _},
+    num::NonZeroU32,
     ops::Range,
 };
 use hashbrown::HashMap;
@@ -188,7 +189,7 @@ impl fmt::Display for RtlilLocation<'_> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RtlilWireType {
-    bit_count: u32,
+    bit_count: NonZeroU32,
 }
 
 #[derive(Debug, Clone)]
@@ -341,7 +342,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
         value: IrValueRef<'ctx>,
     ) -> Result<RtlilWire<'ctx>, W::Error> {
         let retval = self.get_single_wire_for_value(module, value)?;
-        assert_eq!(retval.ty.bit_count, 1);
+        assert_eq!(retval.ty.bit_count.get(), 1);
         Ok(retval)
     }
     fn export_submodule(
@@ -438,16 +439,18 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
         }
         let wires: Rc<[RtlilWire<'ctx>]> = match *value {
             IrValue::LiteralBits(ref v) => {
-                let name = self.new_anonymous_symbol(module);
-                writeln!(self.writer, "  wire width {} {}", v.bit_count(), name)?;
-                writeln!(self.writer, "  connect {} {}", name, RtlilLiteral(v))?;
-                Rc::new([RtlilWire {
-                    name,
-                    ty: RtlilWireType {
-                        bit_count: v.bit_count(),
-                    },
-                    io_index: None,
-                }])
+                if let Some(bit_count) = NonZeroU32::new(v.bit_count()) {
+                    let name = self.new_anonymous_symbol(module);
+                    writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
+                    writeln!(self.writer, "  connect {} {}", name, RtlilLiteral(v))?;
+                    Rc::new([RtlilWire {
+                        name,
+                        ty: RtlilWireType { bit_count },
+                        io_index: None,
+                    }])
+                } else {
+                    Rc::new([])
+                }
             }
             IrValue::LiteralArray(v) => {
                 let mut wires = Vec::with_capacity(v.elements().len());
@@ -654,6 +657,29 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 }
                 wires.into()
             }
+            IrValue::ConcatBitVectors(v) => {
+                if let Some(bit_count) = NonZeroU32::new(v.value_type().bit_count) {
+                    let wires = v
+                        .bit_vectors()
+                        .iter()
+                        .map(|bit_vector| self.get_single_wire_for_value(module, *bit_vector))
+                        .collect::<Result<Vec<_>, W::Error>>()?;
+                    let name = self.new_anonymous_symbol(module);
+                    writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
+                    write!(self.writer, "  connect {} {{", name)?;
+                    for wire in wires.into_iter().rev() {
+                        write!(self.writer, " {}", wire.name)?;
+                    }
+                    writeln!(self.writer, " }}")?;
+                    Rc::new([RtlilWire {
+                        ty: RtlilWireType { bit_count },
+                        name,
+                        io_index: None,
+                    }])
+                } else {
+                    Rc::new([])
+                }
+            }
         };
         let retval: Rc<[_]> = wires.into();
         module_data
@@ -792,13 +818,17 @@ fn visit_wire_types_in_type<'ctx, 'a, E, FR: FieldRange>(
 ) -> Result<(), E> {
     let mut path_builder = path_builder.into();
     match *ty {
-        IrValueType::BitVector(IrBitVectorType { bit_count }) => visitor(
-            RtlilWireType { bit_count },
-            path_builder.get(),
-            relation_to_selected_field.map(|subfield_path| {
-                assert!(subfield_path.is_empty());
-            }),
-        )?,
+        IrValueType::BitVector(IrBitVectorType { bit_count }) => {
+            if let Some(bit_count) = NonZeroU32::new(bit_count) {
+                visitor(
+                    RtlilWireType { bit_count },
+                    path_builder.get(),
+                    relation_to_selected_field.map(|subfield_path| {
+                        assert!(subfield_path.is_empty());
+                    }),
+                )?
+            }
+        }
         IrValueType::Array(IrArrayType { element, length }) => {
             for index in 0..length {
                 visit_wire_types_in_type_field(
