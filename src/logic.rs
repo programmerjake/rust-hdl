@@ -10,7 +10,7 @@ use crate::{
         SourceLocation,
     },
     module::AsIrModule,
-    values::{Val, Value, ValueType},
+    values::{FixedTypeValue, Val, Value, ValueType},
 };
 use alloc::borrow::Cow;
 use core::{fmt, marker::PhantomData, ops::Deref};
@@ -86,10 +86,10 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
     #[track_caller]
     pub fn new<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(module: M, name: N) -> Self
     where
-        T: Default,
+        T: FixedTypeValue<'ctx>,
     {
         let module = module.as_ir_module();
-        Self::with_type(module, name.into(), Value::default_value_type(module.ctx()))
+        Self::with_type(module, name.into(), T::static_value_type(module.ctx()))
     }
     #[track_caller]
     pub fn assign(self, assigned_value: Val<'ctx, T>) -> WireRef<'ctx, T> {
@@ -164,15 +164,10 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
         clk: Val<'ctx, bool>,
     ) -> Self
     where
-        T: Default,
+        T: FixedTypeValue<'ctx>,
     {
         let module = module.as_ir_module();
-        Self::with_type_without_reset(
-            module,
-            name.into(),
-            clk,
-            Value::default_value_type(module.ctx()),
-        )
+        Self::with_type_without_reset(module, name.into(), clk, T::static_value_type(module.ctx()))
     }
     #[track_caller]
     pub fn with_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(

@@ -9,7 +9,7 @@ use rust_hdl::{
 #[macro_use]
 mod common;
 
-#[derive(Value, Default)]
+#[derive(Value, FixedTypeValue, Default)]
 struct MyValue {
     a: bool,
     b: [Int8; 3],

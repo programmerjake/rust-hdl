@@ -11,7 +11,7 @@ use crate::{
         SourceLocation,
     },
     logic::{Reg, Wire},
-    values::{Val, Value, ValueType},
+    values::{FixedTypeValue, Val, Value, ValueType},
 };
 use alloc::borrow::Cow;
 use core::fmt;
@@ -97,7 +97,7 @@ impl<'ctx> Module<'ctx> {
         self.ir.ctx()
     }
     #[track_caller]
-    pub fn wire<'a, N: Into<Cow<'a, str>>, T: Value<'ctx> + Default>(
+    pub fn wire<'a, N: Into<Cow<'a, str>>, T: FixedTypeValue<'ctx>>(
         &self,
         name: N,
     ) -> Wire<'ctx, T> {
@@ -111,7 +111,7 @@ impl<'ctx> Module<'ctx> {
     ) -> Wire<'ctx, T> {
         Wire::with_type(self, name, value_type)
     }
-    pub fn output<'a, T: Value<'ctx> + Default>(&self) -> Output<'ctx, T> {
+    pub fn output<'a, T: FixedTypeValue<'ctx>>(&self) -> Output<'ctx, T> {
         Output::new(self)
     }
     pub fn output_with_type<'a, T: Value<'ctx>>(
@@ -130,7 +130,7 @@ impl<'ctx> Module<'ctx> {
         Reg::new(self, name, clock_domain, reset_value)
     }
     #[track_caller]
-    pub fn reg_without_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx> + Default>(
+    pub fn reg_without_reset<'a, N: Into<Cow<'a, str>>, T: FixedTypeValue<'ctx>>(
         &self,
         name: N,
         clk: Val<'ctx, bool>,

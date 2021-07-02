@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use crate::Value;
+use crate::prelude::{FixedTypeValue, Value};
 
-#[derive(Debug, Clone, Copy, Default, Value)]
+#[derive(Debug, Clone, Copy, FixedTypeValue, Value)]
 #[rust_hdl(crate = crate)]
 pub struct ClockDomain {
     /// positive edge-triggered clock

@@ -7,8 +7,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
-    Attribute, Data, DeriveInput, Error, Fields, GenericParam, Generics, Lifetime, LifetimeDef,
-    Path, Token,
+    Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Fields, GenericParam, Generics,
+    Lifetime, LifetimeDef, Path, Token, Variant,
 };
 
 enum RustHdlAttributeArg {
@@ -95,176 +95,442 @@ fn get_or_add_ctx_lifetime(mut generics: Generics) -> (Generics, Lifetime) {
     (generics, ctx_lifetime)
 }
 
-fn derive_value_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
-    let rust_hdl_attributes = RustHdlAttributes::parse(&ast.attrs)?;
-    let crate_path = rust_hdl_attributes.get_crate_path();
-    let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
-    let (generics, ctx_lifetime) = get_or_add_ctx_lifetime(ast.generics.clone());
-    let name = ast.ident;
-    let data_struct = match ast.data {
-        Data::Struct(v) => v,
-        _ => {
-            return Err(Error::new_spanned(
-                name,
-                "#[derive(Value)] only valid on structs",
-            ))
-        }
-    };
-    let impl_generics = generics.split_for_impl().0;
-    let enum_def;
-    let fields_const;
-    let mut field_value_ir_matches = Vec::new();
-    let mut field_static_value_type_ir_matches = Vec::new();
-    let struct_of_field_enums_const;
-    match data_struct.fields {
-        Fields::Named(fields) => {
-            let mut enum_fields = Vec::new();
-            let mut field_descriptors = Vec::new();
-            let mut struct_of_field_enums_fields = Vec::new();
-            let mut struct_of_field_enums_const_fields = Vec::new();
-            for field in &fields.named {
-                let name = field.ident.as_ref().unwrap();
-                let vis = &field.vis;
-                let name_str = name.to_string();
-                field_descriptors.push(quote! {
-                    #crate_path::values::StructFieldDescriptor {
-                        name: #name_str,
-                        field: __FieldEnum::#name,
+struct ValueImplStruct {
+    enum_def: TokenStream,
+    struct_of_field_enums_const: TokenStream,
+    visit_fields: Vec<TokenStream>,
+    visit_field_types: Vec<TokenStream>,
+    visit_field_fixed_types: Vec<TokenStream>,
+    field_count: usize,
+}
+
+impl ValueImplStruct {
+    fn new(data: DataStruct, common: &ValueImplCommon) -> syn::Result<Self> {
+        let ValueImplCommon {
+            crate_path,
+            ctx_lifetime,
+            ..
+        } = common;
+        let enum_def;
+        let struct_of_field_enums_const;
+        let mut visit_fields = Vec::new();
+        let mut visit_field_types = Vec::new();
+        let mut visit_field_fixed_types = Vec::new();
+        let field_count;
+        match data.fields {
+            Fields::Named(fields) => {
+                let mut enum_fields = Vec::new();
+                let mut struct_of_field_enums_fields = Vec::new();
+                let mut struct_of_field_enums_const_fields = Vec::new();
+                field_count = fields.named.len();
+                for field in &fields.named {
+                    let name = field.ident.as_ref().unwrap();
+                    let vis = &field.vis;
+                    let name_str = name.to_string();
+                    enum_fields.push(quote! {#name,});
+                    struct_of_field_enums_fields.push(quote! {
+                        #vis #name: __FieldEnum,
+                    });
+                    struct_of_field_enums_const_fields.push(quote! {
+                        #name: __FieldEnum::#name,
+                    });
+                    visit_fields.push(quote! {
+                        let visitor = #crate_path::values::StructFieldVisitor::field(
+                            visitor,
+                            #name_str,
+                            __FieldEnum::#name,
+                            &self.#name,
+                        )?;
+                    });
+                    visit_field_types.push(quote! {
+                        let visitor = #crate_path::values::StructFieldTypeVisitor::field_with_type_hint(
+                            visitor,
+                            #name_str,
+                            __FieldEnum::#name,
+                            |v: &Self, _| &v.#name,
+                        )?;
+                    });
+                    visit_field_fixed_types.push(quote! {
+                        let visitor = #crate_path::values::StructFieldFixedTypeVisitor::field_with_type_hint(
+                            visitor,
+                            #name_str,
+                            <Self as #crate_path::values::StructValue<#ctx_lifetime>>::FieldEnum::#name,
+                            |v: &Self, _| &v.#name,
+                        )?;
+                    });
+                }
+                struct_of_field_enums_const = quote! {
+                    __StructOfFieldEnums {
+                        #(#struct_of_field_enums_const_fields)*
                     }
-                });
-                let field_ty = &field.ty;
-                field_value_ir_matches.push(quote! {
-                    __FieldEnum::#name => #crate_path::values::Value::get_value(&self.#name, ctx).ir(),
-                });
-                field_static_value_type_ir_matches.push(quote! {
-                    __FieldEnum::#name => ::core::option::Option::Some(<#field_ty as #crate_path::values::Value>::static_value_type(ctx)?.ir()),
-                });
-                enum_fields.push(quote! {#name,});
-                struct_of_field_enums_fields.push(quote! {
-                    #vis #name: __FieldEnum,
-                });
-                struct_of_field_enums_const_fields.push(quote! {
-                    #name: __FieldEnum::#name,
-                });
+                };
+                enum_def = quote! {
+                    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+                    #[allow(non_camel_case_types)]
+                    #[repr(usize)]
+                    pub enum __FieldEnum {
+                        #(#enum_fields)*
+                    }
+
+                    impl ::core::convert::From<__FieldEnum> for usize {
+                        fn from(v: __FieldEnum) -> Self {
+                            v as usize
+                        }
+                    }
+
+                    #[allow(non_snake_case)]
+                    pub struct __StructOfFieldEnums {
+                        #(#struct_of_field_enums_fields)*
+                    }
+                };
             }
-            fields_const = quote! {&[#(#field_descriptors),*]};
-            struct_of_field_enums_const = quote! {
-                __StructOfFieldEnums {
-                    #(#struct_of_field_enums_const_fields)*
+            Fields::Unnamed(fields) => {
+                let mut struct_of_field_enums_fields = Vec::new();
+                let mut struct_of_field_enums_const_fields = Vec::new();
+                field_count = fields.unnamed.len();
+                for (name, field) in fields.unnamed.iter().enumerate() {
+                    let name_str = name.to_string();
+                    let name = Literal::usize_unsuffixed(name);
+                    let vis = &field.vis;
+                    struct_of_field_enums_fields.push(quote! {
+                        #vis __FieldEnum,
+                    });
+                    struct_of_field_enums_const_fields.push(quote! {
+                        #name,
+                    });
+                    visit_fields.push(quote! {
+                        let visitor = #crate_path::values::StructFieldVisitor::field(
+                            visitor,
+                            #name_str,
+                            #name,
+                            &self.#name,
+                        )?;
+                    });
+                    visit_field_types.push(quote! {
+                        let visitor = #crate_path::values::StructFieldTypeVisitor::field_with_type_hint(
+                            visitor,
+                            #name_str,
+                            #name,
+                            |v: &Self, _| &v.#name,
+                        )?;
+                    });
+                    visit_field_fixed_types.push(quote! {
+                        let visitor = #crate_path::values::StructFieldFixedTypeVisitor::field_with_type_hint(
+                            visitor,
+                            #name_str,
+                            #name,
+                            |v: &Self, _| &v.#name,
+                        )?;
+                    });
                 }
-            };
-            enum_def = quote! {
-                #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-                #[allow(non_camel_case_types)]
-                #[repr(usize)]
-                pub enum __FieldEnum {
-                    #(#enum_fields)*
-                }
+                enum_def = quote! {
+                    #[allow(non_camel_case_types)]
+                    pub type __FieldEnum = usize;
 
-                impl ::core::convert::From<__FieldEnum> for usize {
-                    fn from(v: __FieldEnum) -> Self {
-                        v as usize
-                    }
-                }
-
-                #[allow(non_snake_case)]
-                pub struct __StructOfFieldEnums {
-                    #(#struct_of_field_enums_fields)*
-                }
-            };
-        }
-        Fields::Unnamed(fields) => {
-            let mut field_descriptors = Vec::new();
-            let mut struct_of_field_enums_fields = Vec::new();
-            let mut struct_of_field_enums_const_fields = Vec::new();
-            for (name, field) in fields.unnamed.iter().enumerate() {
-                let name_str = name.to_string();
-                let name = Literal::usize_unsuffixed(name);
-                let vis = &field.vis;
-                field_descriptors.push(quote! {
-                    #crate_path::values::StructFieldDescriptor {
-                        name: #name_str,
-                        field: #name,
-                    }
-                });
-                let field_ty = &field.ty;
-                field_value_ir_matches.push(quote! {
-                    #name => #crate_path::values::Value::get_value(&self.#name, ctx).ir(),
-                });
-                field_static_value_type_ir_matches.push(quote! {
-                    #name => ::core::option::Option::Some(<#field_ty as #crate_path::values::Value>::static_value_type(ctx)?.ir()),
-                });
-                struct_of_field_enums_fields.push(quote! {
-                    #vis __FieldEnum,
-                });
-                struct_of_field_enums_const_fields.push(quote! {
-                    #name,
-                });
+                    #[allow(non_snake_case)]
+                    pub struct __StructOfFieldEnums(
+                        #(#struct_of_field_enums_fields)*
+                    );
+                };
+                struct_of_field_enums_const = quote! {
+                    __StructOfFieldEnums(
+                        #(#struct_of_field_enums_const_fields)*
+                    )
+                };
             }
-            let fallback_match_arm = quote! {
-                _ => ::core::panic!("field index out of bounds"),
-            };
-            field_value_ir_matches.push(fallback_match_arm.clone());
-            field_static_value_type_ir_matches.push(fallback_match_arm);
-            fields_const = quote! {&[#(#field_descriptors),*]};
-            enum_def = quote! {
-                #[allow(non_camel_case_types)]
-                pub type __FieldEnum = usize;
+            Fields::Unit => {
+                enum_def = quote! {
+                    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+                    #[allow(non_camel_case_types)]
+                    pub enum __FieldEnum {}
 
-                #[allow(non_snake_case)]
-                pub struct __StructOfFieldEnums(
-                    #(#struct_of_field_enums_fields)*
-                );
-            };
-            struct_of_field_enums_const = quote! {
-                __StructOfFieldEnums(
-                    #(#struct_of_field_enums_const_fields)*
-                )
-            };
+                    impl ::core::convert::From<__FieldEnum> for usize {
+                        fn from(v: __FieldEnum) -> Self {
+                            match v {}
+                        }
+                    }
+
+                    pub struct __StructOfFieldEnums;
+                };
+                field_count = 0;
+                struct_of_field_enums_const = quote! { __StructOfFieldEnums };
+            }
         }
-        Fields::Unit => {
-            enum_def = quote! {
-                #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-                #[allow(non_camel_case_types)]
-                pub enum __FieldEnum {}
-
-                impl ::core::convert::From<__FieldEnum> for usize {
-                    fn from(v: __FieldEnum) -> Self {
-                        match v {}
+        Ok(Self {
+            enum_def,
+            struct_of_field_enums_const,
+            visit_fields,
+            visit_field_types,
+            visit_field_fixed_types,
+            field_count,
+        })
+    }
+    fn derive_value(self, common: ValueImplCommon) -> syn::Result<TokenStream> {
+        let Self {
+            enum_def,
+            struct_of_field_enums_const,
+            visit_fields,
+            visit_field_types,
+            field_count,
+            ..
+        } = self;
+        let ValueImplCommon {
+            crate_path,
+            original_generics,
+            generics_with_ctx,
+            ctx_lifetime,
+            name,
+        } = common;
+        let (_, ty_generics, where_clause) = original_generics.split_for_impl();
+        let impl_generics = generics_with_ctx.split_for_impl().0;
+        Ok(quote! {
+            const _: () = {
+                #enum_def
+                #[automatically_derived]
+                impl #impl_generics #crate_path::values::StructValue<#ctx_lifetime> for #name #ty_generics #where_clause {
+                    type FieldEnum = __FieldEnum;
+                    type StructOfFieldEnums = __StructOfFieldEnums;
+                    const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums = #struct_of_field_enums_const;
+                    const FIELD_COUNT: usize = #field_count;
+                    fn visit_fields<V: #crate_path::values::StructFieldVisitor<#ctx_lifetime, Self>>(
+                        &self,
+                        visitor: V,
+                    ) -> ::core::result::Result<V, V::BreakType> {
+                        #(#visit_fields)*
+                        ::core::result::Result::Ok(visitor)
+                    }
+                    fn visit_field_types<V: #crate_path::values::StructFieldTypeVisitor<#ctx_lifetime, Self>>(
+                        visitor: V,
+                    ) -> ::core::result::Result<V, V::BreakType> {
+                        #(#visit_field_types)*
+                        ::core::result::Result::Ok(visitor)
                     }
                 }
-
-                pub struct __StructOfFieldEnums;
             };
-            fields_const = quote! { &[] };
-            struct_of_field_enums_const = quote! { __StructOfFieldEnums };
+        })
+    }
+    fn derive_fixed_type_value(self, common: ValueImplCommon) -> syn::Result<TokenStream> {
+        let Self {
+            visit_field_fixed_types,
+            ..
+        } = self;
+        let ValueImplCommon {
+            crate_path,
+            original_generics,
+            generics_with_ctx,
+            ctx_lifetime,
+            name,
+        } = common;
+        let (_, ty_generics, where_clause) = original_generics.split_for_impl();
+        let impl_generics = generics_with_ctx.split_for_impl().0;
+        Ok(quote! {
+            #[automatically_derived]
+            impl #impl_generics #crate_path::values::FixedTypeStructValue<#ctx_lifetime> for #name #ty_generics #where_clause {
+                fn visit_field_fixed_types<V: #crate_path::values::StructFieldFixedTypeVisitor<#ctx_lifetime, Self>>(
+                    visitor: V,
+                ) -> ::core::result::Result<V, V::BreakType> {
+                    #(#visit_field_fixed_types)*
+                    ::core::result::Result::Ok(visitor)
+                }
+            }
+        })
+    }
+}
+
+struct ValueImplEnum {
+    get_value_match_arms: Vec<TokenStream>,
+    needed_bits: u32,
+}
+
+impl ValueImplEnum {
+    fn new(data: DataEnum, common: &ValueImplCommon) -> syn::Result<Self> {
+        let _ = common;
+        let mut variants = Vec::with_capacity(data.variants.len());
+        for Variant {
+            attrs: _,
+            ident,
+            fields,
+            discriminant,
+        } in data.variants
+        {
+            match fields {
+                Fields::Named(_) | Fields::Unnamed(_) => {
+                    return Err(Error::new_spanned(
+                        ident,
+                        "enum variants with fields not allowed with #[derive(Value)]",
+                    ))
+                }
+                Fields::Unit => {}
+            }
+            if let Some(discriminant) = discriminant {
+                return Err(Error::new_spanned(
+                    discriminant.1,
+                    "enum variants with discriminants not allowed with #[derive(Value)]",
+                ));
+            }
+            variants.push(ident);
+        }
+        let mut needed_bits = 0;
+        while (1 << needed_bits) < variants.len() as u128 {
+            needed_bits += 1;
+        }
+        let mut get_value_match_arms = Vec::with_capacity(variants.len());
+        for (index, variant) in variants.into_iter().enumerate() {
+            let index = Literal::usize_unsuffixed(index);
+            get_value_match_arms.push(quote! {
+                Self::#variant => #index,
+            });
+        }
+        Ok(Self {
+            get_value_match_arms,
+            needed_bits,
+        })
+    }
+    fn derive_value(self, common: ValueImplCommon) -> syn::Result<TokenStream> {
+        let Self {
+            get_value_match_arms,
+            needed_bits,
+        } = self;
+        let ValueImplCommon {
+            crate_path,
+            original_generics,
+            generics_with_ctx,
+            ctx_lifetime,
+            name,
+        } = common;
+        let impl_generics = generics_with_ctx.split_for_impl().0;
+        let (_, ty_generics, where_clause) = original_generics.split_for_impl();
+        if get_value_match_arms.is_empty() {
+            Ok(quote! {
+                #[automatically_derived]
+                impl #impl_generics #crate_path::values::Value<#ctx_lifetime> for #name #ty_generics #where_clause {
+                    fn get_value(&self, ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> #crate_path::values::Val<#ctx_lifetime, Self> {
+                        match *self {}
+                    }
+                    fn static_value_type_opt(ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> ::core::option::Option<#crate_path::values::ValueType<#ctx_lifetime, Self>> {
+                        ::core::panic!("can't create uninhabited type")
+                    }
+                }
+            })
+        } else {
+            Ok(quote! {
+                #[automatically_derived]
+                impl #impl_generics #crate_path::values::Value<#ctx_lifetime> for #name #ty_generics #where_clause {
+                    fn get_value(&self, ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> #crate_path::values::Val<#ctx_lifetime, Self> {
+                        let value: u128 = match *self {
+                            #(#get_value_match_arms)*
+                        };
+                        let value = #crate_path::values::UInt::<#needed_bits>::wrapping_new(value);
+                        let value = #crate_path::values::Value::get_value(&value, ctx);
+                        #crate_path::values::Val::from_ir_and_type_unchecked(
+                            value.ir(),
+                            #crate_path::values::ValueType::from_ir_unchecked(
+                                ctx,
+                                value.value_type().ir(),
+                            ),
+                        )
+                    }
+                    fn static_value_type_opt(ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> ::core::option::Option<#crate_path::values::ValueType<#ctx_lifetime, Self>> {
+                        let value_type = <#crate_path::values::UInt<#needed_bits> as #crate_path::values::Value<#ctx_lifetime>>::static_value_type_opt(ctx)?;
+                        ::core::option::Option::Some(#crate_path::values::ValueType::from_ir_unchecked(
+                            ctx,
+                            value_type.ir(),
+                        ))
+                    }
+                }
+            })
         }
     }
-    Ok(quote! {
-        const _: () = {
-            #enum_def
-            #[automatically_derived]
-            impl #impl_generics #crate_path::values::StructValue<#ctx_lifetime> for #name #ty_generics #where_clause {
-                type FieldEnum = __FieldEnum;
-                type StructOfFieldEnums = __StructOfFieldEnums;
-                const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums = #struct_of_field_enums_const;
-                const FIELDS: &'static [#crate_path::values::StructFieldDescriptor<'static, Self::FieldEnum>] = #fields_const;
-                fn field_value_ir(&self, ctx: #crate_path::context::ContextRef<'ctx>, field: Self::FieldEnum) -> #crate_path::ir::values::IrValueRef<'ctx> {
-                    match field {
-                        #(#field_value_ir_matches)*
-                    }
-                }
-                fn field_static_value_type_ir(
-                    ctx: #crate_path::context::ContextRef<'ctx>,
-                    field: Self::FieldEnum,
-                ) -> Option<#crate_path::ir::types::IrValueTypeRef<'ctx>> {
-                    match field {
-                        #(#field_static_value_type_ir_matches)*
-                    }
-                }
+    fn derive_fixed_type_value(self, common: ValueImplCommon) -> syn::Result<TokenStream> {
+        let Self {
+            get_value_match_arms,
+            needed_bits: _,
+        } = self;
+        let ValueImplCommon {
+            crate_path,
+            original_generics,
+            generics_with_ctx,
+            ctx_lifetime,
+            name,
+        } = common;
+        let impl_generics = generics_with_ctx.split_for_impl().0;
+        let (_, ty_generics, where_clause) = original_generics.split_for_impl();
+        if get_value_match_arms.is_empty() {
+            Ok(quote! {
+                #[automatically_derived]
+                impl #impl_generics #crate_path::values::FixedTypeValue<#ctx_lifetime> for #name #ty_generics #where_clause {}
+            })
+        } else {
+            Ok(quote! {
+                #[automatically_derived]
+                impl #impl_generics #crate_path::values::FixedTypeValue<#ctx_lifetime> for #name #ty_generics #where_clause {}
+            })
+        }
+    }
+}
+
+enum ValueImplData {
+    Struct(ValueImplStruct),
+    Enum(ValueImplEnum),
+}
+
+struct ValueImplCommon {
+    crate_path: Path,
+    original_generics: Generics,
+    generics_with_ctx: Generics,
+    ctx_lifetime: Lifetime,
+    name: Ident,
+}
+
+struct ValueImpl {
+    common: ValueImplCommon,
+    data: ValueImplData,
+}
+
+impl ValueImpl {
+    fn new(ast: DeriveInput) -> syn::Result<Self> {
+        let rust_hdl_attributes = RustHdlAttributes::parse(&ast.attrs)?;
+        let crate_path = rust_hdl_attributes.get_crate_path();
+        let (generics_with_ctx, ctx_lifetime) = get_or_add_ctx_lifetime(ast.generics.clone());
+        let common = ValueImplCommon {
+            crate_path,
+            ctx_lifetime,
+            generics_with_ctx,
+            original_generics: ast.generics,
+            name: ast.ident,
+        };
+        let data = match ast.data {
+            Data::Struct(v) => ValueImplData::Struct(ValueImplStruct::new(v, &common)?),
+            Data::Enum(v) => ValueImplData::Enum(ValueImplEnum::new(v, &common)?),
+            Data::Union(_) => {
+                return Err(Error::new_spanned(
+                    common.name,
+                    "#[derive(Value)] can't be used on unions",
+                ));
             }
         };
-    })
+        Ok(Self { common, data })
+    }
+    fn derive_value(self) -> syn::Result<TokenStream> {
+        match self.data {
+            ValueImplData::Struct(v) => v.derive_value(self.common),
+            ValueImplData::Enum(v) => v.derive_value(self.common),
+        }
+    }
+    fn derive_fixed_type_value(self) -> syn::Result<TokenStream> {
+        match self.data {
+            ValueImplData::Struct(v) => v.derive_fixed_type_value(self.common),
+            ValueImplData::Enum(v) => v.derive_fixed_type_value(self.common),
+        }
+    }
+}
+
+fn derive_value_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
+    ValueImpl::new(ast)?.derive_value()
+}
+
+fn derive_fixed_type_value_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
+    ValueImpl::new(ast)?.derive_fixed_type_value()
 }
 
 fn derive_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
@@ -362,6 +628,16 @@ fn derive_plain_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
 pub fn derive_value(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     match derive_value_impl(ast) {
+        Ok(retval) => retval,
+        Err(e) => e.into_compile_error(),
+    }
+    .into()
+}
+
+#[proc_macro_derive(FixedTypeValue, attributes(rust_hdl))]
+pub fn derive_fixed_type_value(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
+    match derive_fixed_type_value_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),
     }

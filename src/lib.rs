@@ -8,8 +8,6 @@ extern crate alloc;
 #[cfg(any(test, feature = "std"))]
 extern crate std;
 
-pub use rust_hdl_macros::{PlainIO, Value, IO};
-
 pub mod clocking;
 pub mod context;
 pub mod export;
@@ -78,7 +76,7 @@ macro_rules! field_enum {
     (<$ty:ty>::$field:literal) => {{
         const VALUE: <$ty as $crate::values::StructValue>::FieldEnum = {
             let index: usize = $field;
-            let _ = <$ty as $crate::values::StructValue>::FIELDS[index];
+            let _ = [(); <$ty as $crate::values::StructValue>::FIELD_COUNT][index];
             index
         };
         VALUE

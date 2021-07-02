@@ -23,69 +23,175 @@ use core::{
     marker::PhantomData,
 };
 
-pub trait Value<'ctx>: Sized {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self>;
-    fn get_input(&self, ctx: ContextRef<'ctx>) -> Input<'ctx, Self> {
+pub use rust_hdl_macros::{FixedTypeValue, Value};
+
+mod value_fns_sealed {
+    pub trait Sealed {}
+}
+
+pub trait ValueFns<'ctx>: Sized + value_fns_sealed::Sealed {
+    fn get_input(&self, ctx: ContextRef<'ctx>) -> Input<'ctx, Self>
+    where
+        Self: Value<'ctx>,
+    {
         self.get_value(ctx).into()
     }
-    fn get_value_type(&self, ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
-        Self::static_value_type(ctx).unwrap_or_else(|| self.get_value(ctx).value_type())
-    }
-    fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
-        let _ = ctx;
-        None
-    }
-    fn default_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self>
+    fn get_value_type(&self, ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self>
     where
-        Self: Default,
+        Self: Value<'ctx>,
     {
-        Self::static_value_type(ctx).unwrap_or_else(|| Self::default().get_value_type(ctx))
+        Self::static_value_type_opt(ctx).unwrap_or_else(|| self.get_value(ctx).value_type())
     }
 }
 
-pub struct StructFieldDescriptor<'a, FieldEnum> {
-    pub name: &'a str,
-    pub field: FieldEnum,
+impl<'ctx, T: Value<'ctx>> value_fns_sealed::Sealed for T {}
+
+impl<'ctx, T: Value<'ctx>> ValueFns<'ctx> for T {}
+
+pub trait Value<'ctx>: ValueFns<'ctx> {
+    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self>;
+    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+        let _ = ctx;
+        None
+    }
+}
+
+pub trait FixedTypeValue<'ctx>: Value<'ctx> {
+    fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
+        Self::static_value_type_opt(ctx).unwrap()
+    }
+}
+
+pub trait StructFieldVisitor<'ctx, Struct: StructValue<'ctx>>: Sized {
+    type BreakType;
+    fn field<FieldType: Value<'ctx>>(
+        self,
+        name: &'static str,
+        field_enum: Struct::FieldEnum,
+        field: &FieldType,
+    ) -> Result<Self, Self::BreakType>;
+}
+
+pub trait StructFieldTypeVisitor<'ctx, Struct: StructValue<'ctx>>: Sized {
+    type BreakType;
+    fn field<FieldType: Value<'ctx>>(
+        self,
+        name: &'static str,
+        field_enum: Struct::FieldEnum,
+    ) -> Result<Self, Self::BreakType>;
+    fn field_with_type_hint<
+        FieldType: Value<'ctx>,
+        TypeHint: FnOnce(&Struct, Infallible) -> &FieldType,
+    >(
+        self,
+        name: &'static str,
+        field_enum: Struct::FieldEnum,
+        _: TypeHint,
+    ) -> Result<Self, Self::BreakType> {
+        self.field::<FieldType>(name, field_enum)
+    }
+}
+
+pub trait StructFieldFixedTypeVisitor<'ctx, Struct: FixedTypeStructValue<'ctx>>: Sized {
+    type BreakType;
+    fn field<FieldType: FixedTypeValue<'ctx>>(
+        self,
+        name: &'static str,
+        field_enum: Struct::FieldEnum,
+    ) -> Result<Self, Self::BreakType>;
+    fn field_with_type_hint<
+        FieldType: FixedTypeValue<'ctx>,
+        TypeHint: FnOnce(&Struct, Infallible) -> &FieldType,
+    >(
+        self,
+        name: &'static str,
+        field_enum: Struct::FieldEnum,
+        _: TypeHint,
+    ) -> Result<Self, Self::BreakType> {
+        self.field::<FieldType>(name, field_enum)
+    }
 }
 
 pub trait StructValue<'ctx>: Value<'ctx> {
     type FieldEnum: 'static + Copy + Send + Sync + Ord + Hash + Into<usize>;
     type StructOfFieldEnums;
     const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums;
-    const FIELDS: &'static [StructFieldDescriptor<'static, Self::FieldEnum>];
-    fn field_value_ir(&self, ctx: ContextRef<'ctx>, field: Self::FieldEnum) -> IrValueRef<'ctx>;
-    fn field_static_value_type_ir(
-        ctx: ContextRef<'ctx>,
-        field: Self::FieldEnum,
-    ) -> Option<IrValueTypeRef<'ctx>> {
-        let _ = ctx;
-        let _ = field;
-        None
-    }
+    const FIELD_COUNT: usize;
+    fn visit_fields<V: StructFieldVisitor<'ctx, Self>>(
+        &self,
+        visitor: V,
+    ) -> Result<V, V::BreakType>;
+    fn visit_field_types<V: StructFieldTypeVisitor<'ctx, Self>>(
+        visitor: V,
+    ) -> Result<V, V::BreakType>;
 }
 
 impl<'ctx, T: StructValue<'ctx>> Value<'ctx> for T {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
-        let mut fields = Vec::with_capacity(Self::FIELDS.len());
-        for field in Self::FIELDS {
-            fields.push(LiteralStructField {
-                name: field.name.intern(ctx),
-                value: self.field_value_ir(ctx, field.field),
-            });
+        struct ValueGetter<'ctx> {
+            fields: Vec<LiteralStructField<'ctx>>,
+            ctx: ContextRef<'ctx>,
         }
+        impl<'ctx, T: StructValue<'ctx>> StructFieldVisitor<'ctx, T> for ValueGetter<'ctx> {
+            type BreakType = Infallible;
+
+            fn field<FieldType: Value<'ctx>>(
+                mut self,
+                name: &'static str,
+                field_enum: T::FieldEnum,
+                field: &FieldType,
+            ) -> Result<Self, Self::BreakType> {
+                let field_index: usize = field_enum.into();
+                assert_eq!(self.fields.len(), field_index);
+                self.fields.push(LiteralStructField {
+                    name: name.intern(self.ctx),
+                    value: field.get_value(self.ctx).ir(),
+                });
+                Ok(self)
+            }
+        }
+        let fields = self
+            .visit_fields(ValueGetter {
+                fields: Vec::new(),
+                ctx,
+            })
+            .unwrap()
+            .fields;
+        assert_eq!(fields.len(), Self::FIELD_COUNT);
         Val::from_ir_unchecked(
             ctx,
             IrValue::from(LiteralStruct::new(ctx, fields)).intern(ctx),
         )
     }
-    fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
-        let mut fields = Vec::with_capacity(Self::FIELDS.len());
-        for field in Self::FIELDS {
-            fields.push(IrStructFieldType {
-                name: field.name.intern(ctx),
-                ty: Self::field_static_value_type_ir(ctx, field.field)?,
-            });
+    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+        struct ValueTypeOptGetter<'ctx> {
+            fields: Vec<IrStructFieldType<'ctx>>,
+            ctx: ContextRef<'ctx>,
         }
+        impl<'ctx, T: StructValue<'ctx>> StructFieldTypeVisitor<'ctx, T> for ValueTypeOptGetter<'ctx> {
+            type BreakType = ();
+
+            fn field<FieldType: Value<'ctx>>(
+                mut self,
+                name: &'static str,
+                field_enum: T::FieldEnum,
+            ) -> Result<Self, Self::BreakType> {
+                let field_index: usize = field_enum.into();
+                assert_eq!(self.fields.len(), field_index);
+                self.fields.push(IrStructFieldType {
+                    name: name.intern(self.ctx),
+                    ty: FieldType::static_value_type_opt(self.ctx).ok_or(())?.ir(),
+                });
+                Ok(self)
+            }
+        }
+        let fields = Self::visit_field_types(ValueTypeOptGetter {
+            fields: Vec::new(),
+            ctx,
+        })
+        .ok()?
+        .fields;
+        assert_eq!(fields.len(), Self::FIELD_COUNT);
         Some(ValueType::from_ir_unchecked(
             ctx,
             IrValueType::from(IrStructType {
@@ -93,6 +199,54 @@ impl<'ctx, T: StructValue<'ctx>> Value<'ctx> for T {
             })
             .intern(ctx),
         ))
+    }
+}
+
+pub trait FixedTypeStructValue<'ctx>: FixedTypeValue<'ctx> + StructValue<'ctx> {
+    fn visit_field_fixed_types<V: StructFieldFixedTypeVisitor<'ctx, Self>>(
+        visitor: V,
+    ) -> Result<V, V::BreakType>;
+}
+
+impl<'ctx, T: FixedTypeStructValue<'ctx>> FixedTypeValue<'ctx> for T {
+    fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
+        struct ValueTypeGetter<'ctx> {
+            fields: Vec<IrStructFieldType<'ctx>>,
+            ctx: ContextRef<'ctx>,
+        }
+        impl<'ctx, T: FixedTypeStructValue<'ctx>> StructFieldFixedTypeVisitor<'ctx, T>
+            for ValueTypeGetter<'ctx>
+        {
+            type BreakType = Infallible;
+
+            fn field<FieldType: FixedTypeValue<'ctx>>(
+                mut self,
+                name: &'static str,
+                field_enum: T::FieldEnum,
+            ) -> Result<Self, Self::BreakType> {
+                let field_index: usize = field_enum.into();
+                assert_eq!(self.fields.len(), field_index);
+                self.fields.push(IrStructFieldType {
+                    name: name.intern(self.ctx),
+                    ty: FieldType::static_value_type(self.ctx).ir(),
+                });
+                Ok(self)
+            }
+        }
+        let fields = Self::visit_field_fixed_types(ValueTypeGetter {
+            fields: Vec::new(),
+            ctx,
+        })
+        .unwrap()
+        .fields;
+        assert_eq!(fields.len(), Self::FIELD_COUNT);
+        ValueType::from_ir_unchecked(
+            ctx,
+            IrValueType::from(IrStructType {
+                fields: fields.intern(ctx),
+            })
+            .intern(ctx),
+        )
     }
 }
 
@@ -108,26 +262,34 @@ mod unit_impl {
         }
     }
 
+    impl<'ctx> FixedTypeStructValue<'ctx> for () {
+        fn visit_field_fixed_types<V: StructFieldFixedTypeVisitor<'ctx, Self>>(
+            visitor: V,
+        ) -> Result<V, V::BreakType> {
+            Ok(visitor)
+        }
+    }
+
     impl<'ctx> StructValue<'ctx> for () {
         type FieldEnum = UnitFields;
         type StructOfFieldEnums = ();
         const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums = ();
-        const FIELDS: &'static [StructFieldDescriptor<'static, Self::FieldEnum>] = &[];
-        fn field_value_ir(
+        const FIELD_COUNT: usize = 0;
+        fn visit_fields<V: StructFieldVisitor<'ctx, Self>>(
             &self,
-            _ctx: ContextRef<'ctx>,
-            field: Self::FieldEnum,
-        ) -> IrValueRef<'ctx> {
-            match field {}
+            visitor: V,
+        ) -> Result<V, V::BreakType> {
+            Ok(visitor)
         }
-        fn field_static_value_type_ir(
-            _ctx: ContextRef<'ctx>,
-            field: Self::FieldEnum,
-        ) -> Option<IrValueTypeRef<'ctx>> {
-            match field {}
+        fn visit_field_types<V: StructFieldTypeVisitor<'ctx, Self>>(
+            visitor: V,
+        ) -> Result<V, V::BreakType> {
+            Ok(visitor)
         }
     }
 }
+
+impl<'ctx> FixedTypeValue<'ctx> for bool {}
 
 impl<'ctx> Value<'ctx> for bool {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
@@ -136,7 +298,7 @@ impl<'ctx> Value<'ctx> for bool {
             IrValue::LiteralBits(LiteralBits::new_bool(*self)).intern(ctx),
         )
     }
-    fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
         Some(ValueType::from_ir_unchecked(
             ctx,
             IrValueType::BitVector(IrBitVectorType {
@@ -148,11 +310,13 @@ impl<'ctx> Value<'ctx> for bool {
     }
 }
 
+impl<'ctx, Shape: integer::FixedIntShape> FixedTypeValue<'ctx> for Int<Shape> {}
+
 impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
         Val::from_ir_unchecked(ctx, IrValue::LiteralBits(self.clone().into()).intern(ctx))
     }
-    fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
         let static_shape = Shape::static_shape()?;
         Some(ValueType::from_ir_unchecked(
             ctx,
@@ -169,7 +333,7 @@ fn array_get_value<'ctx, A: AsRef<[T]> + Value<'ctx>, T: Value<'ctx>>(
     this: &A,
     ctx: ContextRef<'ctx>,
 ) -> Val<'ctx, A> {
-    let mut element_type = T::static_value_type(ctx);
+    let mut element_type = T::static_value_type_opt(ctx);
     let elements: Vec<_> = this
         .as_ref()
         .iter()
@@ -192,12 +356,14 @@ fn array_get_value<'ctx, A: AsRef<[T]> + Value<'ctx>, T: Value<'ctx>>(
     )
 }
 
+impl<'ctx, T: FixedTypeValue<'ctx>, const N: usize> FixedTypeValue<'ctx> for [T; N] {}
+
 impl<'ctx, T: Value<'ctx>, const N: usize> Value<'ctx> for [T; N] {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, Self> {
         array_get_value(self, ctx)
     }
-    fn static_value_type(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
-        let element_type = T::static_value_type(ctx)?;
+    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+        let element_type = T::static_value_type_opt(ctx)?;
         Some(ValueType::from_ir_unchecked(
             ctx,
             IrValueType::Array(IrArrayType {
@@ -357,7 +523,7 @@ pub struct ValueType<'ctx, T: Value<'ctx>> {
 }
 
 impl<'ctx, T: Value<'ctx>> ValueType<'ctx, T> {
-    pub(crate) fn from_ir_unchecked(ctx: ContextRef<'ctx>, ir: IrValueTypeRef<'ctx>) -> Self {
+    pub fn from_ir_unchecked(ctx: ContextRef<'ctx>, ir: IrValueTypeRef<'ctx>) -> Self {
         ValueType {
             ir,
             ctx,

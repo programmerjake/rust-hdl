@@ -5,14 +5,13 @@ pub use crate::{
     clocking::ClockDomain,
     context::{Context, ContextRef},
     field,
-    io::{Input, NotIO, Output, IO},
+    io::{Input, NotIO, Output, PlainIO, IO},
     logic::{Reg, RegRef, Wire, WireRef},
     module::Module,
     named,
     values::{
         ops::{Compare, CompareEq, CompareGtLE, CompareLtGE, Len, ReduceBitwise, Slice},
-        Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, UInt, UInt1, UInt128, UInt16, UInt32,
-        UInt64, UInt8, Val, Value, ValueType,
+        FixedTypeValue, Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, UInt, UInt1, UInt128,
+        UInt16, UInt32, UInt64, UInt8, Val, Value, ValueType,
     },
-    PlainIO, Value, IO,
 };

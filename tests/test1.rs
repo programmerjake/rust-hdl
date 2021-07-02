@@ -4,10 +4,10 @@ use rust_hdl::prelude::*;
 #[macro_use]
 mod common;
 
-#[derive(Value, IO, Default)]
+#[derive(Value, IO, Default, FixedTypeValue)]
 struct EmptyType;
 
-#[derive(Value, Default)]
+#[derive(Value, Default, FixedTypeValue)]
 struct Struct {
     a: bool,
     b: EmptyType,
@@ -22,7 +22,7 @@ struct IOStruct<'ctx> {
     d: IOTupleStruct<'ctx>,
 }
 
-#[derive(Value, Default)]
+#[derive(Value, Default, FixedTypeValue)]
 struct TupleStruct(bool, Int8);
 
 #[derive(IO)]

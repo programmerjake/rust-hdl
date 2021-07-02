@@ -47,6 +47,8 @@ pub trait IntShapeTrait: Copy + fmt::Debug {
     fn to_signed(self) -> Self::SignedShape;
 }
 
+pub trait FixedIntShape: IntShapeTrait + Default {}
+
 impl IntShapeTrait for IntShape {
     type UnsignedShape = Self;
     type SignedShape = Self;
@@ -69,6 +71,8 @@ impl IntShapeTrait for IntShape {
         }
     }
 }
+
+impl<const BIT_COUNT: u32, const SIGNED: bool> FixedIntShape for ConstIntShape<BIT_COUNT, SIGNED> {}
 
 impl<const BIT_COUNT: u32, const SIGNED: bool> IntShapeTrait for ConstIntShape<BIT_COUNT, SIGNED> {
     type UnsignedShape = ConstIntShape<BIT_COUNT, false>;

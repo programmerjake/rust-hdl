@@ -1,0 +1,37 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-1, 9),
+    parent: <None>,
+    interface_types: [
+        Input(
+            IrBitVectorType {
+                bit_count: 2,
+                signed: false,
+            },
+        ),
+    ],
+    interface: [
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrBitVectorType {
+                        bit_count: 2,
+                        signed: false,
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io",
+                    value_type: IrBitVectorType {
+                        bit_count: 2,
+                        signed: false,
+                    },
+                },
+            },
+        ),
+    ],
+    wires: {},
+    registers: {},
+    ..
+}
