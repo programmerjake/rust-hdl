@@ -164,10 +164,15 @@ impl ValueImplStruct {
                         #(#struct_of_field_enums_const_fields)*
                     }
                 };
+                let field_enum_repr = if enum_fields.is_empty() {
+                    quote! {}
+                } else {
+                    quote! {#[repr(usize)]}
+                };
                 enum_def = quote! {
                     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
                     #[allow(non_camel_case_types)]
-                    #[repr(usize)]
+                    #field_enum_repr
                     pub enum __FieldEnum {
                         #(#enum_fields)*
                     }

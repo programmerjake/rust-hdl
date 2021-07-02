@@ -4,8 +4,14 @@ use rust_hdl::prelude::*;
 #[macro_use]
 mod common;
 
-#[derive(Value, IO, Default, FixedTypeValue)]
+#[derive(Value, IO, PlainIO, Default, FixedTypeValue)]
 struct EmptyType;
+
+#[derive(Value, IO, PlainIO, Default, FixedTypeValue)]
+struct EmptyType2 {}
+
+#[derive(Value, IO, PlainIO, Default, FixedTypeValue)]
+struct EmptyType3();
 
 #[derive(Value, Default, FixedTypeValue)]
 struct Struct {
