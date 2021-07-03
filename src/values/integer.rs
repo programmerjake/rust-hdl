@@ -2,6 +2,7 @@
 // See Notices.txt for copyright information
 
 use core::{
+    cmp::Ordering,
     convert::identity,
     fmt,
     hash::{Hash, Hasher},
@@ -235,6 +236,9 @@ impl<Shape: IntShapeTrait> Int<Shape> {
     }
     pub fn value(&self) -> BigInt {
         self.value.clone()
+    }
+    pub fn cmp_value(&self, rhs: &Self) -> Ordering {
+        self.value.cmp(&rhs.value)
     }
     pub fn wrap_into_shape<NewShape: IntShapeTrait>(self, new_shape: NewShape) -> Int<NewShape> {
         Int::wrapping_with_shape(self, new_shape)

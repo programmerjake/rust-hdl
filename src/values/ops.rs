@@ -14,7 +14,7 @@ use crate::{
         },
     },
     prelude::*,
-    values::integer::{IntShape, IntShapeTrait},
+    values::integer::IntShapeTrait,
 };
 use core::ops::{
     Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Bound, Mul,
@@ -563,15 +563,11 @@ impl<'ctx, Shape: IntShapeTrait> Val<'ctx, Int<Shape>> {
         self,
         new_shape: NewShape,
     ) -> Val<'ctx, Int<NewShape>> {
-        let IntShape { bit_count, signed } = new_shape.shape();
+        let value_type = new_shape.shape().into();
         Val::from_ir_unchecked(
             self.ctx(),
-            IrValue::from(ConvertIntWrapping::new(
-                self.ctx(),
-                IrBitVectorType { bit_count, signed },
-                self.ir(),
-            ))
-            .intern(self.ctx()),
+            IrValue::from(ConvertIntWrapping::new(self.ctx(), value_type, self.ir()))
+                .intern(self.ctx()),
         )
     }
     #[track_caller]

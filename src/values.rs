@@ -194,10 +194,7 @@ impl<'ctx, T: StructValue<'ctx>> Value<'ctx> for T {
         assert_eq!(fields.len(), Self::FIELD_COUNT);
         Some(ValueType::from_ir_unchecked(
             ctx,
-            IrValueType::from(IrStructType {
-                fields: fields.intern(ctx),
-            })
-            .intern(ctx),
+            IrValueType::from(IrStructType::new(ctx, fields)).intern(ctx),
         ))
     }
 }
@@ -242,10 +239,7 @@ impl<'ctx, T: FixedTypeStructValue<'ctx>> FixedTypeValue<'ctx> for T {
         assert_eq!(fields.len(), Self::FIELD_COUNT);
         ValueType::from_ir_unchecked(
             ctx,
-            IrValueType::from(IrStructType {
-                fields: fields.intern(ctx),
-            })
-            .intern(ctx),
+            IrValueType::from(IrStructType::new(ctx, fields)).intern(ctx),
         )
     }
 }
@@ -320,11 +314,7 @@ impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
         let static_shape = Shape::static_shape()?;
         Some(ValueType::from_ir_unchecked(
             ctx,
-            IrValueType::BitVector(IrBitVectorType {
-                bit_count: static_shape.bit_count,
-                signed: static_shape.signed,
-            })
-            .intern(ctx),
+            IrValueType::BitVector(static_shape.into()).intern(ctx),
         ))
     }
 }

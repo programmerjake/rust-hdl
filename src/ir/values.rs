@@ -71,10 +71,7 @@ impl LiteralBits {
         &self.value
     }
     pub fn value_type(&self) -> IrBitVectorType {
-        IrBitVectorType {
-            bit_count: self.value.shape().bit_count,
-            signed: self.value.shape().signed,
-        }
+        self.value.shape().into()
     }
     pub fn into_value(self) -> Int {
         self.value
@@ -190,11 +187,8 @@ impl<'ctx> LiteralStruct<'ctx> {
             owning_module = combine_owning_modules([owning_module, field.value.owning_module()]);
         }
         let fields = fields.intern(ctx);
-        let field_types = field_types.intern(ctx);
         Self {
-            value_type: IrStructType {
-                fields: field_types,
-            },
+            value_type: IrStructType::new(ctx, field_types),
             owning_module,
             fields,
         }
@@ -251,7 +245,7 @@ impl<'ctx> ExtractStructField<'ctx> {
             IrValueType::Struct(v) => v,
             _ => panic!("value type is not a struct"),
         };
-        assert!(field_index < struct_type.fields.len());
+        assert!(field_index < struct_type.fields().len());
         Self {
             struct_value,
             struct_type,
@@ -262,7 +256,7 @@ impl<'ctx> ExtractStructField<'ctx> {
         self.struct_value
     }
     pub fn struct_field_type(self) -> IrStructFieldType<'ctx> {
-        self.struct_type.fields[self.field_index]
+        self.struct_type.fields()[self.field_index]
     }
     pub fn value_type(self) -> IrValueTypeRef<'ctx> {
         self.struct_field_type().ty

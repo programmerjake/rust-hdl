@@ -6,7 +6,7 @@ use crate::ir::{
     logic::{IrReg, IrWire},
     module::{IrModule, IrModuleRef},
     symbols::IrSymbolTable,
-    types::{IrStructFieldType, IrValueType},
+    types::{IrEnumVariantType, IrStructFieldType, IrValueType},
     values::{IrValue, IrValueRef, LiteralStructField},
 };
 use alloc::{string::String, vec::Vec};
@@ -254,6 +254,7 @@ pub struct Context<'ctx> {
     string_interner: Interner<'ctx, str>,
     value_type_interner: Interner<'ctx, IrValueType<'ctx>>,
     struct_field_type_interner: Interner<'ctx, [IrStructFieldType<'ctx>]>,
+    enum_variant_type_interner: Interner<'ctx, [IrEnumVariantType<'ctx>]>,
     literal_struct_field_interner: Interner<'ctx, [LiteralStructField<'ctx>]>,
     value_interner: Interner<'ctx, IrValue<'ctx>>,
     value_ref_interner: Interner<'ctx, [IrValueRef<'ctx>]>,
@@ -272,6 +273,7 @@ impl<'ctx> Context<'ctx> {
             string_interner: Interner::default(),
             value_type_interner: Interner::default(),
             struct_field_type_interner: Interner::default(),
+            enum_variant_type_interner: Interner::default(),
             literal_struct_field_interner: Interner::default(),
             value_interner: Interner::default(),
             value_ref_interner: Interner::default(),
@@ -315,6 +317,12 @@ impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrValueRef<
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrStructFieldType<'ctx>] {
     fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
         ctx.struct_field_type_interner.intern_impl(value)
+    }
+}
+
+impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrEnumVariantType<'ctx>] {
+    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
+        ctx.enum_variant_type_interner.intern_impl(value)
     }
 }
 

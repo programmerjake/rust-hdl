@@ -20,6 +20,10 @@ IrModule {
                         name: "b",
                         ty: IrStructType {
                             fields: [],
+                            flattened: IrBitVectorType {
+                                bit_count: 0,
+                                signed: false,
+                            },
                         },
                     },
                     IrStructFieldType {
@@ -41,9 +45,17 @@ IrModule {
                                     },
                                 },
                             ],
+                            flattened: IrBitVectorType {
+                                bit_count: 9,
+                                signed: true,
+                            },
                         },
                     },
                 ],
+                flattened: IrBitVectorType {
+                    bit_count: 10,
+                    signed: true,
+                },
             },
             assigned_value: <None>,
             ..

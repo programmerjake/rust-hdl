@@ -12,7 +12,7 @@ use crate::{
         io::InOrOut,
         logic::IrRegReset,
         module::{combine_owning_modules, IrModuleRef, OwningModule},
-        types::{IrArrayType, IrBitVectorType, IrStructType, IrValueType, IrValueTypeRef},
+        types::{IrArrayType, IrBitVectorType, IrValueType, IrValueTypeRef},
         values::{
             BoolOutBinOpKind, BoolOutUnOpKind, IrValue, IrValueRef, LiteralBits, Mux,
             SameSizeBinOpKind, SameSizeUnOpKind,
@@ -1120,8 +1120,8 @@ fn visit_wire_types_in_type<'ctx, 'a, E, FR: FieldRange>(
                 )?;
             }
         }
-        IrValueType::Struct(IrStructType { fields }) => {
-            for (index, field) in fields.iter().enumerate() {
+        IrValueType::Struct(s) => {
+            for (index, field) in s.fields().iter().enumerate() {
                 visit_wire_types_in_type_field(
                     field.ty,
                     index,
@@ -1131,6 +1131,7 @@ fn visit_wire_types_in_type<'ctx, 'a, E, FR: FieldRange>(
                 )?;
             }
         }
+        IrValueType::Enum(_) => todo!("enum types are not yet implemented"),
     }
     Ok(())
 }

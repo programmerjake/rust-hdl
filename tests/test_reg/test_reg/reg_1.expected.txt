@@ -37,6 +37,10 @@ Reg {
                             },
                         },
                     ],
+                    flattened: IrBitVectorType {
+                        bit_count: 2,
+                        signed: false,
+                    },
                 },
             },
             struct_field_type: IrStructFieldType {
@@ -71,6 +75,10 @@ Reg {
                             },
                         },
                     ],
+                    flattened: IrBitVectorType {
+                        bit_count: 2,
+                        signed: false,
+                    },
                 },
             },
             struct_field_type: IrStructFieldType {

@@ -348,6 +348,7 @@ struct ValueImplEnum {
 }
 
 impl ValueImplEnum {
+    // TODO: switch to using IrEnumType
     fn new(data: DataEnum, common: &ValueImplCommon) -> syn::Result<Self> {
         let _ = common;
         let mut variants = Vec::with_capacity(data.variants.len());
