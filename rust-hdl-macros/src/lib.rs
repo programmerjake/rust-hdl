@@ -410,7 +410,7 @@ impl ValueImplEnum {
             Ok(quote! {
                 #[automatically_derived]
                 impl #impl_generics #crate_path::values::Value<#ctx_lifetime> for #name #ty_generics #where_clause {
-                    fn get_value(&self, ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> #crate_path::values::Val<#ctx_lifetime, Self> {
+                    fn get_value(&self, ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> #crate_path::values::Val<#ctx_lifetime, #ctx_lifetime, Self> {
                         match *self {}
                     }
                     fn static_value_type_opt(ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> ::core::option::Option<#crate_path::values::ValueType<#ctx_lifetime, Self>> {
@@ -422,7 +422,7 @@ impl ValueImplEnum {
             Ok(quote! {
                 #[automatically_derived]
                 impl #impl_generics #crate_path::values::Value<#ctx_lifetime> for #name #ty_generics #where_clause {
-                    fn get_value(&self, ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> #crate_path::values::Val<#ctx_lifetime, Self> {
+                    fn get_value(&self, ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> #crate_path::values::Val<#ctx_lifetime, #ctx_lifetime, Self> {
                         let value: u128 = match *self {
                             #(#get_value_match_arms)*
                         };

@@ -105,7 +105,7 @@ macro_rules! field_enum {
 /// #[derive(Value)]
 /// struct MyTupleStruct(bool, bool);
 ///
-/// fn get_field<'ctx>(v: Val<'ctx, MyStruct>) -> Val<'ctx, bool> {
+/// fn get_field<'ctx, 'scope>(v: Val<'ctx, 'scope, MyStruct>) -> Val<'ctx, 'scope, bool> {
 ///     field!((v).a.1)
 /// }
 /// ```
@@ -116,7 +116,7 @@ macro_rules! field {
     };
     (($val:expr).$field:tt) => {
         {
-            let val: $crate::values::Val<'_, _> = $val;
+            let val: $crate::values::Val<'_, '_, _> = $val;
             val.extract_field_unchecked_macro_helper(|opt, struct_of_field_enums| (struct_of_field_enums.$field, opt.map(|v| (&v.0.$field, v.1))))
         }
     };
