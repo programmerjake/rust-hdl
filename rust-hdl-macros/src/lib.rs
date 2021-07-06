@@ -72,31 +72,48 @@ impl RustHdlAttributes {
     }
 }
 
-fn get_or_add_ctx_lifetime(mut generics: Generics) -> (Generics, Lifetime) {
-    let ctx_lifetime = generics.lifetimes().find_map(|l| {
-        if l.lifetime.ident == "ctx" {
-            Some(l.lifetime.clone())
-        } else {
-            None
+struct GenericsWithAddedLifetimes {
+    generics: Generics,
+    ctx_lifetime: Lifetime,
+    scope_lifetime: Lifetime,
+}
+
+impl GenericsWithAddedLifetimes {
+    fn new(mut generics: Generics) -> Self {
+        let scope_lifetime = Lifetime::new("'__scope", Span::call_site());
+        let ctx_lifetime = generics.lifetimes_mut().find_map(|l| {
+            if l.lifetime.ident == "ctx" {
+                l.bounds.push(scope_lifetime.clone());
+                Some(l.lifetime.clone())
+            } else {
+                None
+            }
+        });
+        let ctx_lifetime = match ctx_lifetime {
+            Some(v) => v,
+            None => {
+                let ctx_lifetime = Lifetime::new("'ctx", Span::call_site());
+                let mut lifetime_def = LifetimeDef::new(ctx_lifetime.clone());
+                lifetime_def.bounds.push(scope_lifetime.clone());
+                generics.params.push(GenericParam::Lifetime(lifetime_def));
+                ctx_lifetime
+            }
+        };
+        generics
+            .params
+            .push(GenericParam::Lifetime(LifetimeDef::new(
+                scope_lifetime.clone(),
+            )));
+        Self {
+            generics,
+            ctx_lifetime,
+            scope_lifetime,
         }
-    });
-    let ctx_lifetime = match ctx_lifetime {
-        Some(v) => v,
-        None => {
-            let ctx_lifetime = Lifetime::new("'ctx", Span::call_site());
-            generics
-                .params
-                .push(GenericParam::Lifetime(LifetimeDef::new(
-                    ctx_lifetime.clone(),
-                )));
-            ctx_lifetime
-        }
-    };
-    (generics, ctx_lifetime)
+    }
 }
 
 struct ValueImplStruct {
-    enum_def: TokenStream,
+    type_defs: TokenStream,
     struct_of_field_enums_const: TokenStream,
     visit_fields: Vec<TokenStream>,
     visit_field_types: Vec<TokenStream>,
@@ -109,9 +126,12 @@ impl ValueImplStruct {
         let ValueImplCommon {
             crate_path,
             ctx_lifetime,
+            generics_with_added_lifetimes,
+            scope_lifetime,
             ..
         } = common;
-        let enum_def;
+        let where_clause = &generics_with_added_lifetimes.where_clause;
+        let type_defs;
         let struct_of_field_enums_const;
         let mut visit_fields = Vec::new();
         let mut visit_field_types = Vec::new();
@@ -122,9 +142,11 @@ impl ValueImplStruct {
                 let mut enum_fields = Vec::new();
                 let mut struct_of_field_enums_fields = Vec::new();
                 let mut struct_of_field_enums_const_fields = Vec::new();
+                let mut struct_of_field_values_fields = Vec::new();
                 field_count = fields.named.len();
                 for field in &fields.named {
                     let name = field.ident.as_ref().unwrap();
+                    let ty = &field.ty;
                     let vis = &field.vis;
                     let name_str = name.to_string();
                     enum_fields.push(quote! {#name,});
@@ -134,8 +156,11 @@ impl ValueImplStruct {
                     struct_of_field_enums_const_fields.push(quote! {
                         #name: __FieldEnum::#name,
                     });
+                    struct_of_field_values_fields.push(quote! {
+                        #vis #name: #crate_path::values::Val<#ctx_lifetime, #scope_lifetime, #ty>,
+                    });
                     visit_fields.push(quote! {
-                        let visitor = #crate_path::values::StructFieldVisitor::field(
+                        let visitor = #crate_path::values::aggregate::StructFieldVisitor::field(
                             visitor,
                             #name_str,
                             __FieldEnum::#name,
@@ -143,7 +168,7 @@ impl ValueImplStruct {
                         )?;
                     });
                     visit_field_types.push(quote! {
-                        let visitor = #crate_path::values::StructFieldTypeVisitor::field_with_type_hint(
+                        let visitor = #crate_path::values::aggregate::StructFieldTypeVisitor::field_with_type_hint(
                             visitor,
                             #name_str,
                             __FieldEnum::#name,
@@ -151,10 +176,10 @@ impl ValueImplStruct {
                         )?;
                     });
                     visit_field_fixed_types.push(quote! {
-                        let visitor = #crate_path::values::StructFieldFixedTypeVisitor::field_with_type_hint(
+                        let visitor = #crate_path::values::aggregate::StructFieldFixedTypeVisitor::field_with_type_hint(
                             visitor,
                             #name_str,
-                            <Self as #crate_path::values::StructValue<#ctx_lifetime>>::FieldEnum::#name,
+                            <Self as #crate_path::values::aggregate::StructValue<#ctx_lifetime>>::FieldEnum::#name,
                             |v: &Self, _| &v.#name,
                         )?;
                     });
@@ -169,7 +194,7 @@ impl ValueImplStruct {
                 } else {
                     quote! {#[repr(usize)]}
                 };
-                enum_def = quote! {
+                type_defs = quote! {
                     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
                     #[allow(non_camel_case_types)]
                     #field_enum_repr
@@ -183,28 +208,39 @@ impl ValueImplStruct {
                         }
                     }
 
+                    #[derive(Clone, Copy)]
                     #[allow(non_snake_case)]
                     pub struct __StructOfFieldEnums {
                         #(#struct_of_field_enums_fields)*
+                    }
+
+                    #[allow(non_snake_case)]
+                    pub struct __StructOfFieldValues #generics_with_added_lifetimes #where_clause {
+                        #(#struct_of_field_values_fields)*
                     }
                 };
             }
             Fields::Unnamed(fields) => {
                 let mut struct_of_field_enums_fields = Vec::new();
                 let mut struct_of_field_enums_const_fields = Vec::new();
+                let mut struct_of_field_values_fields = Vec::new();
                 field_count = fields.unnamed.len();
                 for (name, field) in fields.unnamed.iter().enumerate() {
                     let name_str = name.to_string();
                     let name = Literal::usize_unsuffixed(name);
                     let vis = &field.vis;
+                    let ty = &field.ty;
                     struct_of_field_enums_fields.push(quote! {
                         #vis __FieldEnum,
                     });
                     struct_of_field_enums_const_fields.push(quote! {
                         #name,
                     });
+                    struct_of_field_values_fields.push(quote! {
+                        #vis #crate_path::values::Val<#ctx_lifetime, #scope_lifetime, #ty>,
+                    });
                     visit_fields.push(quote! {
-                        let visitor = #crate_path::values::StructFieldVisitor::field(
+                        let visitor = #crate_path::values::aggregate::StructFieldVisitor::field(
                             visitor,
                             #name_str,
                             #name,
@@ -212,7 +248,7 @@ impl ValueImplStruct {
                         )?;
                     });
                     visit_field_types.push(quote! {
-                        let visitor = #crate_path::values::StructFieldTypeVisitor::field_with_type_hint(
+                        let visitor = #crate_path::values::aggregate::StructFieldTypeVisitor::field_with_type_hint(
                             visitor,
                             #name_str,
                             #name,
@@ -220,7 +256,7 @@ impl ValueImplStruct {
                         )?;
                     });
                     visit_field_fixed_types.push(quote! {
-                        let visitor = #crate_path::values::StructFieldFixedTypeVisitor::field_with_type_hint(
+                        let visitor = #crate_path::values::aggregate::StructFieldFixedTypeVisitor::field_with_type_hint(
                             visitor,
                             #name_str,
                             #name,
@@ -228,7 +264,7 @@ impl ValueImplStruct {
                         )?;
                     });
                 }
-                enum_def = quote! {
+                type_defs = quote! {
                     #[allow(non_camel_case_types)]
                     pub type __FieldEnum = usize;
 
@@ -236,6 +272,11 @@ impl ValueImplStruct {
                     pub struct __StructOfFieldEnums(
                         #(#struct_of_field_enums_fields)*
                     );
+
+                    #[allow(non_snake_case)]
+                    pub struct __StructOfFieldValues #generics_with_added_lifetimes(
+                        #(#struct_of_field_values_fields)*
+                    ) #where_clause;
                 };
                 struct_of_field_enums_const = quote! {
                     __StructOfFieldEnums(
@@ -244,7 +285,7 @@ impl ValueImplStruct {
                 };
             }
             Fields::Unit => {
-                enum_def = quote! {
+                type_defs = quote! {
                     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
                     #[allow(non_camel_case_types)]
                     pub enum __FieldEnum {}
@@ -255,14 +296,18 @@ impl ValueImplStruct {
                         }
                     }
 
+                    #[allow(non_camel_case_types)]
                     pub struct __StructOfFieldEnums;
+
+                    #[allow(non_camel_case_types)]
+                    pub struct __StructOfFieldValues #generics_with_added_lifetimes #where_clause;
                 };
                 field_count = 0;
                 struct_of_field_enums_const = quote! { __StructOfFieldEnums };
             }
         }
         Ok(Self {
-            enum_def,
+            type_defs,
             struct_of_field_enums_const,
             visit_fields,
             visit_field_types,
@@ -272,7 +317,7 @@ impl ValueImplStruct {
     }
     fn derive_value(self, common: ValueImplCommon) -> syn::Result<TokenStream> {
         let Self {
-            enum_def,
+            type_defs,
             struct_of_field_enums_const,
             visit_fields,
             visit_field_types,
@@ -282,29 +327,48 @@ impl ValueImplStruct {
         let ValueImplCommon {
             crate_path,
             original_generics,
-            generics_with_ctx,
+            generics_with_added_lifetimes,
             ctx_lifetime,
+            scope_lifetime,
             name,
         } = common;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
-        let impl_generics = generics_with_ctx.split_for_impl().0;
+        let (impl_generics, ty_generics_with_added_lifetimes, _) =
+            generics_with_added_lifetimes.split_for_impl();
         Ok(quote! {
             const _: () = {
-                #enum_def
+                #type_defs
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::StructValue<#ctx_lifetime> for #name #ty_generics #where_clause {
+                impl #impl_generics Copy for __StructOfFieldValues #ty_generics_with_added_lifetimes #where_clause {}
+                #[automatically_derived]
+                impl #impl_generics Clone for __StructOfFieldValues #ty_generics_with_added_lifetimes #where_clause {
+                    fn clone(&self) -> Self {
+                        *self
+                    }
+                }
+                #[automatically_derived]
+                impl #impl_generics #crate_path::values::aggregate::StructValueStructOfFieldValues<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
+                    type StructOfFieldValues = __StructOfFieldValues #ty_generics_with_added_lifetimes;
+                }
+                #[automatically_derived]
+                impl #impl_generics #crate_path::values::aggregate::AggregateValue<#ctx_lifetime> for #name #ty_generics #where_clause {
+                    type AggregateValueKind = #crate_path::values::aggregate::StructAggregateValueKind<#ctx_lifetime, Self>;
+                    type DiscriminantShape = #crate_path::values::integer::UIntShape<0>;
+                }
+                #[automatically_derived]
+                impl #impl_generics #crate_path::values::aggregate::StructValue<#ctx_lifetime> for #name #ty_generics #where_clause {
                     type FieldEnum = __FieldEnum;
                     type StructOfFieldEnums = __StructOfFieldEnums;
                     const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums = #struct_of_field_enums_const;
                     const FIELD_COUNT: usize = #field_count;
-                    fn visit_fields<V: #crate_path::values::StructFieldVisitor<#ctx_lifetime, Self>>(
+                    fn visit_fields<V: #crate_path::values::aggregate::StructFieldVisitor<#ctx_lifetime, Self>>(
                         &self,
                         visitor: V,
                     ) -> ::core::result::Result<V, V::BreakType> {
                         #(#visit_fields)*
                         ::core::result::Result::Ok(visitor)
                     }
-                    fn visit_field_types<V: #crate_path::values::StructFieldTypeVisitor<#ctx_lifetime, Self>>(
+                    fn visit_field_types<V: #crate_path::values::aggregate::StructFieldTypeVisitor<#ctx_lifetime, Self>>(
                         visitor: V,
                     ) -> ::core::result::Result<V, V::BreakType> {
                         #(#visit_field_types)*
@@ -322,16 +386,17 @@ impl ValueImplStruct {
         let ValueImplCommon {
             crate_path,
             original_generics,
-            generics_with_ctx,
+            generics_with_added_lifetimes,
             ctx_lifetime,
+            scope_lifetime,
             name,
         } = common;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
-        let impl_generics = generics_with_ctx.split_for_impl().0;
+        let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
         Ok(quote! {
             #[automatically_derived]
-            impl #impl_generics #crate_path::values::FixedTypeStructValue<#ctx_lifetime> for #name #ty_generics #where_clause {
-                fn visit_field_fixed_types<V: #crate_path::values::StructFieldFixedTypeVisitor<#ctx_lifetime, Self>>(
+            impl #impl_generics #crate_path::values::aggregate::FixedTypeStructValue<#ctx_lifetime> for #name #ty_generics #where_clause {
+                fn visit_field_fixed_types<V: #crate_path::values::aggregate::StructFieldFixedTypeVisitor<#ctx_lifetime, Self>>(
                     visitor: V,
                 ) -> ::core::result::Result<V, V::BreakType> {
                     #(#visit_field_fixed_types)*
@@ -400,11 +465,12 @@ impl ValueImplEnum {
         let ValueImplCommon {
             crate_path,
             original_generics,
-            generics_with_ctx,
+            generics_with_added_lifetimes,
             ctx_lifetime,
+            scope_lifetime,
             name,
         } = common;
-        let impl_generics = generics_with_ctx.split_for_impl().0;
+        let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
         if get_value_match_arms.is_empty() {
             Ok(quote! {
@@ -455,11 +521,12 @@ impl ValueImplEnum {
         let ValueImplCommon {
             crate_path,
             original_generics,
-            generics_with_ctx,
+            generics_with_added_lifetimes,
             ctx_lifetime,
+            scope_lifetime,
             name,
         } = common;
-        let impl_generics = generics_with_ctx.split_for_impl().0;
+        let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
         if get_value_match_arms.is_empty() {
             Ok(quote! {
@@ -483,8 +550,9 @@ enum ValueImplData {
 struct ValueImplCommon {
     crate_path: Path,
     original_generics: Generics,
-    generics_with_ctx: Generics,
+    generics_with_added_lifetimes: Generics,
     ctx_lifetime: Lifetime,
+    scope_lifetime: Lifetime,
     name: Ident,
 }
 
@@ -497,11 +565,16 @@ impl ValueImpl {
     fn new(ast: DeriveInput) -> syn::Result<Self> {
         let rust_hdl_attributes = RustHdlAttributes::parse(&ast.attrs)?;
         let crate_path = rust_hdl_attributes.get_crate_path();
-        let (generics_with_ctx, ctx_lifetime) = get_or_add_ctx_lifetime(ast.generics.clone());
+        let GenericsWithAddedLifetimes {
+            generics: generics_with_added_lifetimes,
+            ctx_lifetime,
+            scope_lifetime,
+        } = GenericsWithAddedLifetimes::new(ast.generics.clone());
         let common = ValueImplCommon {
             crate_path,
+            generics_with_added_lifetimes,
             ctx_lifetime,
-            generics_with_ctx,
+            scope_lifetime,
             original_generics: ast.generics,
             name: ast.ident,
         };
@@ -543,7 +616,11 @@ fn derive_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     let rust_hdl_attributes = RustHdlAttributes::parse(&ast.attrs)?;
     let crate_path = rust_hdl_attributes.get_crate_path();
     let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
-    let (generics, ctx_lifetime) = get_or_add_ctx_lifetime(ast.generics.clone());
+    let GenericsWithAddedLifetimes {
+        generics,
+        ctx_lifetime,
+        scope_lifetime: _,
+    } = GenericsWithAddedLifetimes::new(ast.generics.clone());
     let name = ast.ident;
     let data_struct = match ast.data {
         Data::Struct(v) => v,
@@ -590,7 +667,11 @@ fn derive_plain_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     let rust_hdl_attributes = RustHdlAttributes::parse(&ast.attrs)?;
     let crate_path = rust_hdl_attributes.get_crate_path();
     let (_, ty_generics, where_clause) = ast.generics.split_for_impl();
-    let (generics, ctx_lifetime) = get_or_add_ctx_lifetime(ast.generics.clone());
+    let GenericsWithAddedLifetimes {
+        generics,
+        ctx_lifetime,
+        scope_lifetime: _,
+    } = GenericsWithAddedLifetimes::new(ast.generics.clone());
     let name = ast.ident;
     let data_struct = match ast.data {
         Data::Struct(v) => v,
