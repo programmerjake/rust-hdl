@@ -95,7 +95,7 @@ impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
     }
 }
 
-fn array_get_value<'ctx, 'scope, A: AsRef<[T]> + Value<'ctx>, T: Value<'ctx>>(
+fn array_get_value<'ctx: 'scope, 'scope, A: AsRef<[T]> + Value<'ctx>, T: Value<'ctx>>(
     this: &A,
     ctx: ContextRef<'ctx>,
 ) -> Val<'ctx, 'scope, A> {
@@ -141,7 +141,7 @@ impl<'ctx, T: Value<'ctx>, const N: usize> Value<'ctx> for [T; N] {
     }
 }
 
-impl<'ctx, 'scope, T: Value<'ctx>, const N: usize> From<Val<'ctx, 'scope, [T; N]>>
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>, const N: usize> From<Val<'ctx, 'scope, [T; N]>>
     for Val<'ctx, 'scope, Box<[T]>>
 {
     fn from(v: Val<'ctx, 'scope, [T; N]>) -> Self {
@@ -149,7 +149,7 @@ impl<'ctx, 'scope, T: Value<'ctx>, const N: usize> From<Val<'ctx, 'scope, [T; N]
     }
 }
 
-impl<'ctx, 'scope, T: Value<'ctx>, const N: usize> From<Val<'ctx, 'scope, [T; N]>>
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>, const N: usize> From<Val<'ctx, 'scope, [T; N]>>
     for Val<'ctx, 'scope, Vec<T>>
 {
     fn from(v: Val<'ctx, 'scope, [T; N]>) -> Self {
@@ -157,19 +157,23 @@ impl<'ctx, 'scope, T: Value<'ctx>, const N: usize> From<Val<'ctx, 'scope, [T; N]
     }
 }
 
-impl<'ctx, 'scope, T: Value<'ctx>> From<Val<'ctx, 'scope, Vec<T>>> for Val<'ctx, 'scope, Box<[T]>> {
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> From<Val<'ctx, 'scope, Vec<T>>>
+    for Val<'ctx, 'scope, Box<[T]>>
+{
     fn from(v: Val<'ctx, 'scope, Vec<T>>) -> Self {
         Val::from_ir_and_type_unchecked(v.ir(), v.value_type().into())
     }
 }
 
-impl<'ctx, 'scope, T: Value<'ctx>> From<Val<'ctx, 'scope, Box<[T]>>> for Val<'ctx, 'scope, Vec<T>> {
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> From<Val<'ctx, 'scope, Box<[T]>>>
+    for Val<'ctx, 'scope, Vec<T>>
+{
     fn from(v: Val<'ctx, 'scope, Box<[T]>>) -> Self {
         Val::from_ir_and_type_unchecked(v.ir(), v.value_type().into())
     }
 }
 
-impl<'ctx, 'scope, T: Value<'ctx>, const N: usize> From<ValueType<'ctx, [T; N]>>
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>, const N: usize> From<ValueType<'ctx, [T; N]>>
     for ValueType<'ctx, Box<[T]>>
 {
     fn from(v: ValueType<'ctx, [T; N]>) -> Self {
@@ -212,10 +216,10 @@ impl<'ctx, T: Value<'ctx>> Value<'ctx> for Vec<T> {
 pub struct Val<'ctx, 'scope, T: Value<'ctx>> {
     ir: IrValueRef<'ctx>,
     value_type: ValueType<'ctx, T>,
-    _phantom: PhantomData<&'scope &'ctx ()>,
+    _phantom: PhantomData<&'scope ()>,
 }
 
-impl<'ctx, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
     pub fn from_ir_unchecked(ctx: ContextRef<'ctx>, ir: IrValueRef<'ctx>) -> Self {
         Self::from_ir_and_type_unchecked(ir, ValueType::from_ir_unchecked(ctx, ir.get_type(ctx)))
     }
@@ -243,7 +247,7 @@ impl<'ctx, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
         field_enum: T::FieldEnum,
     ) -> Val<'ctx, 'scope, Field>
     where
-        T: StructValue<'ctx>,
+        T: StructValue<'ctx, 'scope>,
     {
         let extract_struct_field = ExtractStructField::new_with_struct_type_unchecked(
             self.ir,
@@ -267,7 +271,7 @@ impl<'ctx, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
         get_field_enum: GetFieldEnum,
     ) -> Val<'ctx, 'scope, Field>
     where
-        T: StructValue<'ctx>,
+        T: StructValue<'ctx, 'scope>,
     {
         self.extract_field_unchecked(get_field_enum(None, T::STRUCT_OF_FIELD_ENUMS).0)
     }

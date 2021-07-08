@@ -21,14 +21,14 @@ use core::ops::{
     MulAssign, Neg, Not, Range, RangeBounds, Shl, ShlAssign, Shr, ShrAssign, Sub, SubAssign,
 };
 
-impl<'ctx, 'scope> From<Val<'ctx, 'scope, UInt1>> for Val<'ctx, 'scope, bool> {
+impl<'ctx: 'scope, 'scope> From<Val<'ctx, 'scope, UInt1>> for Val<'ctx, 'scope, bool> {
     #[must_use]
     fn from(v: Val<'ctx, 'scope, UInt1>) -> Self {
         Self::from_ir_unchecked(v.ctx(), v.ir())
     }
 }
 
-impl<'ctx, 'scope> From<Val<'ctx, 'scope, bool>> for Val<'ctx, 'scope, UInt1> {
+impl<'ctx: 'scope, 'scope> From<Val<'ctx, 'scope, bool>> for Val<'ctx, 'scope, UInt1> {
     #[must_use]
     fn from(v: Val<'ctx, 'scope, bool>) -> Self {
         Self::from_ir_unchecked(v.ctx(), v.ir())
@@ -36,7 +36,7 @@ impl<'ctx, 'scope> From<Val<'ctx, 'scope, bool>> for Val<'ctx, 'scope, UInt1> {
 }
 
 #[track_caller]
-fn same_size_bin_op_unchecked<'ctx, 'scope, T: Value<'ctx>>(
+fn same_size_bin_op_unchecked<'ctx: 'scope, 'scope, T: Value<'ctx>>(
     kind: SameSizeBinOpKind,
     lhs: Val<'ctx, 'scope, T>,
     rhs: Val<'ctx, 'scope, T>,
@@ -48,7 +48,7 @@ fn same_size_bin_op_unchecked<'ctx, 'scope, T: Value<'ctx>>(
 }
 
 #[track_caller]
-fn same_size_un_op_unchecked<'ctx, 'scope, T: Value<'ctx>>(
+fn same_size_un_op_unchecked<'ctx: 'scope, 'scope, T: Value<'ctx>>(
     kind: SameSizeUnOpKind,
     input: Val<'ctx, 'scope, T>,
 ) -> Val<'ctx, 'scope, T> {
@@ -59,7 +59,7 @@ fn same_size_un_op_unchecked<'ctx, 'scope, T: Value<'ctx>>(
 }
 
 #[track_caller]
-fn bool_out_bin_op_unchecked<'ctx, 'scope, T: Value<'ctx>>(
+fn bool_out_bin_op_unchecked<'ctx: 'scope, 'scope, T: Value<'ctx>>(
     kind: BoolOutBinOpKind,
     lhs: Val<'ctx, 'scope, T>,
     rhs: Val<'ctx, 'scope, T>,
@@ -71,7 +71,7 @@ fn bool_out_bin_op_unchecked<'ctx, 'scope, T: Value<'ctx>>(
 }
 
 #[track_caller]
-fn bool_out_un_op_unchecked<'ctx, 'scope, T: Value<'ctx>>(
+fn bool_out_un_op_unchecked<'ctx: 'scope, 'scope, T: Value<'ctx>>(
     kind: BoolOutUnOpKind,
     input: Val<'ctx, 'scope, T>,
 ) -> Val<'ctx, 'scope, bool> {
@@ -83,7 +83,7 @@ fn bool_out_un_op_unchecked<'ctx, 'scope, T: Value<'ctx>>(
 
 macro_rules! impl_same_size_bin_op_helper {
     ([$ctx:lifetime, $scope:lifetime $($generics:tt)*] $Trait:ident for $T:ty {fn $trait_fn:ident}, $AssignTrait:ident {fn $assign_trait_fn:ident}) => {
-        impl<$ctx, $scope $($generics)*> $Trait<$T> for Val<$ctx, $scope, $T> {
+        impl<$ctx: $scope, $scope $($generics)*> $Trait<$T> for Val<$ctx, $scope, $T> {
             type Output = Val<$ctx, $scope, $T>;
 
             #[track_caller]
@@ -92,7 +92,7 @@ macro_rules! impl_same_size_bin_op_helper {
                 self.$trait_fn(rhs.get_value(self.ctx()))
             }
         }
-        impl<$ctx, $scope $($generics)*> $Trait<Val<$ctx, $scope, $T>> for $T {
+        impl<$ctx: $scope, $scope $($generics)*> $Trait<Val<$ctx, $scope, $T>> for $T {
             type Output = Val<$ctx, $scope, $T>;
 
             #[track_caller]
@@ -101,14 +101,14 @@ macro_rules! impl_same_size_bin_op_helper {
                 self.get_value(rhs.ctx()).$trait_fn(rhs)
             }
         }
-        impl<$ctx, $scope $($generics)*> $AssignTrait<Val<$ctx, $scope, $T>> for Val<$ctx, $scope, $T> {
+        impl<$ctx: $scope, $scope $($generics)*> $AssignTrait<Val<$ctx, $scope, $T>> for Val<$ctx, $scope, $T> {
             #[track_caller]
             #[must_use]
             fn $assign_trait_fn(&mut self, rhs: Val<$ctx, $scope, $T>) {
                 *self = (*self).$trait_fn(rhs);
             }
         }
-        impl<$ctx, $scope $($generics)*> $AssignTrait<$T> for Val<$ctx, $scope, $T> {
+        impl<$ctx: $scope, $scope $($generics)*> $AssignTrait<$T> for Val<$ctx, $scope, $T> {
             #[track_caller]
             #[must_use]
             fn $assign_trait_fn(&mut self, rhs: $T) {
@@ -120,7 +120,7 @@ macro_rules! impl_same_size_bin_op_helper {
 
 macro_rules! impl_same_size_bin_op {
     ([$ctx:lifetime, $scope:lifetime $($generics:tt)*] $Trait:ident for $T:ty {fn $trait_fn:ident}, $AssignTrait:ident {fn $assign_trait_fn:ident}, $kind:path) => {
-        impl<$ctx, $scope $($generics)*> $Trait<Val<$ctx, $scope, $T>> for Val<$ctx, $scope, $T> {
+        impl<$ctx: $scope, $scope $($generics)*> $Trait<Val<$ctx, $scope, $T>> for Val<$ctx, $scope, $T> {
             type Output = Val<$ctx, $scope, $T>;
 
             #[track_caller]
@@ -135,7 +135,7 @@ macro_rules! impl_same_size_bin_op {
 
 macro_rules! impl_same_size_un_op {
     ([$ctx:lifetime, $scope:lifetime $($generics:tt)*] $Trait:ident for $T:ty {fn $trait_fn:ident}, $kind:path) => {
-        impl<$ctx, $scope $($generics)*> $Trait for Val<$ctx, $scope, $T> {
+        impl<$ctx: $scope, $scope $($generics)*> $Trait for Val<$ctx, $scope, $T> {
             type Output = Val<$ctx, $scope, $T>;
 
             #[track_caller]
@@ -147,7 +147,7 @@ macro_rules! impl_same_size_un_op {
     };
 }
 
-pub trait CompareEq<'ctx, 'scope, Rhs = Self>: Sized {
+pub trait CompareEq<'ctx: 'scope, 'scope, Rhs = Self>: Sized {
     #[track_caller]
     #[must_use]
     fn eq(self, rhs: Rhs) -> Val<'ctx, 'scope, bool>;
@@ -158,7 +158,7 @@ pub trait CompareEq<'ctx, 'scope, Rhs = Self>: Sized {
     }
 }
 
-pub trait CompareGtLE<'ctx, 'scope, Rhs = Self>: Sized {
+pub trait CompareGtLE<'ctx: 'scope, 'scope, Rhs = Self>: Sized {
     #[track_caller]
     #[must_use]
     fn gt(self, rhs: Rhs) -> Val<'ctx, 'scope, bool>;
@@ -169,7 +169,7 @@ pub trait CompareGtLE<'ctx, 'scope, Rhs = Self>: Sized {
     }
 }
 
-pub trait CompareLtGE<'ctx, 'scope, Rhs = Self>: Sized {
+pub trait CompareLtGE<'ctx: 'scope, 'scope, Rhs = Self>: Sized {
     #[track_caller]
     #[must_use]
     fn lt(self, rhs: Rhs) -> Val<'ctx, 'scope, bool>;
@@ -180,7 +180,7 @@ pub trait CompareLtGE<'ctx, 'scope, Rhs = Self>: Sized {
     }
 }
 
-impl<'ctx, 'scope, Lhs, Rhs: CompareLtGE<'ctx, 'scope, Lhs>> CompareGtLE<'ctx, 'scope, Rhs>
+impl<'ctx: 'scope, 'scope, Lhs, Rhs: CompareLtGE<'ctx, 'scope, Lhs>> CompareGtLE<'ctx, 'scope, Rhs>
     for Lhs
 {
     #[track_caller]
@@ -195,20 +195,20 @@ impl<'ctx, 'scope, Lhs, Rhs: CompareLtGE<'ctx, 'scope, Lhs>> CompareGtLE<'ctx, '
     }
 }
 
-pub trait Compare<'ctx, 'scope>:
+pub trait Compare<'ctx: 'scope, 'scope>:
     CompareEq<'ctx, 'scope> + CompareGtLE<'ctx, 'scope> + CompareLtGE<'ctx, 'scope>
 {
 }
 
 impl<
-        'ctx,
+        'ctx: 'scope,
         'scope,
         T: CompareEq<'ctx, 'scope> + CompareGtLE<'ctx, 'scope> + CompareLtGE<'ctx, 'scope>,
     > Compare<'ctx, 'scope> for T
 {
 }
 
-pub trait ReduceBitwise<'ctx, 'scope>: Sized {
+pub trait ReduceBitwise<'ctx: 'scope, 'scope>: Sized {
     #[track_caller]
     #[must_use]
     fn reduce_and(self) -> Val<'ctx, 'scope, bool>;
@@ -237,21 +237,21 @@ pub trait ReduceBitwise<'ctx, 'scope>: Sized {
 
 macro_rules! impl_compare_eq {
     ([$ctx:lifetime, $scope:lifetime $($generics:tt)*] $T:ty) => {
-        impl<$ctx, $scope $($generics)*> CompareEq<$ctx, $scope> for Val<$ctx, $scope, $T> {
+        impl<$ctx: $scope, $scope $($generics)*> CompareEq<$ctx, $scope> for Val<$ctx, $scope, $T> {
             #[track_caller]
             #[must_use]
             fn eq(self, rhs: Self) -> Val<'ctx, 'scope, bool> {
                 bool_out_bin_op_unchecked(BoolOutBinOpKind::CompareEq, self, rhs)
             }
         }
-        impl<$ctx, $scope $($generics)*> CompareEq<$ctx, $scope, $T> for Val<$ctx, $scope, $T> {
+        impl<$ctx: $scope, $scope $($generics)*> CompareEq<$ctx, $scope, $T> for Val<$ctx, $scope, $T> {
             #[track_caller]
             #[must_use]
             fn eq(self, rhs: $T) -> Val<'ctx, 'scope, bool> {
                 bool_out_bin_op_unchecked(BoolOutBinOpKind::CompareEq, self, rhs.get_value(self.ctx()))
             }
         }
-        impl<$ctx, $scope $($generics)*> CompareEq<$ctx, $scope, Val<$ctx, $scope, $T>> for $T {
+        impl<$ctx: $scope, $scope $($generics)*> CompareEq<$ctx, $scope, Val<$ctx, $scope, $T>> for $T {
             #[track_caller]
             #[must_use]
             fn eq(self, rhs: Val<'ctx, 'scope, $T>) -> Val<'ctx, 'scope, bool> {
@@ -264,14 +264,14 @@ macro_rules! impl_compare_eq {
 macro_rules! impl_compare_helper {
     ([$ctx:lifetime, $scope:lifetime $($generics:tt)*] $T:ty) => {
         impl_compare_eq!([$ctx, $scope $($generics)*] $T);
-        impl<$ctx, $scope $($generics)*> CompareLtGE<$ctx, $scope, $T> for Val<$ctx, $scope, $T> {
+        impl<$ctx: $scope, $scope $($generics)*> CompareLtGE<$ctx, $scope, $T> for Val<$ctx, $scope, $T> {
             #[track_caller]
             #[must_use]
             fn lt(self, rhs: $T) -> Val<'ctx, 'scope, bool> {
                 self.lt(rhs.get_value(self.ctx()))
             }
         }
-        impl<$ctx, $scope $($generics)*> CompareLtGE<$ctx, $scope, Val<$ctx, $scope, $T>> for $T {
+        impl<$ctx: $scope, $scope $($generics)*> CompareLtGE<$ctx, $scope, Val<$ctx, $scope, $T>> for $T {
             #[track_caller]
             #[must_use]
             fn lt(self, rhs: Val<'ctx, 'scope, $T>) -> Val<'ctx, 'scope, bool> {
@@ -281,7 +281,7 @@ macro_rules! impl_compare_helper {
     };
 }
 
-impl<'ctx, 'scope> CompareLtGE<'ctx, 'scope> for Val<'ctx, 'scope, bool> {
+impl<'ctx: 'scope, 'scope> CompareLtGE<'ctx, 'scope> for Val<'ctx, 'scope, bool> {
     #[track_caller]
     #[must_use]
     fn lt(self, rhs: Self) -> Val<'ctx, 'scope, bool> {
@@ -289,7 +289,7 @@ impl<'ctx, 'scope> CompareLtGE<'ctx, 'scope> for Val<'ctx, 'scope, bool> {
     }
 }
 
-impl<'ctx, 'scope, Shape: IntShapeTrait> Shr for Val<'ctx, 'scope, Int<Shape>> {
+impl<'ctx: 'scope, 'scope, Shape: IntShapeTrait> Shr for Val<'ctx, 'scope, Int<Shape>> {
     type Output = Self;
 
     #[track_caller]
@@ -319,7 +319,7 @@ impl<'ctx, 'scope, Shape: IntShapeTrait> Shr for Val<'ctx, 'scope, Int<Shape>> {
     }
 }
 
-impl<'ctx, 'scope, Shape: IntShapeTrait> CompareLtGE<'ctx, 'scope>
+impl<'ctx: 'scope, 'scope, Shape: IntShapeTrait> CompareLtGE<'ctx, 'scope>
     for Val<'ctx, 'scope, Int<Shape>>
 {
     #[track_caller]
@@ -351,7 +351,7 @@ impl<'ctx, 'scope, Shape: IntShapeTrait> CompareLtGE<'ctx, 'scope>
 
 macro_rules! impl_reduce_bitwise {
     ([$ctx:lifetime, $scope:lifetime $($generics:tt)*] $T:ty) => {
-        impl<$ctx, $scope $($generics)*> ReduceBitwise<$ctx, $scope> for Val<$ctx, $scope, $T> {
+        impl<$ctx: $scope, $scope $($generics)*> ReduceBitwise<$ctx, $scope> for Val<$ctx, $scope, $T> {
             #[track_caller]
             #[must_use]
             fn reduce_and(self) -> Val<'ctx, 'scope, bool> {
@@ -450,7 +450,7 @@ pub trait Slice<Index> {
     fn slice(self, index: Index) -> Self::Output;
 }
 
-impl<'ctx, 'scope, R: RangeBounds<usize>, T: Value<'ctx>, const N: usize> Slice<R>
+impl<'ctx: 'scope, 'scope, R: RangeBounds<usize>, T: Value<'ctx>, const N: usize> Slice<R>
     for Val<'ctx, 'scope, [T; N]>
 {
     type Output = Val<'ctx, 'scope, Vec<T>>;
@@ -497,7 +497,9 @@ fn resolve_range_bounds<
     start..end
 }
 
-impl<'ctx, 'scope, R: RangeBounds<usize>, T: Value<'ctx>> Slice<R> for Val<'ctx, 'scope, Vec<T>> {
+impl<'ctx: 'scope, 'scope, R: RangeBounds<usize>, T: Value<'ctx>> Slice<R>
+    for Val<'ctx, 'scope, Vec<T>>
+{
     type Output = Val<'ctx, 'scope, Vec<T>>;
 
     #[track_caller]
@@ -515,7 +517,9 @@ impl<'ctx, 'scope, R: RangeBounds<usize>, T: Value<'ctx>> Slice<R> for Val<'ctx,
     }
 }
 
-impl<'ctx, 'scope, R: RangeBounds<usize>, T: Value<'ctx>> Slice<R> for Val<'ctx, 'scope, Box<[T]>> {
+impl<'ctx: 'scope, 'scope, R: RangeBounds<usize>, T: Value<'ctx>> Slice<R>
+    for Val<'ctx, 'scope, Box<[T]>>
+{
     type Output = Val<'ctx, 'scope, Vec<T>>;
 
     #[track_caller]
@@ -525,7 +529,7 @@ impl<'ctx, 'scope, R: RangeBounds<usize>, T: Value<'ctx>> Slice<R> for Val<'ctx,
     }
 }
 
-impl<'ctx, 'scope, R: RangeBounds<u32>, Shape: IntShapeTrait> Slice<R>
+impl<'ctx: 'scope, 'scope, R: RangeBounds<u32>, Shape: IntShapeTrait> Slice<R>
     for Val<'ctx, 'scope, Int<Shape>>
 {
     type Output = Val<'ctx, 'scope, Int>;
@@ -550,7 +554,7 @@ impl<'ctx, 'scope, R: RangeBounds<u32>, Shape: IntShapeTrait> Slice<R>
 
 #[track_caller]
 #[must_use]
-fn wrap_to_signed_helper<'ctx, 'scope, Shape: IntShapeTrait, RetShape: IntShapeTrait>(
+fn wrap_to_signed_helper<'ctx: 'scope, 'scope, Shape: IntShapeTrait, RetShape: IntShapeTrait>(
     value: Val<'ctx, 'scope, Int<Shape>>,
     signed: bool,
 ) -> Val<'ctx, 'scope, Int<RetShape>> {
@@ -573,7 +577,7 @@ fn wrap_to_signed_helper<'ctx, 'scope, Shape: IntShapeTrait, RetShape: IntShapeT
     )
 }
 
-impl<'ctx, 'scope, Shape: IntShapeTrait> Val<'ctx, 'scope, Int<Shape>> {
+impl<'ctx: 'scope, 'scope, Shape: IntShapeTrait> Val<'ctx, 'scope, Int<Shape>> {
     #[track_caller]
     #[must_use]
     pub fn wrap_into_shape<NewShape: IntShapeTrait>(

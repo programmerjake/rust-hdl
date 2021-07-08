@@ -179,7 +179,7 @@ impl ValueImplStruct {
                         let visitor = #crate_path::values::aggregate::StructFieldFixedTypeVisitor::field_with_type_hint(
                             visitor,
                             #name_str,
-                            <Self as #crate_path::values::aggregate::StructValue<#ctx_lifetime>>::FieldEnum::#name,
+                            <Self as #crate_path::values::aggregate::StructValue<#ctx_lifetime, #scope_lifetime>>::FieldEnum::#name,
                             |v: &Self, _| &v.#name,
                         )?;
                     });
@@ -215,8 +215,9 @@ impl ValueImplStruct {
                     }
 
                     #[allow(non_snake_case)]
-                    pub struct __StructOfFieldValues #generics_with_added_lifetimes #where_clause {
+                    pub struct __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
                         #(#struct_of_field_values_fields)*
+                        __phantom: ::core::marker::PhantomData<&#scope_lifetime &#ctx_lifetime ()>,
                     }
                 };
             }
@@ -268,14 +269,16 @@ impl ValueImplStruct {
                     #[allow(non_camel_case_types)]
                     pub type __FieldEnum = usize;
 
+                    #[derive(Clone, Copy)]
                     #[allow(non_snake_case)]
                     pub struct __StructOfFieldEnums(
                         #(#struct_of_field_enums_fields)*
                     );
 
                     #[allow(non_snake_case)]
-                    pub struct __StructOfFieldValues #generics_with_added_lifetimes(
+                    pub struct __AggregateOfFieldValues #generics_with_added_lifetimes(
                         #(#struct_of_field_values_fields)*
+                        ::core::marker::PhantomData<&#scope_lifetime &#ctx_lifetime ()>,
                     ) #where_clause;
                 };
                 struct_of_field_enums_const = quote! {
@@ -296,11 +299,14 @@ impl ValueImplStruct {
                         }
                     }
 
+                    #[derive(Clone, Copy)]
                     #[allow(non_camel_case_types)]
                     pub struct __StructOfFieldEnums;
 
                     #[allow(non_camel_case_types)]
-                    pub struct __StructOfFieldValues #generics_with_added_lifetimes #where_clause;
+                    pub struct __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
+                        __phantom: ::core::marker::PhantomData<&#scope_lifetime &#ctx_lifetime ()>,
+                    }
                 };
                 field_count = 0;
                 struct_of_field_enums_const = quote! { __StructOfFieldEnums };
@@ -339,36 +345,36 @@ impl ValueImplStruct {
             const _: () = {
                 #type_defs
                 #[automatically_derived]
-                impl #impl_generics Copy for __StructOfFieldValues #ty_generics_with_added_lifetimes #where_clause {}
+                impl #impl_generics Copy for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause {}
                 #[automatically_derived]
-                impl #impl_generics Clone for __StructOfFieldValues #ty_generics_with_added_lifetimes #where_clause {
+                impl #impl_generics Clone for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause {
                     fn clone(&self) -> Self {
                         *self
                     }
                 }
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::StructValueStructOfFieldValues<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
-                    type StructOfFieldValues = __StructOfFieldValues #ty_generics_with_added_lifetimes;
+                impl #impl_generics #crate_path::values::aggregate::AggregateOfFieldValues<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
+                    type AggregateOfFieldValues = __AggregateOfFieldValues #ty_generics_with_added_lifetimes;
                 }
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::AggregateValue<#ctx_lifetime> for #name #ty_generics #where_clause {
-                    type AggregateValueKind = #crate_path::values::aggregate::StructAggregateValueKind<#ctx_lifetime, Self>;
+                impl #impl_generics #crate_path::values::aggregate::AggregateValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
+                    type AggregateValueKind = #crate_path::values::aggregate::StructAggregateValueKind<#ctx_lifetime, #scope_lifetime, Self>;
                     type DiscriminantShape = #crate_path::values::integer::UIntShape<0>;
                 }
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::StructValue<#ctx_lifetime> for #name #ty_generics #where_clause {
+                impl #impl_generics #crate_path::values::aggregate::StructValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
                     type FieldEnum = __FieldEnum;
                     type StructOfFieldEnums = __StructOfFieldEnums;
                     const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums = #struct_of_field_enums_const;
                     const FIELD_COUNT: usize = #field_count;
-                    fn visit_fields<V: #crate_path::values::aggregate::StructFieldVisitor<#ctx_lifetime, Self>>(
+                    fn visit_fields<V: #crate_path::values::aggregate::StructFieldVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
                         &self,
                         visitor: V,
                     ) -> ::core::result::Result<V, V::BreakType> {
                         #(#visit_fields)*
                         ::core::result::Result::Ok(visitor)
                     }
-                    fn visit_field_types<V: #crate_path::values::aggregate::StructFieldTypeVisitor<#ctx_lifetime, Self>>(
+                    fn visit_field_types<V: #crate_path::values::aggregate::StructFieldTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
                         visitor: V,
                     ) -> ::core::result::Result<V, V::BreakType> {
                         #(#visit_field_types)*
@@ -395,8 +401,8 @@ impl ValueImplStruct {
         let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
         Ok(quote! {
             #[automatically_derived]
-            impl #impl_generics #crate_path::values::aggregate::FixedTypeStructValue<#ctx_lifetime> for #name #ty_generics #where_clause {
-                fn visit_field_fixed_types<V: #crate_path::values::aggregate::StructFieldFixedTypeVisitor<#ctx_lifetime, Self>>(
+            impl #impl_generics #crate_path::values::aggregate::FixedTypeStructValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
+                fn visit_field_fixed_types<V: #crate_path::values::aggregate::StructFieldFixedTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
                     visitor: V,
                 ) -> ::core::result::Result<V, V::BreakType> {
                     #(#visit_field_fixed_types)*

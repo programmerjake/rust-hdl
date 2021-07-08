@@ -69,14 +69,14 @@ macro_rules! named {
 #[macro_export]
 macro_rules! field_enum {
     (<$ty:ty>::$field:ident) => {{
-        const VALUE: <$ty as $crate::values::StructValue>::FieldEnum =
-            <<$ty as $crate::values::StructValue>::FieldEnum>::$field;
+        const VALUE: <$ty as $crate::values::aggregate::StructValue>::FieldEnum =
+            <<$ty as $crate::values::aggregate::StructValue>::FieldEnum>::$field;
         VALUE
     }};
     (<$ty:ty>::$field:literal) => {{
-        const VALUE: <$ty as $crate::values::StructValue>::FieldEnum = {
+        const VALUE: <$ty as $crate::values::aggregate::StructValue>::FieldEnum = {
             let index: usize = $field;
-            let _ = [(); <$ty as $crate::values::StructValue>::FIELD_COUNT][index];
+            let _ = [(); <$ty as $crate::values::aggregate::StructValue>::FIELD_COUNT][index];
             index
         };
         VALUE
@@ -105,7 +105,7 @@ macro_rules! field_enum {
 /// #[derive(Value)]
 /// struct MyTupleStruct(bool, bool);
 ///
-/// fn get_field<'ctx, 'scope>(v: Val<'ctx, 'scope, MyStruct>) -> Val<'ctx, 'scope, bool> {
+/// fn get_field<'ctx: 'scope, 'scope>(v: Val<'ctx, 'scope, MyStruct>) -> Val<'ctx, 'scope, bool> {
 ///     field!((v).a.1)
 /// }
 /// ```
