@@ -477,6 +477,9 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 }
                 wires.into()
             }
+            IrValue::LiteralEnumVariant(_v) => {
+                todo!("enum types are not yet implemented")
+            }
             IrValue::WireRead(v) => {
                 let mut wires = Vec::new();
                 visit_wire_types_in_type(

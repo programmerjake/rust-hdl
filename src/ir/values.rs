@@ -8,8 +8,8 @@ use crate::{
         logic::{IrRegOutput, IrWireRead},
         module::{combine_owning_modules, IrModuleRef, OwningModule},
         types::{
-            IrArrayType, IrBitVectorType, IrStructFieldType, IrStructType, IrValueType,
-            IrValueTypeRef,
+            IrArrayType, IrBitVectorType, IrEnumType, IrEnumVariantType, IrStructFieldType,
+            IrStructType, IrValueType, IrValueTypeRef,
         },
     },
     values::integer::{Int, IntShape, IntShapeTrait},
@@ -210,6 +210,63 @@ impl<'ctx> OwningModule<'ctx> for LiteralStruct<'ctx> {
 impl<'ctx> From<LiteralStruct<'ctx>> for IrValue<'ctx> {
     fn from(v: LiteralStruct<'ctx>) -> Self {
         Self::LiteralStruct(v)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct LiteralEnumVariant<'ctx> {
+    value_type: IrEnumType<'ctx>,
+    owning_module: Option<IrModuleRef<'ctx>>,
+    variant_index: usize,
+    fields_value: IrValueRef<'ctx>,
+}
+
+impl<'ctx> LiteralEnumVariant<'ctx> {
+    pub fn new(
+        ctx: ContextRef<'ctx>,
+        value_type: IrEnumType<'ctx>,
+        variant_index: usize,
+        fields_value: IrValueRef<'ctx>,
+    ) -> Self {
+        let variant = &value_type.variants()[variant_index];
+        let fields_type = fields_value.get_type(ctx);
+        assert_eq!(IrValueType::from(variant.fields), *fields_type);
+        Self {
+            value_type,
+            owning_module: fields_value.owning_module(),
+            variant_index,
+            fields_value,
+        }
+    }
+    pub fn value_type(self) -> IrEnumType<'ctx> {
+        self.value_type
+    }
+    pub fn variant_index(self) -> usize {
+        self.variant_index
+    }
+    pub fn variant(self) -> &'ctx IrEnumVariantType<'ctx> {
+        &self.value_type.variants().get()[self.variant_index]
+    }
+    pub fn fields_type(self) -> IrStructType<'ctx> {
+        self.variant().fields
+    }
+    pub fn discriminant(self) -> &'ctx LiteralBits {
+        &self.variant().discriminant
+    }
+    pub fn fields_value(self) -> IrValueRef<'ctx> {
+        self.fields_value
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for LiteralEnumVariant<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.owning_module
+    }
+}
+
+impl<'ctx> From<LiteralEnumVariant<'ctx>> for IrValue<'ctx> {
+    fn from(v: LiteralEnumVariant<'ctx>) -> Self {
+        Self::LiteralEnumVariant(v)
     }
 }
 
@@ -930,6 +987,7 @@ pub enum IrValue<'ctx> {
     LiteralBits(LiteralBits),
     LiteralArray(LiteralArray<'ctx>),
     LiteralStruct(LiteralStruct<'ctx>),
+    LiteralEnumVariant(LiteralEnumVariant<'ctx>),
     WireRead(IrWireRead<'ctx>),
     Input(IrModuleInput<'ctx>),
     OutputRead(IrOutputRead<'ctx>),
@@ -962,6 +1020,7 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::LiteralBits(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::LiteralArray(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::LiteralStruct(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::LiteralEnumVariant(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::WireRead(v) => v.0.value_type(),
             IrValue::Input(v) => v.value_type(),
             IrValue::OutputRead(v) => v.0.value_type(),
@@ -987,6 +1046,7 @@ impl<'ctx> OwningModule<'ctx> for IrValue<'ctx> {
             IrValue::LiteralBits(v) => v.owning_module(),
             IrValue::LiteralArray(v) => v.owning_module(),
             IrValue::LiteralStruct(v) => v.owning_module(),
+            IrValue::LiteralEnumVariant(v) => v.owning_module(),
             IrValue::WireRead(v) => v.owning_module(),
             IrValue::Input(v) => v.owning_module(),
             IrValue::OutputRead(v) => v.owning_module(),
@@ -1012,6 +1072,7 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::LiteralBits(v) => v.fmt(f),
             IrValue::LiteralArray(v) => v.fmt(f),
             IrValue::LiteralStruct(v) => v.fmt(f),
+            IrValue::LiteralEnumVariant(v) => v.fmt(f),
             IrValue::WireRead(v) => v.fmt(f),
             IrValue::Input(v) => v.fmt(f),
             IrValue::OutputRead(v) => v.fmt(f),

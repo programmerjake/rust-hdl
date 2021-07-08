@@ -5,7 +5,7 @@ use crate::{
     context::{ContextRef, Intern},
     ir::{
         types::{IrEnumType, IrEnumVariantType, IrStructFieldType, IrStructType, IrValueType},
-        values::{IrValue, LiteralBits, LiteralStruct, LiteralStructField},
+        values::{IrValue, LiteralBits, LiteralEnumVariant, LiteralStruct, LiteralStructField},
     },
     prelude::{FixedTypeValue, Int, Val, Value, ValueType},
     values::integer::{IntShapeTrait, UIntShape},
@@ -402,7 +402,42 @@ impl<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>> AggregateValueKind<'ctx, 
         value: &Self::AggregateValue,
         ctx: ContextRef<'ctx>,
     ) -> Val<'ctx, 'ctx, Self::AggregateValue> {
-        todo!()
+        struct ValueGetter<'ctx> {
+            ctx: ContextRef<'ctx>,
+        }
+        impl<'ctx: 'scope, 'scope, Enum: EnumValue<'ctx, 'scope>>
+            EnumVariantVisitor<'ctx, 'scope, Enum> for ValueGetter<'ctx>
+        {
+            type ResultType = Val<'ctx, 'ctx, Enum>;
+
+            fn variant<VariantType: FixedTypeStructValue<'ctx, 'scope>>(
+                self,
+                name: &'static str,
+                discriminant: Int<Enum::DiscriminantShape>,
+                variant: &VariantType,
+            ) -> Self::ResultType {
+                let enum_type = enum_ir_type::<Enum>(self.ctx);
+                let variant_index = enum_type
+                    .get_variant_index(&discriminant.into())
+                    .expect("variant not found");
+                let value_type = ValueType::from_ir_unchecked(
+                    self.ctx,
+                    IrValueType::from(enum_type).intern(self.ctx),
+                );
+                let literal_enum_variant = LiteralEnumVariant::new(
+                    self.ctx,
+                    enum_type,
+                    variant_index,
+                    variant.get_value(self.ctx).ir(),
+                );
+                assert_eq!(*name, *literal_enum_variant.variant().name);
+                Val::from_ir_and_type_unchecked(
+                    IrValue::from(literal_enum_variant).intern(self.ctx),
+                    value_type,
+                )
+            }
+        }
+        value.visit_variant(ValueGetter { ctx })
     }
     fn static_value_type_opt(
         ctx: ContextRef<'ctx>,
