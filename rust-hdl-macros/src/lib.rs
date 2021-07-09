@@ -2,20 +2,28 @@
 // See Notices.txt for copyright information
 
 use proc_macro2::{Ident, Literal, Span, TokenStream};
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
-    Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Fields, GenericParam, Generics,
-    Lifetime, LifetimeDef, Path, Token, Variant,
+    Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Field, Fields, GenericParam,
+    Generics, Lifetime, LifetimeDef, Path, Token, Type, Variant,
 };
+
+mod kw {
+    syn::custom_keyword!(deref_fields);
+    syn::custom_keyword!(ignored);
+}
 
 enum RustHdlAttributeArg {
     Crate {
         crate_kw: Token![crate],
         eq: Token![=],
         path: Path,
+    },
+    DerefFields {
+        deref_fields: kw::deref_fields,
     },
 }
 
@@ -27,19 +35,37 @@ impl Parse for RustHdlAttributeArg {
                 eq: input.parse()?,
                 path: input.parse()?,
             })
+        } else if input.peek(kw::deref_fields) {
+            Ok(Self::DerefFields {
+                deref_fields: input.parse()?,
+            })
         } else {
-            Err(input.error("expected crate"))
+            Err(input.error("expected `crate` or `deref_fields`"))
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DerefFieldsCount(usize);
+
+impl ToTokens for DerefFieldsCount {
+    fn to_tokens(&self, token_stream: &mut TokenStream) {
+        let star = <Token![*]>::default();
+        for _ in 0..self.0 {
+            star.to_tokens(token_stream);
         }
     }
 }
 
 struct RustHdlAttributes {
     crate_path: Option<Path>,
+    deref_fields_count: DerefFieldsCount,
 }
 
 impl RustHdlAttributes {
     fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut crate_path = None;
+        let mut deref_fields_count = DerefFieldsCount(0);
         for attribute in attrs {
             if attribute.path.is_ident("rust_hdl") {
                 let args = attribute.parse_args_with(
@@ -57,11 +83,18 @@ impl RustHdlAttributes {
                             }
                             crate_path = Some(path);
                         }
+                        RustHdlAttributeArg::DerefFields { deref_fields } => {
+                            let _ = deref_fields;
+                            deref_fields_count.0 += 1;
+                        }
                     }
                 }
             }
         }
-        Ok(Self { crate_path })
+        Ok(Self {
+            crate_path,
+            deref_fields_count,
+        })
     }
     fn get_crate_path(&self) -> Path {
         self.crate_path.clone().unwrap_or_else(|| {
@@ -72,6 +105,71 @@ impl RustHdlAttributes {
     }
 }
 
+enum RustHdlFieldAttributeArg {
+    Ignored { ignored: kw::ignored },
+}
+
+impl Parse for RustHdlFieldAttributeArg {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(kw::ignored) {
+            Ok(Self::Ignored {
+                ignored: input.parse()?,
+            })
+        } else {
+            Err(input.error("expected `ignored`"))
+        }
+    }
+}
+
+struct RustHdlFieldAttributes {
+    ignored: bool,
+}
+
+impl RustHdlFieldAttributes {
+    fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
+        let mut ignored = false;
+        for attribute in attrs {
+            if attribute.path.is_ident("rust_hdl") {
+                let args = attribute.parse_args_with(
+                    Punctuated::<RustHdlFieldAttributeArg, Token![,]>::parse_separated_nonempty,
+                )?;
+                for arg in args {
+                    match arg {
+                        RustHdlFieldAttributeArg::Ignored { ignored: _ignored } => ignored = true,
+                    }
+                }
+            }
+        }
+        Ok(Self { ignored })
+    }
+}
+
+enum RustHdlVariantAttributeArg {}
+
+impl Parse for RustHdlVariantAttributeArg {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        Err(input.error("can't use #[rust_hdl(...)] on enum variants"))
+    }
+}
+
+struct RustHdlVariantAttributes {}
+
+impl RustHdlVariantAttributes {
+    fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
+        for attribute in attrs {
+            if attribute.path.is_ident("rust_hdl") {
+                let args = attribute.parse_args_with(
+                    Punctuated::<RustHdlVariantAttributeArg, Token![,]>::parse_separated_nonempty,
+                )?;
+                for arg in args {
+                    match arg {}
+                }
+            }
+        }
+        Ok(Self {})
+    }
+}
+
 struct GenericsWithAddedLifetimes {
     generics: Generics,
     ctx_lifetime: Lifetime,
@@ -79,31 +177,36 @@ struct GenericsWithAddedLifetimes {
 }
 
 impl GenericsWithAddedLifetimes {
-    fn new(mut generics: Generics) -> Self {
-        let scope_lifetime = Lifetime::new("'__scope", Span::call_site());
-        let ctx_lifetime = generics.lifetimes_mut().find_map(|l| {
-            if l.lifetime.ident == "ctx" {
-                l.bounds.push(scope_lifetime.clone());
+    fn get_or_add_lifetime(
+        mut generics: Generics,
+        ident: &str,
+        additional_bounds: impl IntoIterator<Item = Lifetime>,
+    ) -> (Generics, Lifetime) {
+        let mut additional_bounds = Some(additional_bounds);
+        let lifetime = generics.lifetimes_mut().find_map(|l| {
+            if l.lifetime.ident == ident {
+                l.bounds.extend(additional_bounds.take().unwrap());
                 Some(l.lifetime.clone())
             } else {
                 None
             }
         });
-        let ctx_lifetime = match ctx_lifetime {
+        let lifetime = match lifetime {
             Some(v) => v,
             None => {
-                let ctx_lifetime = Lifetime::new("'ctx", Span::call_site());
+                let ctx_lifetime = Lifetime::new(&format!("'{}", ident), Span::call_site());
                 let mut lifetime_def = LifetimeDef::new(ctx_lifetime.clone());
-                lifetime_def.bounds.push(scope_lifetime.clone());
+                lifetime_def.bounds.extend(additional_bounds.unwrap());
                 generics.params.push(GenericParam::Lifetime(lifetime_def));
                 ctx_lifetime
             }
         };
-        generics
-            .params
-            .push(GenericParam::Lifetime(LifetimeDef::new(
-                scope_lifetime.clone(),
-            )));
+        (generics, lifetime)
+    }
+    fn new(generics: Generics) -> Self {
+        let (generics, scope_lifetime) = Self::get_or_add_lifetime(generics, "scope", []);
+        let (generics, ctx_lifetime) =
+            Self::get_or_add_lifetime(generics, "ctx", [scope_lifetime.clone()]);
         Self {
             generics,
             ctx_lifetime,
@@ -128,9 +231,11 @@ impl ValueImplStruct {
             ctx_lifetime,
             generics_with_added_lifetimes,
             scope_lifetime,
-            ..
+            deref_fields_count,
+            name: struct_name,
+            original_generics,
         } = common;
-        let where_clause = &generics_with_added_lifetimes.where_clause;
+        let (_, ty_generics, where_clause) = original_generics.split_for_impl();
         let type_defs;
         let struct_of_field_enums_const;
         let mut visit_fields = Vec::new();
@@ -143,10 +248,14 @@ impl ValueImplStruct {
                 let mut struct_of_field_enums_fields = Vec::new();
                 let mut struct_of_field_enums_const_fields = Vec::new();
                 let mut struct_of_field_values_fields = Vec::new();
-                field_count = fields.named.len();
                 for field in &fields.named {
+                    let RustHdlFieldAttributes { ignored } =
+                        RustHdlFieldAttributes::parse(&field.attrs)?;
+                    if ignored {
+                        continue;
+                    }
                     let name = field.ident.as_ref().unwrap();
-                    let ty = &field.ty;
+                    let ty = deref_type(&field.ty, *deref_fields_count)?;
                     let vis = &field.vis;
                     let name_str = name.to_string();
                     enum_fields.push(quote! {#name,});
@@ -164,7 +273,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             __FieldEnum::#name,
-                            &self.#name,
+                            &#deref_fields_count self.#name,
                         )?;
                     });
                     visit_field_types.push(quote! {
@@ -172,7 +281,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             __FieldEnum::#name,
-                            |v: &Self, _| &v.#name,
+                            |v: &Self, _| &#deref_fields_count v.#name,
                         )?;
                     });
                     visit_field_fixed_types.push(quote! {
@@ -180,7 +289,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             <Self as #crate_path::values::aggregate::StructValue<#ctx_lifetime, #scope_lifetime>>::FieldEnum::#name,
-                            |v: &Self, _| &v.#name,
+                            |v: &Self, _| &#deref_fields_count v.#name,
                         )?;
                     });
                 }
@@ -194,6 +303,7 @@ impl ValueImplStruct {
                 } else {
                     quote! {#[repr(usize)]}
                 };
+                field_count = enum_fields.len();
                 type_defs = quote! {
                     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
                     #[allow(non_camel_case_types)]
@@ -217,7 +327,7 @@ impl ValueImplStruct {
                     #[allow(non_snake_case)]
                     pub struct __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
                         #(#struct_of_field_values_fields)*
-                        __phantom: ::core::marker::PhantomData<&#scope_lifetime &#ctx_lifetime ()>,
+                        __struct_phantom: ::core::marker::PhantomData<(&#scope_lifetime &#ctx_lifetime (), #struct_name #ty_generics)>,
                     }
                 };
             }
@@ -225,12 +335,25 @@ impl ValueImplStruct {
                 let mut struct_of_field_enums_fields = Vec::new();
                 let mut struct_of_field_enums_const_fields = Vec::new();
                 let mut struct_of_field_values_fields = Vec::new();
-                field_count = fields.unnamed.len();
                 for (name, field) in fields.unnamed.iter().enumerate() {
+                    let RustHdlFieldAttributes { ignored } =
+                        RustHdlFieldAttributes::parse(&field.attrs)?;
                     let name_str = name.to_string();
                     let name = Literal::usize_unsuffixed(name);
                     let vis = &field.vis;
-                    let ty = &field.ty;
+                    if ignored {
+                        struct_of_field_enums_fields.push(quote! {
+                            #vis (),
+                        });
+                        struct_of_field_enums_const_fields.push(quote! {
+                            (),
+                        });
+                        struct_of_field_values_fields.push(quote! {
+                            #vis (),
+                        });
+                        continue;
+                    }
+                    let ty = deref_type(&field.ty, *deref_fields_count)?;
                     struct_of_field_enums_fields.push(quote! {
                         #vis __FieldEnum,
                     });
@@ -245,7 +368,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             #name,
-                            &self.#name,
+                            &#deref_fields_count self.#name,
                         )?;
                     });
                     visit_field_types.push(quote! {
@@ -253,7 +376,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             #name,
-                            |v: &Self, _| &v.#name,
+                            |v: &Self, _| &#deref_fields_count v.#name,
                         )?;
                     });
                     visit_field_fixed_types.push(quote! {
@@ -261,7 +384,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             #name,
-                            |v: &Self, _| &v.#name,
+                            |v: &Self, _| &#deref_fields_count v.#name,
                         )?;
                     });
                 }
@@ -278,7 +401,7 @@ impl ValueImplStruct {
                     #[allow(non_snake_case)]
                     pub struct __AggregateOfFieldValues #generics_with_added_lifetimes(
                         #(#struct_of_field_values_fields)*
-                        ::core::marker::PhantomData<&#scope_lifetime &#ctx_lifetime ()>,
+                        ::core::marker::PhantomData<(&#scope_lifetime &#ctx_lifetime (), #struct_name #ty_generics)>,
                     ) #where_clause;
                 };
                 struct_of_field_enums_const = quote! {
@@ -286,6 +409,7 @@ impl ValueImplStruct {
                         #(#struct_of_field_enums_const_fields)*
                     )
                 };
+                field_count = visit_fields.len();
             }
             Fields::Unit => {
                 type_defs = quote! {
@@ -305,11 +429,11 @@ impl ValueImplStruct {
 
                     #[allow(non_camel_case_types)]
                     pub struct __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
-                        __phantom: ::core::marker::PhantomData<&#scope_lifetime &#ctx_lifetime ()>,
+                        __struct_phantom: ::core::marker::PhantomData<(&#scope_lifetime &#ctx_lifetime (), #struct_name #ty_generics)>,
                     }
                 };
-                field_count = 0;
                 struct_of_field_enums_const = quote! { __StructOfFieldEnums };
+                field_count = 0;
             }
         }
         Ok(Self {
@@ -337,6 +461,7 @@ impl ValueImplStruct {
             ctx_lifetime,
             scope_lifetime,
             name,
+            deref_fields_count: _,
         } = common;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
         let (impl_generics, ty_generics_with_added_lifetimes, _) =
@@ -353,13 +478,10 @@ impl ValueImplStruct {
                     }
                 }
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::AggregateOfFieldValues<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
-                    type AggregateOfFieldValues = __AggregateOfFieldValues #ty_generics_with_added_lifetimes;
-                }
-                #[automatically_derived]
                 impl #impl_generics #crate_path::values::aggregate::AggregateValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
                     type AggregateValueKind = #crate_path::values::aggregate::StructAggregateValueKind<#ctx_lifetime, #scope_lifetime, Self>;
                     type DiscriminantShape = #crate_path::values::integer::UIntShape<0>;
+                    type AggregateOfFieldValues = __AggregateOfFieldValues #ty_generics_with_added_lifetimes;
                 }
                 #[automatically_derived]
                 impl #impl_generics #crate_path::values::aggregate::StructValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
@@ -396,6 +518,7 @@ impl ValueImplStruct {
             ctx_lifetime,
             scope_lifetime,
             name,
+            deref_fields_count: _,
         } = common;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
         let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
@@ -414,59 +537,271 @@ impl ValueImplStruct {
 }
 
 struct ValueImplEnum {
-    get_value_match_arms: Vec<TokenStream>,
-    needed_bits: u32,
+    type_defs: TokenStream,
+    visit_variant_match_arms: Vec<TokenStream>,
+    visit_variant_types: Vec<TokenStream>,
+    aggregate_of_field_values_needs_type_arguments: bool,
+    variant_struct_lifetime: Lifetime,
 }
 
 impl ValueImplEnum {
     // TODO: switch to using IrEnumType
     fn new(data: DataEnum, common: &ValueImplCommon) -> syn::Result<Self> {
-        let _ = common;
-        let mut variants = Vec::with_capacity(data.variants.len());
-        for Variant {
-            attrs: _,
-            ident,
-            fields,
-            discriminant,
-        } in data.variants
+        let ValueImplCommon {
+            name,
+            crate_path,
+            original_generics,
+            generics_with_added_lifetimes,
+            ctx_lifetime,
+            scope_lifetime,
+            deref_fields_count,
+        } = common;
+        let any_discriminants = data.variants.iter().any(|v| v.discriminant.is_some());
+        let mut discriminants = Vec::with_capacity(data.variants.len());
+        let mut visit_variant_match_arms = Vec::with_capacity(data.variants.len());
+        let mut visit_variant_types = Vec::with_capacity(data.variants.len());
+        let mut aggregate_of_field_values_variants = Vec::with_capacity(data.variants.len());
+        let mut aggregate_of_field_values_needs_type_arguments = false;
+        let mut variant_structs = Vec::with_capacity(data.variants.len());
+        let (impl_generics, ty_generics_with_added_lifetimes, _) =
+            generics_with_added_lifetimes.split_for_impl();
+        let (_, ty_generics, where_clause) = original_generics.split_for_impl();
+        let ty_generics_as_turbofish = ty_generics.as_turbofish();
+        let mut variant_struct_generics = generics_with_added_lifetimes.clone();
+        let variant_struct_lifetime = Lifetime::new("'__a", Span::call_site());
+        let mut variant_struct_lifetime_def = LifetimeDef::new(variant_struct_lifetime.clone());
+        variant_struct_lifetime_def
+            .bounds
+            .push(scope_lifetime.clone());
+        variant_struct_generics
+            .params
+            .push(GenericParam::Lifetime(variant_struct_lifetime_def));
+        let (variant_struct_impl_generics, variant_struct_ty_generics, _) =
+            variant_struct_generics.split_for_impl();
+        for (
+            index,
+            Variant {
+                attrs: variant_attrs,
+                ident: variant_name,
+                fields,
+                discriminant: _,
+            },
+        ) in data.variants.into_iter().enumerate()
         {
+            let discriminant = if any_discriminants {
+                quote! { #name::#variant_name as i128 }
+            } else {
+                let index = Literal::usize_unsuffixed(index);
+                quote! { #index }
+            };
+            let variant_name_str = variant_name.to_string();
+            let RustHdlVariantAttributes {} = RustHdlVariantAttributes::parse(&variant_attrs)?;
             match fields {
-                Fields::Named(_) | Fields::Unnamed(_) => {
-                    return Err(Error::new_spanned(
+                Fields::Named(named) => {
+                    let mut aggregate_of_field_values_fields =
+                        Vec::with_capacity(named.named.len());
+                    let mut field_names = Vec::with_capacity(named.named.len());
+                    let mut variant_struct_fields = Vec::with_capacity(named.named.len());
+                    for Field {
+                        attrs,
+                        vis,
                         ident,
-                        "enum variants with fields not allowed with #[derive(Value)]",
-                    ))
+                        ty,
+                        ..
+                    } in named.named
+                    {
+                        let RustHdlFieldAttributes { ignored } =
+                            RustHdlFieldAttributes::parse(&attrs)?;
+                        if ignored {
+                            continue;
+                        }
+                        let ty = deref_type(&ty, *deref_fields_count)?;
+                        aggregate_of_field_values_needs_type_arguments = true;
+                        aggregate_of_field_values_fields.push(quote! {
+                            #vis #ident: #crate_path::values::Val<#ctx_lifetime, #scope_lifetime, #ty>,
+                        });
+                        variant_struct_fields.push(quote! {
+                            pub #ident: &#variant_struct_lifetime #ty,
+                        });
+                        field_names.push(ident);
+                    }
+                    aggregate_of_field_values_variants.push(quote! {
+                        #variant_name {
+                            #(#aggregate_of_field_values_fields)*
+                        },
+                    });
+                    visit_variant_match_arms.push(quote! {
+                        Self::#variant_name { #(#field_names,)* } => {
+                            #crate_path::values::aggregate::EnumVariantVisitor::variant(
+                                __visitor,
+                                #variant_name_str,
+                                #crate_path::values::Int::wrapping_new(#discriminant),
+                                &variant_structs::#variant_name #ty_generics_as_turbofish {
+                                    #(#field_names,)*
+                                    __enum_phantom: ::core::marker::PhantomData,
+                                },
+                            )
+                        }
+                    });
+                    visit_variant_types.push(quote! {
+                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name #ty_generics>(
+                            __visitor,
+                            #variant_name_str,
+                            #crate_path::values::Int::wrapping_new(#discriminant),
+                        )?;
+                    });
+                    variant_structs.push(quote! {
+                        #[derive(#crate_path::values::Value, #crate_path::values::FixedTypeValue)]
+                        #[rust_hdl(crate = #crate_path, deref_fields)]
+                        pub struct #variant_name #variant_struct_generics #where_clause {
+                            #(#variant_struct_fields)*
+                            #[rust_hdl(ignored)]
+                            pub __enum_phantom: ::core::marker::PhantomData<(
+                                &#scope_lifetime &#ctx_lifetime (),
+                                &#variant_struct_lifetime super::#name #ty_generics,
+                            )>,
+                        }
+                    });
                 }
-                Fields::Unit => {}
+                Fields::Unnamed(unnamed) => {
+                    let mut aggregate_of_field_values_fields =
+                        Vec::with_capacity(unnamed.unnamed.len());
+                    let mut field_names = Vec::with_capacity(unnamed.unnamed.len());
+                    let mut variant_struct_fields = Vec::with_capacity(unnamed.unnamed.len());
+                    for (index, Field { vis, ty, attrs, .. }) in
+                        unnamed.unnamed.into_iter().enumerate()
+                    {
+                        let RustHdlFieldAttributes { ignored } =
+                            RustHdlFieldAttributes::parse(&attrs)?;
+                        field_names.push(Ident::new(&format!("v{}", index), Span::call_site()));
+                        if ignored {
+                            aggregate_of_field_values_fields.push(quote! { #vis (), });
+                            variant_struct_fields.push(quote! {
+                                #[rust_hdl(ignored)]
+                                pub (),
+                            });
+                            continue;
+                        }
+                        let ty = deref_type(&ty, *deref_fields_count)?;
+                        aggregate_of_field_values_needs_type_arguments = true;
+                        aggregate_of_field_values_fields.push(quote! { #vis #crate_path::values::Val<#ctx_lifetime, #scope_lifetime, #ty>, });
+                        variant_struct_fields.push(quote! {
+                            pub &#variant_struct_lifetime #ty,
+                        });
+                    }
+                    aggregate_of_field_values_variants.push(quote! {
+                        #variant_name(
+                            #(#aggregate_of_field_values_fields)*
+                        ),
+                    });
+                    visit_variant_match_arms.push(quote! {
+                        Self::#variant_name(#(#field_names,)*) => {
+                            #crate_path::values::aggregate::EnumVariantVisitor::variant(
+                                __visitor,
+                                #variant_name_str,
+                                #crate_path::values::Int::wrapping_new(#discriminant),
+                                &variant_structs::#variant_name #ty_generics_as_turbofish(
+                                    #(#field_names,)*
+                                    ::core::marker::PhantomData,
+                                ),
+                            )
+                        }
+                    });
+                    visit_variant_types.push(quote! {
+                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name #ty_generics>(
+                            __visitor,
+                            #variant_name_str,
+                            #crate_path::values::Int::wrapping_new(#discriminant),
+                        )?;
+                    });
+                    variant_structs.push(quote! {
+                        #[derive(#crate_path::values::Value, #crate_path::values::FixedTypeValue)]
+                        #[rust_hdl(crate = #crate_path, deref_fields)]
+                        pub struct #variant_name #variant_struct_generics(
+                            #(#variant_struct_fields)*
+                            #[rust_hdl(ignored)]
+                            pub ::core::marker::PhantomData<(
+                                &#scope_lifetime &#ctx_lifetime (),
+                                &#variant_struct_lifetime super::#name #ty_generics,
+                            )>,
+                        ) #where_clause;
+                    });
+                }
+                Fields::Unit => {
+                    aggregate_of_field_values_variants.push(quote! { #variant_name, });
+                    visit_variant_match_arms.push(quote! {
+                        Self::#variant_name => {
+                            #crate_path::values::aggregate::EnumVariantVisitor::variant(
+                                __visitor,
+                                #variant_name_str,
+                                #crate_path::values::Int::wrapping_new(#discriminant),
+                                &variant_structs::#variant_name,
+                            )
+                        }
+                    });
+                    visit_variant_types.push(quote! {
+                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name>(
+                            __visitor,
+                            #variant_name_str,
+                            #crate_path::values::Int::wrapping_new(#discriminant),
+                        )?;
+                    });
+                    variant_structs.push(quote! {
+                        #[derive(#crate_path::values::Value, #crate_path::values::FixedTypeValue)]
+                        #[rust_hdl(crate = #crate_path)]
+                        pub struct #variant_name;
+                    });
+                }
             }
-            if let Some(discriminant) = discriminant {
-                return Err(Error::new_spanned(
-                    discriminant.1,
-                    "enum variants with discriminants not allowed with #[derive(Value)]",
-                ));
+            discriminants.push(discriminant);
+        }
+        let declare_aggregate_of_field_values = if aggregate_of_field_values_needs_type_arguments {
+            quote! {
+                pub enum __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
+                    #(#aggregate_of_field_values_variants)*
+                }
+                #[automatically_derived]
+                impl #impl_generics Copy for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause {}
+                #[automatically_derived]
+                impl #impl_generics Clone for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause {
+                    fn clone(&self) -> Self {
+                        *self
+                    }
+                }
             }
-            variants.push(ident);
-        }
-        let mut needed_bits = 0;
-        while (1 << needed_bits) < variants.len() as u128 {
-            needed_bits += 1;
-        }
-        let mut get_value_match_arms = Vec::with_capacity(variants.len());
-        for (index, variant) in variants.into_iter().enumerate() {
-            let index = Literal::usize_unsuffixed(index);
-            get_value_match_arms.push(quote! {
-                Self::#variant => #index,
-            });
-        }
+        } else {
+            quote! {
+                #[derive(Copy, Clone)]
+                pub enum __AggregateOfFieldValues {
+                    #(#aggregate_of_field_values_variants)*
+                }
+            }
+        };
+        let type_defs = quote! {
+            mod variant_structs {
+                #(#variant_structs)*
+            }
+            #declare_aggregate_of_field_values
+            const __DISCRIMINANT_SHAPE: #crate_path::values::integer::IntShape =
+                #crate_path::values::aggregate::EnumDiscriminantShapeCalculator::new()
+                    #(.add_discriminant(#discriminants))*
+                    .get_shape();
+        };
         Ok(Self {
-            get_value_match_arms,
-            needed_bits,
+            type_defs,
+            visit_variant_match_arms,
+            visit_variant_types,
+            aggregate_of_field_values_needs_type_arguments,
+            variant_struct_lifetime,
         })
     }
     fn derive_value(self, common: ValueImplCommon) -> syn::Result<TokenStream> {
         let Self {
-            get_value_match_arms,
-            needed_bits,
+            type_defs,
+            visit_variant_match_arms,
+            visit_variant_types,
+            aggregate_of_field_values_needs_type_arguments,
+            variant_struct_lifetime,
         } = self;
         let ValueImplCommon {
             crate_path,
@@ -475,55 +810,49 @@ impl ValueImplEnum {
             ctx_lifetime,
             scope_lifetime,
             name,
+            deref_fields_count,
         } = common;
-        let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
+        let (impl_generics, ty_generics_with_added_lifetimes, _) =
+            generics_with_added_lifetimes.split_for_impl();
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
-        if get_value_match_arms.is_empty() {
-            Ok(quote! {
+        let aggregate_of_field_values_ty_generics = aggregate_of_field_values_needs_type_arguments
+            .then(|| ty_generics_with_added_lifetimes);
+        Ok(quote! {
+            const _: () = {
+                #type_defs
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::Value<#ctx_lifetime> for #name #ty_generics #where_clause {
-                    fn get_value(&self, ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> #crate_path::values::Val<#ctx_lifetime, #ctx_lifetime, Self> {
-                        match *self {}
+                impl #impl_generics #crate_path::values::aggregate::AggregateValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
+                    type AggregateValueKind = #crate_path::values::aggregate::EnumAggregateValueKind<#ctx_lifetime, #scope_lifetime, Self>;
+                    type DiscriminantShape = #crate_path::values::integer::ConstIntShape<
+                        { __DISCRIMINANT_SHAPE.bit_count },
+                        { __DISCRIMINANT_SHAPE.signed },
+                    >;
+                    type AggregateOfFieldValues = __AggregateOfFieldValues #aggregate_of_field_values_ty_generics;
+                }
+                #[automatically_derived]
+                impl #impl_generics #crate_path::values::aggregate::EnumValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
+                    fn visit_variant<
+                        #variant_struct_lifetime,
+                        V: #crate_path::values::aggregate::EnumVariantVisitor<#ctx_lifetime, #scope_lifetime, Self>
+                    >(
+                        &#variant_struct_lifetime self,
+                        __visitor: V,
+                    ) -> V::ResultType {
+                        match self {
+                            #(#visit_variant_match_arms)*
+                        }
                     }
-                    fn static_value_type_opt(ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> ::core::option::Option<#crate_path::values::ValueType<#ctx_lifetime, Self>> {
-                        ::core::panic!("can't create uninhabited type")
+                    fn visit_variant_types<V: #crate_path::values::aggregate::EnumVariantTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
+                        __visitor: V,
+                    ) -> ::core::result::Result<V, V::BreakType> {
+                        #(#visit_variant_types)*
+                        ::core::result::Result::Ok(__visitor)
                     }
                 }
-            })
-        } else {
-            Ok(quote! {
-                #[automatically_derived]
-                impl #impl_generics #crate_path::values::Value<#ctx_lifetime> for #name #ty_generics #where_clause {
-                    fn get_value(&self, ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> #crate_path::values::Val<#ctx_lifetime, #ctx_lifetime, Self> {
-                        let value: u128 = match *self {
-                            #(#get_value_match_arms)*
-                        };
-                        let value = #crate_path::values::UInt::<#needed_bits>::wrapping_new(value);
-                        let value = #crate_path::values::Value::get_value(&value, ctx);
-                        #crate_path::values::Val::from_ir_and_type_unchecked(
-                            value.ir(),
-                            #crate_path::values::ValueType::from_ir_unchecked(
-                                ctx,
-                                value.value_type().ir(),
-                            ),
-                        )
-                    }
-                    fn static_value_type_opt(ctx: #crate_path::context::ContextRef<#ctx_lifetime>) -> ::core::option::Option<#crate_path::values::ValueType<#ctx_lifetime, Self>> {
-                        let value_type = <#crate_path::values::UInt<#needed_bits> as #crate_path::values::Value<#ctx_lifetime>>::static_value_type_opt(ctx)?;
-                        ::core::option::Option::Some(#crate_path::values::ValueType::from_ir_unchecked(
-                            ctx,
-                            value_type.ir(),
-                        ))
-                    }
-                }
-            })
-        }
+            };
+        })
     }
     fn derive_fixed_type_value(self, common: ValueImplCommon) -> syn::Result<TokenStream> {
-        let Self {
-            get_value_match_arms,
-            needed_bits: _,
-        } = self;
         let ValueImplCommon {
             crate_path,
             original_generics,
@@ -531,20 +860,14 @@ impl ValueImplEnum {
             ctx_lifetime,
             scope_lifetime,
             name,
+            deref_fields_count,
         } = common;
         let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
-        if get_value_match_arms.is_empty() {
-            Ok(quote! {
-                #[automatically_derived]
-                impl #impl_generics #crate_path::values::FixedTypeValue<#ctx_lifetime> for #name #ty_generics #where_clause {}
-            })
-        } else {
-            Ok(quote! {
-                #[automatically_derived]
-                impl #impl_generics #crate_path::values::FixedTypeValue<#ctx_lifetime> for #name #ty_generics #where_clause {}
-            })
-        }
+        Ok(quote! {
+            #[automatically_derived]
+            impl #impl_generics #crate_path::values::aggregate::FixedTypeEnumValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {}
+        })
     }
 }
 
@@ -555,11 +878,27 @@ enum ValueImplData {
 
 struct ValueImplCommon {
     crate_path: Path,
+    deref_fields_count: DerefFieldsCount,
     original_generics: Generics,
     generics_with_added_lifetimes: Generics,
     ctx_lifetime: Lifetime,
     scope_lifetime: Lifetime,
     name: Ident,
+}
+
+fn deref_type(mut ty: &Type, count: DerefFieldsCount) -> syn::Result<&Type> {
+    for _ in 0..count.0 {
+        ty = match ty {
+            Type::Reference(v) => &v.elem,
+            _ => {
+                return Err(Error::new_spanned(
+                    ty,
+                    "dereferencing only supported on reference types",
+                ))
+            }
+        };
+    }
+    Ok(ty)
 }
 
 struct ValueImpl {
@@ -583,6 +922,7 @@ impl ValueImpl {
             scope_lifetime,
             original_generics: ast.generics,
             name: ast.ident,
+            deref_fields_count: rust_hdl_attributes.deref_fields_count,
         };
         let data = match ast.data {
             Data::Struct(v) => ValueImplData::Struct(ValueImplStruct::new(v, &common)?),
@@ -717,42 +1057,59 @@ fn derive_plain_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     })
 }
 
+fn debug_input(input: &DeriveInput, derive_name: &str) {
+    eprintln!(
+        "--------INPUT: {}\n{}\n--------",
+        derive_name,
+        input.to_token_stream()
+    );
+}
+
+#[track_caller]
+fn debug_output(output: &TokenStream, derive_name: &str) {
+    eprintln!("--------OUTPUT: {}\n{}\n--------", derive_name, output);
+}
+
 #[proc_macro_derive(Value, attributes(rust_hdl))]
 pub fn derive_value(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
-    match derive_value_impl(ast) {
+    debug_input(&ast, "Value");
+    let retval = match derive_value_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),
-    }
-    .into()
+    };
+    debug_output(&retval, "Value");
+    retval.into()
 }
 
 #[proc_macro_derive(FixedTypeValue, attributes(rust_hdl))]
 pub fn derive_fixed_type_value(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
-    match derive_fixed_type_value_impl(ast) {
+    debug_input(&ast, "FixedTypeValue");
+    let retval = match derive_fixed_type_value_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),
-    }
-    .into()
+    };
+    debug_output(&retval, "FixedTypeValue");
+    retval.into()
 }
 
 #[proc_macro_derive(IO, attributes(rust_hdl))]
 pub fn derive_io(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
-    match derive_io_impl(ast) {
+    let retval = match derive_io_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),
-    }
-    .into()
+    };
+    retval.into()
 }
 
 #[proc_macro_derive(PlainIO, attributes(rust_hdl))]
 pub fn derive_plain_io(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
-    match derive_plain_io_impl(ast) {
+    let retval = match derive_plain_io_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),
-    }
-    .into()
+    };
+    retval.into()
 }

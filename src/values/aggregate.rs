@@ -8,7 +8,7 @@ use crate::{
         values::{IrValue, LiteralBits, LiteralEnumVariant, LiteralStruct, LiteralStructField},
     },
     prelude::{FixedTypeValue, Int, Val, Value, ValueType},
-    values::integer::{IntShapeTrait, UIntShape},
+    values::integer::{IntShape, IntShapeTrait, UIntShape},
 };
 use alloc::vec::Vec;
 use core::{convert::Infallible, hash::Hash, marker::PhantomData};
@@ -36,15 +36,10 @@ where
     fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self::AggregateValue>;
 }
 
-pub trait AggregateOfFieldValues<'ctx: 'scope, 'scope> {
-    type AggregateOfFieldValues: 'scope + Copy;
-}
-
-pub trait AggregateValue<'ctx: 'scope, 'scope>:
-    Value<'ctx> + AggregateOfFieldValues<'ctx, 'scope>
-{
+pub trait AggregateValue<'ctx: 'scope, 'scope>: Value<'ctx> {
     type AggregateValueKind: AggregateValueKind<'ctx, 'scope>;
     type DiscriminantShape: IntShapeTrait + Default;
+    type AggregateOfFieldValues: 'scope + Copy;
 }
 
 impl<'ctx: 'scope, 'scope, T: AggregateValue<'ctx, 'scope>> Value<'ctx> for T
@@ -454,5 +449,188 @@ impl<'ctx: 'scope, 'scope, T: FixedTypeEnumValue<'ctx, 'scope>>
 {
     fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self::AggregateValue> {
         ValueType::from_ir_unchecked(ctx, IrValueType::from(enum_ir_type::<T>(ctx)).intern(ctx))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[must_use]
+pub struct EnumDiscriminantShapeCalculator {
+    min_discriminant: i128,
+    max_discriminant: i128,
+}
+
+impl EnumDiscriminantShapeCalculator {
+    pub const fn new() -> Self {
+        Self {
+            min_discriminant: i128::MAX,
+            max_discriminant: i128::MIN,
+        }
+    }
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.max_discriminant < self.min_discriminant
+    }
+    pub const fn add_discriminant(mut self, discriminant: i128) -> Self {
+        if discriminant < self.min_discriminant {
+            self.min_discriminant = discriminant;
+        }
+        if discriminant > self.max_discriminant {
+            self.max_discriminant = discriminant;
+        }
+        self
+    }
+    #[must_use]
+    pub const fn get_shape(self) -> IntShape {
+        if self.is_empty() {
+            IntShape {
+                bit_count: 0,
+                signed: false,
+            }
+        } else {
+            let mut retval = IntShape {
+                bit_count: 0,
+                signed: self.min_discriminant < 0,
+            };
+            while retval.wrap_i128(self.min_discriminant) != self.min_discriminant
+                || retval.wrap_i128(self.max_discriminant) != self.max_discriminant
+            {
+                retval.bit_count += 1;
+            }
+            retval
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_enum_discriminant_shape_calculator() {
+        assert!(EnumDiscriminantShapeCalculator::new().is_empty());
+        assert!(!EnumDiscriminantShapeCalculator::new()
+            .add_discriminant(0)
+            .is_empty());
+        assert!(!EnumDiscriminantShapeCalculator::new()
+            .add_discriminant(1)
+            .is_empty());
+        assert!(!EnumDiscriminantShapeCalculator::new()
+            .add_discriminant(-1)
+            .is_empty());
+        assert!(!EnumDiscriminantShapeCalculator::new()
+            .add_discriminant(i128::MAX)
+            .is_empty());
+        assert!(!EnumDiscriminantShapeCalculator::new()
+            .add_discriminant(i128::MIN)
+            .is_empty());
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new().get_shape(),
+            IntShape {
+                bit_count: 0,
+                signed: false
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(0)
+                .get_shape(),
+            IntShape {
+                bit_count: 0,
+                signed: false
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(1)
+                .get_shape(),
+            IntShape {
+                bit_count: 1,
+                signed: false
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(-1)
+                .get_shape(),
+            IntShape {
+                bit_count: 1,
+                signed: true
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(-1)
+                .add_discriminant(0)
+                .get_shape(),
+            IntShape {
+                bit_count: 1,
+                signed: true
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(-1)
+                .add_discriminant(1)
+                .get_shape(),
+            IntShape {
+                bit_count: 2,
+                signed: true
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(0)
+                .add_discriminant(1)
+                .get_shape(),
+            IntShape {
+                bit_count: 1,
+                signed: false
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(i128::MIN)
+                .get_shape(),
+            IntShape {
+                bit_count: 128,
+                signed: true
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(i128::MAX)
+                .get_shape(),
+            IntShape {
+                bit_count: 127,
+                signed: false
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(u64::MAX as _)
+                .get_shape(),
+            IntShape {
+                bit_count: 64,
+                signed: false
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(i64::MIN as _)
+                .get_shape(),
+            IntShape {
+                bit_count: 64,
+                signed: true
+            }
+        );
+        assert_eq!(
+            EnumDiscriminantShapeCalculator::new()
+                .add_discriminant(i64::MIN as i128 - 1)
+                .get_shape(),
+            IntShape {
+                bit_count: 65,
+                signed: true
+            }
+        );
     }
 }

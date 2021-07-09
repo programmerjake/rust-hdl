@@ -213,6 +213,31 @@ impl<'ctx, T: Value<'ctx>> Value<'ctx> for Vec<T> {
     }
 }
 
+impl<'ctx, T: ?Sized> Value<'ctx> for PhantomData<T> {
+    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, 'ctx, Self> {
+        Val::from_ir_and_type_unchecked(
+            IrValue::from(LiteralBits::new()).intern(ctx),
+            Self::static_value_type(ctx),
+        )
+    }
+    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+        Some(Self::static_value_type(ctx))
+    }
+}
+
+impl<'ctx, T: ?Sized> FixedTypeValue<'ctx> for PhantomData<T> {
+    fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
+        ValueType::from_ir_unchecked(
+            ctx,
+            IrValueType::from(IrBitVectorType {
+                bit_count: 0,
+                signed: false,
+            })
+            .intern(ctx),
+        )
+    }
+}
+
 pub struct Val<'ctx, 'scope, T: Value<'ctx>> {
     ir: IrValueRef<'ctx>,
     value_type: ValueType<'ctx, T>,

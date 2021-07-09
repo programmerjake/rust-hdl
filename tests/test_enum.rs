@@ -37,6 +37,26 @@ mod enum_mod {
         C,
         D,
     }
+
+    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #[allow(dead_code)]
+    pub enum EnumStruct<Shape: 'static>
+    where
+        Shape: rust_hdl::values::integer::IntShapeTrait,
+        rust_hdl::values::Int<Shape>: for<'ctx2> rust_hdl::values::FixedTypeValue<'ctx2>,
+    {
+        A {
+            f1: rust_hdl::values::Int8,
+        },
+        B(),
+        C {},
+        D(rust_hdl::values::Int<Shape>),
+        E {
+            #[rust_hdl(ignored)]
+            f1: rust_hdl::values::Int8,
+        },
+        F(#[rust_hdl(ignored)] String),
+    }
 }
 
 #[test]

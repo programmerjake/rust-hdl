@@ -20,6 +20,25 @@ pub struct IntShape {
     pub signed: bool,
 }
 
+impl IntShape {
+    #[must_use]
+    pub const fn wrap_i128(self, mut value: i128) -> i128 {
+        if self.bit_count >= i128::BITS {
+            value
+        } else if self.bit_count == 0 {
+            0
+        } else {
+            let pow2 = 1i128.wrapping_shl(self.bit_count);
+            let mask = pow2 - 1;
+            value &= mask;
+            if self.signed && (value >> (self.bit_count - 1)) != 0 {
+                value -= pow2;
+            }
+            value
+        }
+    }
+}
+
 impl fmt::Display for IntShape {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.signed {
