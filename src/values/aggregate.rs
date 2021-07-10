@@ -39,7 +39,7 @@ where
 pub trait AggregateValue<'ctx: 'scope, 'scope>: Value<'ctx> {
     type AggregateValueKind: AggregateValueKind<'ctx, 'scope>;
     type DiscriminantShape: IntShapeTrait + Default;
-    type AggregateOfFieldValues: 'scope + Copy;
+    type AggregateOfFieldValues: Copy;
 }
 
 impl<'ctx: 'scope, 'scope, T: AggregateValue<'ctx, 'scope>> Value<'ctx> for T
@@ -183,10 +183,12 @@ pub trait StructValue<'ctx: 'scope, 'scope>:
     type StructOfFieldEnums: 'static + Copy + Send + Sync;
     const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums;
     const FIELD_COUNT: usize;
-    fn visit_fields<V: StructFieldVisitor<'ctx, 'scope, Self>>(
-        &self,
+    fn visit_fields<'a, V: StructFieldVisitor<'ctx, 'scope, Self>>(
+        &'a self,
         visitor: V,
-    ) -> Result<V, V::BreakType>;
+    ) -> Result<V, V::BreakType>
+    where
+        'scope: 'a;
     fn visit_field_types<V: StructFieldTypeVisitor<'ctx, 'scope, Self>>(
         visitor: V,
     ) -> Result<V, V::BreakType>;
@@ -259,13 +261,54 @@ pub trait FixedTypeStructValue<'ctx: 'scope, 'scope>:
     ) -> Result<V, V::BreakType>;
 }
 
+pub trait EnumVariantFieldVisitor<
+    'ctx: 'scope,
+    'scope,
+    Enum: EnumValue<'ctx, 'scope>,
+    EnumVariant: EnumVariantRef<'ctx, 'scope, Enum>,
+>: Sized
+{
+    type BreakType;
+    fn field<FieldType: FixedTypeValue<'ctx>>(
+        self,
+        name: &'static str,
+        field_index: usize,
+        field: &FieldType,
+    ) -> Result<Self, Self::BreakType>;
+}
+
+pub trait EnumVariantFieldTypeVisitor<
+    'ctx: 'scope,
+    'scope,
+    Enum: EnumValue<'ctx, 'scope>,
+    EnumVariant: EnumVariantRef<'ctx, 'scope, Enum>,
+>: Sized
+{
+    type BreakType;
+    fn field<FieldType: FixedTypeValue<'ctx>>(
+        self,
+        name: &'static str,
+        field_index: usize,
+    ) -> Result<Self, Self::BreakType>;
+}
+
+pub trait EnumVariantRef<'ctx: 'scope, 'scope, Enum: EnumValue<'ctx, 'scope>>: Copy {
+    fn visit_fields<V: EnumVariantFieldVisitor<'ctx, 'scope, Enum, Self>>(
+        self,
+        visitor: V,
+    ) -> Result<V, V::BreakType>;
+    fn visit_field_types<V: EnumVariantFieldTypeVisitor<'ctx, 'scope, Enum, Self>>(
+        visitor: V,
+    ) -> Result<V, V::BreakType>;
+}
+
 pub trait EnumVariantVisitor<'ctx: 'scope, 'scope, Enum: EnumValue<'ctx, 'scope>>: Sized {
     type ResultType;
-    fn variant<VariantType: FixedTypeStructValue<'ctx, 'scope>>(
+    fn variant<VariantType: EnumVariantRef<'ctx, 'scope, Enum>>(
         self,
         name: &'static str,
         discriminant: Int<Enum::DiscriminantShape>,
-        variant: &VariantType,
+        variant: VariantType,
     ) -> Self::ResultType;
 }
 
@@ -273,13 +316,13 @@ pub trait EnumVariantTypeVisitor<'ctx: 'scope, 'scope, Enum: EnumValue<'ctx, 'sc
     Sized
 {
     type BreakType;
-    fn variant<VariantType: FixedTypeStructValue<'ctx, 'scope>>(
+    fn variant<VariantType: EnumVariantRef<'ctx, 'scope, Enum>>(
         self,
         name: &'static str,
         discriminant: Int<Enum::DiscriminantShape>,
     ) -> Result<Self, Self::BreakType>;
     fn variant_with_type_hint<
-        VariantType: FixedTypeStructValue<'ctx, 'scope>,
+        VariantType: EnumVariantRef<'ctx, 'scope, Enum>,
         TypeHint: FnOnce(&Enum, Infallible) -> &VariantType,
     >(
         self,
@@ -294,8 +337,12 @@ pub trait EnumVariantTypeVisitor<'ctx: 'scope, 'scope, Enum: EnumValue<'ctx, 'sc
 pub trait EnumValue<'ctx: 'scope, 'scope>:
     AggregateValue<'ctx, 'scope, AggregateValueKind = EnumAggregateValueKind<'ctx, 'scope, Self>>
 {
-    fn visit_variant<V: EnumVariantVisitor<'ctx, 'scope, Self>>(&self, visitor: V)
-        -> V::ResultType;
+    fn visit_variant<'a, V: EnumVariantVisitor<'ctx, 'scope, Self>>(
+        &'a self,
+        visitor: V,
+    ) -> V::ResultType
+    where
+        'scope: 'a;
     fn visit_variant_types<V: EnumVariantTypeVisitor<'ctx, 'scope, Self>>(
         visitor: V,
     ) -> Result<V, V::BreakType>;
@@ -354,6 +401,33 @@ fn fixed_type_struct_ir_type<'ctx: 'scope, 'scope, T: FixedTypeStructValue<'ctx,
 fn enum_ir_type<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>>(
     ctx: ContextRef<'ctx>,
 ) -> IrEnumType<'ctx> {
+    struct VariantValueTypeGetter<'ctx> {
+        fields: Vec<IrStructFieldType<'ctx>>,
+        ctx: ContextRef<'ctx>,
+    }
+    impl<
+            'ctx: 'scope,
+            'scope,
+            Enum: EnumValue<'ctx, 'scope>,
+            EnumVariant: EnumVariantRef<'ctx, 'scope, Enum>,
+        > EnumVariantFieldTypeVisitor<'ctx, 'scope, Enum, EnumVariant>
+        for VariantValueTypeGetter<'ctx>
+    {
+        type BreakType = Infallible;
+
+        fn field<FieldType: FixedTypeValue<'ctx>>(
+            mut self,
+            name: &'static str,
+            field_index: usize,
+        ) -> Result<Self, Self::BreakType> {
+            assert_eq!(field_index, self.fields.len());
+            self.fields.push(IrStructFieldType {
+                name: name.intern(self.ctx),
+                ty: FieldType::static_value_type(self.ctx).ir(),
+            });
+            Ok(self)
+        }
+    }
     struct ValueTypeGetter<'ctx> {
         variants: Vec<IrEnumVariantType<'ctx>>,
         ctx: ContextRef<'ctx>,
@@ -363,15 +437,21 @@ fn enum_ir_type<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>>(
     {
         type BreakType = Infallible;
 
-        fn variant<VariantType: FixedTypeStructValue<'ctx, 'scope>>(
+        fn variant<VariantType: EnumVariantRef<'ctx, 'scope, Enum>>(
             mut self,
             name: &'static str,
             discriminant: Int<Enum::DiscriminantShape>,
         ) -> Result<Self, Self::BreakType> {
+            let fields = VariantType::visit_field_types(VariantValueTypeGetter {
+                ctx: self.ctx,
+                fields: Vec::new(),
+            })
+            .unwrap()
+            .fields;
             self.variants.push(IrEnumVariantType {
                 name: name.intern(self.ctx),
                 discriminant: LiteralBits::from(discriminant),
-                fields: fixed_type_struct_ir_type::<VariantType>(self.ctx),
+                fields: IrStructType::new(self.ctx, fields),
             });
             Ok(self)
         }
@@ -397,6 +477,33 @@ impl<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>> AggregateValueKind<'ctx, 
         value: &Self::AggregateValue,
         ctx: ContextRef<'ctx>,
     ) -> Val<'ctx, 'ctx, Self::AggregateValue> {
+        struct VariantFieldsValueGetter<'ctx> {
+            ctx: ContextRef<'ctx>,
+            fields: Vec<LiteralStructField<'ctx>>,
+        }
+        impl<
+                'ctx: 'scope,
+                'scope,
+                Enum: EnumValue<'ctx, 'scope>,
+                EnumVariant: EnumVariantRef<'ctx, 'scope, Enum>,
+            > EnumVariantFieldVisitor<'ctx, 'scope, Enum, EnumVariant>
+            for VariantFieldsValueGetter<'ctx>
+        {
+            type BreakType = Infallible;
+            fn field<FieldType: FixedTypeValue<'ctx>>(
+                mut self,
+                name: &'static str,
+                field_index: usize,
+                field: &FieldType,
+            ) -> Result<Self, Self::BreakType> {
+                assert_eq!(field_index, self.fields.len());
+                self.fields.push(LiteralStructField {
+                    name: name.intern(self.ctx),
+                    value: field.get_value(self.ctx).ir(),
+                });
+                Ok(self)
+            }
+        }
         struct ValueGetter<'ctx> {
             ctx: ContextRef<'ctx>,
         }
@@ -405,11 +512,11 @@ impl<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>> AggregateValueKind<'ctx, 
         {
             type ResultType = Val<'ctx, 'ctx, Enum>;
 
-            fn variant<VariantType: FixedTypeStructValue<'ctx, 'scope>>(
+            fn variant<VariantType: EnumVariantRef<'ctx, 'scope, Enum>>(
                 self,
                 name: &'static str,
                 discriminant: Int<Enum::DiscriminantShape>,
-                variant: &VariantType,
+                variant: VariantType,
             ) -> Self::ResultType {
                 let enum_type = enum_ir_type::<Enum>(self.ctx);
                 let variant_index = enum_type
@@ -419,12 +526,17 @@ impl<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>> AggregateValueKind<'ctx, 
                     self.ctx,
                     IrValueType::from(enum_type).intern(self.ctx),
                 );
-                let literal_enum_variant = LiteralEnumVariant::new(
-                    self.ctx,
-                    enum_type,
-                    variant_index,
-                    variant.get_value(self.ctx).ir(),
-                );
+                let fields = variant
+                    .visit_fields(VariantFieldsValueGetter {
+                        ctx: self.ctx,
+                        fields: Vec::new(),
+                    })
+                    .unwrap()
+                    .fields;
+                let fields_value =
+                    IrValue::from(LiteralStruct::new(self.ctx, fields)).intern(self.ctx);
+                let literal_enum_variant =
+                    LiteralEnumVariant::new(self.ctx, enum_type, variant_index, fields_value);
                 assert_eq!(*name, *literal_enum_variant.variant().name);
                 Val::from_ir_and_type_unchecked(
                     IrValue::from(literal_enum_variant).intern(self.ctx),

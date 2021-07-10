@@ -22,19 +22,19 @@ pub struct IntShape {
 
 impl IntShape {
     #[must_use]
-    pub const fn wrap_i128(self, mut value: i128) -> i128 {
+    pub const fn wrap_i128(self, value: i128) -> i128 {
         if self.bit_count >= i128::BITS {
             value
         } else if self.bit_count == 0 {
             0
         } else {
-            let pow2 = 1i128.wrapping_shl(self.bit_count);
-            let mask = pow2 - 1;
-            value &= mask;
-            if self.signed && (value >> (self.bit_count - 1)) != 0 {
-                value -= pow2;
+            let shift_amount = i128::BITS - self.bit_count;
+            let shifted_left = value.wrapping_shl(shift_amount);
+            if self.signed {
+                shifted_left >> shift_amount
+            } else {
+                (shifted_left as u128 >> shift_amount) as i128
             }
-            value
         }
     }
 }

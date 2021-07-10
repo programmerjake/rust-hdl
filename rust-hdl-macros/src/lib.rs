@@ -2,17 +2,16 @@
 // See Notices.txt for copyright information
 
 use proc_macro2::{Ident, Literal, Span, TokenStream};
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
     Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Field, Fields, GenericParam,
-    Generics, Lifetime, LifetimeDef, Path, Token, Type, Variant,
+    Generics, Lifetime, LifetimeDef, Path, Token, Variant,
 };
 
 mod kw {
-    syn::custom_keyword!(deref_fields);
     syn::custom_keyword!(ignored);
 }
 
@@ -21,9 +20,6 @@ enum RustHdlAttributeArg {
         crate_kw: Token![crate],
         eq: Token![=],
         path: Path,
-    },
-    DerefFields {
-        deref_fields: kw::deref_fields,
     },
 }
 
@@ -35,37 +31,19 @@ impl Parse for RustHdlAttributeArg {
                 eq: input.parse()?,
                 path: input.parse()?,
             })
-        } else if input.peek(kw::deref_fields) {
-            Ok(Self::DerefFields {
-                deref_fields: input.parse()?,
-            })
         } else {
-            Err(input.error("expected `crate` or `deref_fields`"))
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct DerefFieldsCount(usize);
-
-impl ToTokens for DerefFieldsCount {
-    fn to_tokens(&self, token_stream: &mut TokenStream) {
-        let star = <Token![*]>::default();
-        for _ in 0..self.0 {
-            star.to_tokens(token_stream);
+            Err(input.error("expected `crate`"))
         }
     }
 }
 
 struct RustHdlAttributes {
     crate_path: Option<Path>,
-    deref_fields_count: DerefFieldsCount,
 }
 
 impl RustHdlAttributes {
     fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut crate_path = None;
-        let mut deref_fields_count = DerefFieldsCount(0);
         for attribute in attrs {
             if attribute.path.is_ident("rust_hdl") {
                 let args = attribute.parse_args_with(
@@ -83,18 +61,11 @@ impl RustHdlAttributes {
                             }
                             crate_path = Some(path);
                         }
-                        RustHdlAttributeArg::DerefFields { deref_fields } => {
-                            let _ = deref_fields;
-                            deref_fields_count.0 += 1;
-                        }
                     }
                 }
             }
         }
-        Ok(Self {
-            crate_path,
-            deref_fields_count,
-        })
+        Ok(Self { crate_path })
     }
     fn get_crate_path(&self) -> Path {
         self.crate_path.clone().unwrap_or_else(|| {
@@ -231,7 +202,6 @@ impl ValueImplStruct {
             ctx_lifetime,
             generics_with_added_lifetimes,
             scope_lifetime,
-            deref_fields_count,
             name: struct_name,
             original_generics,
         } = common;
@@ -255,7 +225,7 @@ impl ValueImplStruct {
                         continue;
                     }
                     let name = field.ident.as_ref().unwrap();
-                    let ty = deref_type(&field.ty, *deref_fields_count)?;
+                    let ty = &field.ty;
                     let vis = &field.vis;
                     let name_str = name.to_string();
                     enum_fields.push(quote! {#name,});
@@ -273,7 +243,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             __FieldEnum::#name,
-                            &#deref_fields_count self.#name,
+                            &self.#name,
                         )?;
                     });
                     visit_field_types.push(quote! {
@@ -281,7 +251,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             __FieldEnum::#name,
-                            |v: &Self, _| &#deref_fields_count v.#name,
+                            |v: &Self, _| &v.#name,
                         )?;
                     });
                     visit_field_fixed_types.push(quote! {
@@ -289,7 +259,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             <Self as #crate_path::values::aggregate::StructValue<#ctx_lifetime, #scope_lifetime>>::FieldEnum::#name,
-                            |v: &Self, _| &#deref_fields_count v.#name,
+                            |v: &Self, _| &v.#name,
                         )?;
                     });
                 }
@@ -353,7 +323,7 @@ impl ValueImplStruct {
                         });
                         continue;
                     }
-                    let ty = deref_type(&field.ty, *deref_fields_count)?;
+                    let ty = &field.ty;
                     struct_of_field_enums_fields.push(quote! {
                         #vis __FieldEnum,
                     });
@@ -368,7 +338,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             #name,
-                            &#deref_fields_count self.#name,
+                            &self.#name,
                         )?;
                     });
                     visit_field_types.push(quote! {
@@ -376,7 +346,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             #name,
-                            |v: &Self, _| &#deref_fields_count v.#name,
+                            |v: &Self, _| &v.#name,
                         )?;
                     });
                     visit_field_fixed_types.push(quote! {
@@ -384,7 +354,7 @@ impl ValueImplStruct {
                             visitor,
                             #name_str,
                             #name,
-                            |v: &Self, _| &#deref_fields_count v.#name,
+                            |v: &Self, _| &v.#name,
                         )?;
                     });
                 }
@@ -461,7 +431,6 @@ impl ValueImplStruct {
             ctx_lifetime,
             scope_lifetime,
             name,
-            deref_fields_count: _,
         } = common;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
         let (impl_generics, ty_generics_with_added_lifetimes, _) =
@@ -489,16 +458,19 @@ impl ValueImplStruct {
                     type StructOfFieldEnums = __StructOfFieldEnums;
                     const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums = #struct_of_field_enums_const;
                     const FIELD_COUNT: usize = #field_count;
-                    fn visit_fields<V: #crate_path::values::aggregate::StructFieldVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
-                        &self,
-                        visitor: V,
-                    ) -> ::core::result::Result<V, V::BreakType> {
+                    fn visit_fields<'__self, __V: #crate_path::values::aggregate::StructFieldVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
+                        &'__self self,
+                        visitor: __V,
+                    ) -> ::core::result::Result<__V, __V::BreakType>
+                    where
+                        #scope_lifetime: '__self,
+                    {
                         #(#visit_fields)*
                         ::core::result::Result::Ok(visitor)
                     }
-                    fn visit_field_types<V: #crate_path::values::aggregate::StructFieldTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
-                        visitor: V,
-                    ) -> ::core::result::Result<V, V::BreakType> {
+                    fn visit_field_types<__V: #crate_path::values::aggregate::StructFieldTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
+                        visitor: __V,
+                    ) -> ::core::result::Result<__V, __V::BreakType> {
                         #(#visit_field_types)*
                         ::core::result::Result::Ok(visitor)
                     }
@@ -518,16 +490,15 @@ impl ValueImplStruct {
             ctx_lifetime,
             scope_lifetime,
             name,
-            deref_fields_count: _,
         } = common;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
         let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
         Ok(quote! {
             #[automatically_derived]
             impl #impl_generics #crate_path::values::aggregate::FixedTypeStructValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
-                fn visit_field_fixed_types<V: #crate_path::values::aggregate::StructFieldFixedTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
-                    visitor: V,
-                ) -> ::core::result::Result<V, V::BreakType> {
+                fn visit_field_fixed_types<__V: #crate_path::values::aggregate::StructFieldFixedTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
+                    visitor: __V,
+                ) -> ::core::result::Result<__V, __V::BreakType> {
                     #(#visit_field_fixed_types)*
                     ::core::result::Result::Ok(visitor)
                 }
@@ -554,7 +525,6 @@ impl ValueImplEnum {
             generics_with_added_lifetimes,
             ctx_lifetime,
             scope_lifetime,
-            deref_fields_count,
         } = common;
         let any_discriminants = data.variants.iter().any(|v| v.discriminant.is_some());
         let mut discriminants = Vec::with_capacity(data.variants.len());
@@ -566,18 +536,31 @@ impl ValueImplEnum {
         let (impl_generics, ty_generics_with_added_lifetimes, _) =
             generics_with_added_lifetimes.split_for_impl();
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
-        let ty_generics_as_turbofish = ty_generics.as_turbofish();
         let mut variant_struct_generics = generics_with_added_lifetimes.clone();
         let variant_struct_lifetime = Lifetime::new("'__a", Span::call_site());
-        let mut variant_struct_lifetime_def = LifetimeDef::new(variant_struct_lifetime.clone());
-        variant_struct_lifetime_def
-            .bounds
-            .push(scope_lifetime.clone());
         variant_struct_generics
             .params
-            .push(GenericParam::Lifetime(variant_struct_lifetime_def));
+            .push(GenericParam::Lifetime(LifetimeDef::new(
+                variant_struct_lifetime.clone(),
+            )));
+        variant_struct_generics
+            .lifetimes_mut()
+            .find(|v| v.lifetime == *scope_lifetime)
+            .unwrap()
+            .bounds
+            .push(variant_struct_lifetime.clone());
         let (variant_struct_impl_generics, variant_struct_ty_generics, _) =
             variant_struct_generics.split_for_impl();
+        let mut variant_struct_generics_with_scope_lifetime = variant_struct_generics.clone();
+        variant_struct_generics_with_scope_lifetime
+            .lifetimes_mut()
+            .find(|v| v.lifetime == variant_struct_lifetime)
+            .unwrap()
+            .lifetime = scope_lifetime.clone();
+        let variant_struct_ty_generics_with_scope_lifetime =
+            variant_struct_generics_with_scope_lifetime
+                .split_for_impl()
+                .1;
         for (
             index,
             Variant {
@@ -600,8 +583,11 @@ impl ValueImplEnum {
                 Fields::Named(named) => {
                     let mut aggregate_of_field_values_fields =
                         Vec::with_capacity(named.named.len());
+                    let mut match_fields = Vec::with_capacity(named.named.len());
                     let mut field_names = Vec::with_capacity(named.named.len());
                     let mut variant_struct_fields = Vec::with_capacity(named.named.len());
+                    let mut visit_fields = Vec::with_capacity(named.named.len());
+                    let mut visit_field_types = Vec::with_capacity(named.named.len());
                     for Field {
                         attrs,
                         vis,
@@ -613,9 +599,27 @@ impl ValueImplEnum {
                         let RustHdlFieldAttributes { ignored } =
                             RustHdlFieldAttributes::parse(&attrs)?;
                         if ignored {
+                            match_fields.push(quote! { #ident: _, });
                             continue;
                         }
-                        let ty = deref_type(&ty, *deref_fields_count)?;
+                        let name_str = ident.as_ref().unwrap().to_string();
+                        let field_index = visit_fields.len();
+                        visit_fields.push(quote! {
+                            let __visitor = #crate_path::values::aggregate::EnumVariantFieldVisitor::field(
+                                __visitor,
+                                #name_str,
+                                #field_index,
+                                self.#ident,
+                            )?;
+                        });
+                        visit_field_types.push(quote! {
+                            let __visitor = #crate_path::values::aggregate::EnumVariantFieldTypeVisitor::field::<#ty>(
+                                __visitor,
+                                #name_str,
+                                #field_index,
+                            )?;
+                        });
+                        match_fields.push(quote! { #ident, });
                         aggregate_of_field_values_needs_type_arguments = true;
                         aggregate_of_field_values_fields.push(quote! {
                             #vis #ident: #crate_path::values::Val<#ctx_lifetime, #scope_lifetime, #ty>,
@@ -631,12 +635,12 @@ impl ValueImplEnum {
                         },
                     });
                     visit_variant_match_arms.push(quote! {
-                        Self::#variant_name { #(#field_names,)* } => {
+                        Self::#variant_name { #(#match_fields)* } => {
                             #crate_path::values::aggregate::EnumVariantVisitor::variant(
                                 __visitor,
                                 #variant_name_str,
                                 #crate_path::values::Int::wrapping_new(#discriminant),
-                                &variant_structs::#variant_name #ty_generics_as_turbofish {
+                                variant_structs::#variant_name::#variant_struct_ty_generics {
                                     #(#field_names,)*
                                     __enum_phantom: ::core::marker::PhantomData,
                                 },
@@ -644,45 +648,89 @@ impl ValueImplEnum {
                         }
                     });
                     visit_variant_types.push(quote! {
-                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name #ty_generics>(
+                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name #variant_struct_ty_generics_with_scope_lifetime>(
                             __visitor,
                             #variant_name_str,
                             #crate_path::values::Int::wrapping_new(#discriminant),
                         )?;
                     });
                     variant_structs.push(quote! {
-                        #[derive(#crate_path::values::Value, #crate_path::values::FixedTypeValue)]
-                        #[rust_hdl(crate = #crate_path, deref_fields)]
                         pub struct #variant_name #variant_struct_generics #where_clause {
                             #(#variant_struct_fields)*
-                            #[rust_hdl(ignored)]
                             pub __enum_phantom: ::core::marker::PhantomData<(
                                 &#scope_lifetime &#ctx_lifetime (),
                                 &#variant_struct_lifetime super::#name #ty_generics,
                             )>,
+                        }
+                        #[automatically_derived]
+                        impl #variant_struct_impl_generics Copy for #variant_name #variant_struct_ty_generics #where_clause {}
+                        #[automatically_derived]
+                        impl #variant_struct_impl_generics Clone for #variant_name #variant_struct_ty_generics #where_clause {
+                            fn clone(&self) -> Self {
+                                *self
+                            }
+                        }
+                        #[automatically_derived]
+                        impl #variant_struct_impl_generics #crate_path::values::aggregate::EnumVariantRef<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics> for #variant_name #variant_struct_ty_generics #where_clause {
+                            fn visit_fields<__V: #crate_path::values::aggregate::EnumVariantFieldVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                                self,
+                                __visitor: __V,
+                            ) -> ::core::result::Result<__V, __V::BreakType> {
+                                #(#visit_fields)*
+                                ::core::result::Result::Ok(__visitor)
+                            }
+                            fn visit_field_types<__V: #crate_path::values::aggregate::EnumVariantFieldTypeVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                                __visitor: __V,
+                            ) -> ::core::result::Result<__V, __V::BreakType> {
+                                #(#visit_field_types)*
+                                ::core::result::Result::Ok(__visitor)
+                            }
                         }
                     });
                 }
                 Fields::Unnamed(unnamed) => {
                     let mut aggregate_of_field_values_fields =
                         Vec::with_capacity(unnamed.unnamed.len());
-                    let mut field_names = Vec::with_capacity(unnamed.unnamed.len());
+                    let mut match_fields = Vec::with_capacity(unnamed.unnamed.len());
+                    let mut field_values = Vec::with_capacity(unnamed.unnamed.len());
                     let mut variant_struct_fields = Vec::with_capacity(unnamed.unnamed.len());
+                    let mut visit_fields = Vec::with_capacity(unnamed.unnamed.len());
+                    let mut visit_field_types = Vec::with_capacity(unnamed.unnamed.len());
                     for (index, Field { vis, ty, attrs, .. }) in
                         unnamed.unnamed.into_iter().enumerate()
                     {
                         let RustHdlFieldAttributes { ignored } =
                             RustHdlFieldAttributes::parse(&attrs)?;
-                        field_names.push(Ident::new(&format!("v{}", index), Span::call_site()));
                         if ignored {
+                            field_values.push(quote! { (), });
+                            match_fields.push(quote! { _, });
                             aggregate_of_field_values_fields.push(quote! { #vis (), });
                             variant_struct_fields.push(quote! {
-                                #[rust_hdl(ignored)]
                                 pub (),
                             });
                             continue;
                         }
-                        let ty = deref_type(&ty, *deref_fields_count)?;
+                        let ident = Literal::usize_unsuffixed(index);
+                        let name_str = ident.to_string();
+                        let field_index = visit_fields.len();
+                        visit_fields.push(quote! {
+                            let __visitor = #crate_path::values::aggregate::EnumVariantFieldVisitor::field(
+                                __visitor,
+                                #name_str,
+                                #field_index,
+                                self.#ident,
+                            )?;
+                        });
+                        visit_field_types.push(quote! {
+                            let __visitor = #crate_path::values::aggregate::EnumVariantFieldTypeVisitor::field::<#ty>(
+                                __visitor,
+                                #name_str,
+                                #field_index,
+                            )?;
+                        });
+                        let var = Ident::new(&format!("v{}", index), Span::call_site());
+                        field_values.push(quote! { #var, });
+                        match_fields.push(quote! { #var, });
                         aggregate_of_field_values_needs_type_arguments = true;
                         aggregate_of_field_values_fields.push(quote! { #vis #crate_path::values::Val<#ctx_lifetime, #scope_lifetime, #ty>, });
                         variant_struct_fields.push(quote! {
@@ -695,36 +743,57 @@ impl ValueImplEnum {
                         ),
                     });
                     visit_variant_match_arms.push(quote! {
-                        Self::#variant_name(#(#field_names,)*) => {
+                        Self::#variant_name(#(#match_fields)*) => {
                             #crate_path::values::aggregate::EnumVariantVisitor::variant(
                                 __visitor,
                                 #variant_name_str,
                                 #crate_path::values::Int::wrapping_new(#discriminant),
-                                &variant_structs::#variant_name #ty_generics_as_turbofish(
-                                    #(#field_names,)*
+                                variant_structs::#variant_name::#variant_struct_ty_generics(
+                                    #(#field_values)*
                                     ::core::marker::PhantomData,
                                 ),
                             )
                         }
                     });
                     visit_variant_types.push(quote! {
-                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name #ty_generics>(
+                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name #variant_struct_ty_generics_with_scope_lifetime>(
                             __visitor,
                             #variant_name_str,
                             #crate_path::values::Int::wrapping_new(#discriminant),
                         )?;
                     });
                     variant_structs.push(quote! {
-                        #[derive(#crate_path::values::Value, #crate_path::values::FixedTypeValue)]
-                        #[rust_hdl(crate = #crate_path, deref_fields)]
                         pub struct #variant_name #variant_struct_generics(
                             #(#variant_struct_fields)*
-                            #[rust_hdl(ignored)]
                             pub ::core::marker::PhantomData<(
                                 &#scope_lifetime &#ctx_lifetime (),
                                 &#variant_struct_lifetime super::#name #ty_generics,
                             )>,
                         ) #where_clause;
+                        #[automatically_derived]
+                        impl #variant_struct_impl_generics Copy for #variant_name #variant_struct_ty_generics #where_clause {}
+                        #[automatically_derived]
+                        impl #variant_struct_impl_generics Clone for #variant_name #variant_struct_ty_generics #where_clause {
+                            fn clone(&self) -> Self {
+                                *self
+                            }
+                        }
+                        #[automatically_derived]
+                        impl #variant_struct_impl_generics #crate_path::values::aggregate::EnumVariantRef<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics> for #variant_name #variant_struct_ty_generics #where_clause {
+                            fn visit_fields<__V: #crate_path::values::aggregate::EnumVariantFieldVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                                self,
+                                __visitor: __V,
+                            ) -> ::core::result::Result<__V, __V::BreakType> {
+                                #(#visit_fields)*
+                                ::core::result::Result::Ok(__visitor)
+                            }
+                            fn visit_field_types<__V: #crate_path::values::aggregate::EnumVariantFieldTypeVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                                __visitor: __V,
+                            ) -> ::core::result::Result<__V, __V::BreakType> {
+                                #(#visit_field_types)*
+                                ::core::result::Result::Ok(__visitor)
+                            }
+                        }
                     });
                 }
                 Fields::Unit => {
@@ -735,7 +804,7 @@ impl ValueImplEnum {
                                 __visitor,
                                 #variant_name_str,
                                 #crate_path::values::Int::wrapping_new(#discriminant),
-                                &variant_structs::#variant_name,
+                                variant_structs::#variant_name,
                             )
                         }
                     });
@@ -747,9 +816,22 @@ impl ValueImplEnum {
                         )?;
                     });
                     variant_structs.push(quote! {
-                        #[derive(#crate_path::values::Value, #crate_path::values::FixedTypeValue)]
-                        #[rust_hdl(crate = #crate_path)]
+                        #[derive(Copy, Clone)]
                         pub struct #variant_name;
+                        #[automatically_derived]
+                        impl #impl_generics #crate_path::values::aggregate::EnumVariantRef<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics> for #variant_name #where_clause {
+                            fn visit_fields<__V: #crate_path::values::aggregate::EnumVariantFieldVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                                self,
+                                visitor: __V,
+                            ) -> ::core::result::Result<__V, __V::BreakType> {
+                                ::core::result::Result::Ok(visitor)
+                            }
+                            fn visit_field_types<__V: #crate_path::values::aggregate::EnumVariantFieldTypeVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                                visitor: __V,
+                            ) -> ::core::result::Result<__V, __V::BreakType> {
+                                ::core::result::Result::Ok(visitor)
+                            }
+                        }
                     });
                 }
             }
@@ -787,6 +869,11 @@ impl ValueImplEnum {
                     #(.add_discriminant(#discriminants))*
                     .get_shape();
         };
+        if visit_variant_match_arms.is_empty() {
+            visit_variant_match_arms.push(quote! {
+                v => match *v {},
+            });
+        }
         Ok(Self {
             type_defs,
             visit_variant_match_arms,
@@ -810,7 +897,6 @@ impl ValueImplEnum {
             ctx_lifetime,
             scope_lifetime,
             name,
-            deref_fields_count,
         } = common;
         let (impl_generics, ty_generics_with_added_lifetimes, _) =
             generics_with_added_lifetimes.split_for_impl();
@@ -833,18 +919,21 @@ impl ValueImplEnum {
                 impl #impl_generics #crate_path::values::aggregate::EnumValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause {
                     fn visit_variant<
                         #variant_struct_lifetime,
-                        V: #crate_path::values::aggregate::EnumVariantVisitor<#ctx_lifetime, #scope_lifetime, Self>
+                        __V: #crate_path::values::aggregate::EnumVariantVisitor<#ctx_lifetime, #scope_lifetime, Self>
                     >(
                         &#variant_struct_lifetime self,
-                        __visitor: V,
-                    ) -> V::ResultType {
+                        __visitor: __V,
+                    ) -> __V::ResultType
+                    where
+                        #scope_lifetime: #variant_struct_lifetime,
+                    {
                         match self {
                             #(#visit_variant_match_arms)*
                         }
                     }
-                    fn visit_variant_types<V: #crate_path::values::aggregate::EnumVariantTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
-                        __visitor: V,
-                    ) -> ::core::result::Result<V, V::BreakType> {
+                    fn visit_variant_types<__V: #crate_path::values::aggregate::EnumVariantTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
+                        __visitor: __V,
+                    ) -> ::core::result::Result<__V, __V::BreakType> {
                         #(#visit_variant_types)*
                         ::core::result::Result::Ok(__visitor)
                     }
@@ -860,7 +949,6 @@ impl ValueImplEnum {
             ctx_lifetime,
             scope_lifetime,
             name,
-            deref_fields_count,
         } = common;
         let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
@@ -878,27 +966,11 @@ enum ValueImplData {
 
 struct ValueImplCommon {
     crate_path: Path,
-    deref_fields_count: DerefFieldsCount,
     original_generics: Generics,
     generics_with_added_lifetimes: Generics,
     ctx_lifetime: Lifetime,
     scope_lifetime: Lifetime,
     name: Ident,
-}
-
-fn deref_type(mut ty: &Type, count: DerefFieldsCount) -> syn::Result<&Type> {
-    for _ in 0..count.0 {
-        ty = match ty {
-            Type::Reference(v) => &v.elem,
-            _ => {
-                return Err(Error::new_spanned(
-                    ty,
-                    "dereferencing only supported on reference types",
-                ))
-            }
-        };
-    }
-    Ok(ty)
 }
 
 struct ValueImpl {
@@ -922,7 +994,6 @@ impl ValueImpl {
             scope_lifetime,
             original_generics: ast.generics,
             name: ast.ident,
-            deref_fields_count: rust_hdl_attributes.deref_fields_count,
         };
         let data = match ast.data {
             Data::Struct(v) => ValueImplData::Struct(ValueImplStruct::new(v, &common)?),
@@ -1057,17 +1128,16 @@ fn derive_plain_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     })
 }
 
-fn debug_input(input: &DeriveInput, derive_name: &str) {
-    eprintln!(
-        "--------INPUT: {}\n{}\n--------",
-        derive_name,
-        input.to_token_stream()
-    );
+fn debug_input(_input: &DeriveInput, _derive_name: &str) {
+    // eprintln!(
+    //     "--------INPUT: {}\n{}\n--------",
+    //     derive_name,
+    //     input.to_token_stream()
+    // );
 }
 
-#[track_caller]
-fn debug_output(output: &TokenStream, derive_name: &str) {
-    eprintln!("--------OUTPUT: {}\n{}\n--------", derive_name, output);
+fn debug_output(_output: &TokenStream, _derive_name: &str) {
+    // eprintln!("--------OUTPUT: {}\n{}\n--------", derive_name, output);
 }
 
 #[proc_macro_derive(Value, attributes(rust_hdl))]

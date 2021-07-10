@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
-use rust_hdl::prelude::*;
+use rust_hdl::{prelude::*, values::integer::U8Shape};
 #[macro_use]
 mod common;
 
@@ -60,10 +60,10 @@ mod enum_mod {
 }
 
 #[test]
-#[should_panic = "can't create uninhabited type"]
 fn test_enum0() {
     Context::with(|ctx| {
-        named!(let (_top, _io): (_, Input<enum_mod::Enum0>) = ctx.top_module());
+        named!(let (top, _io): (_, Input<enum_mod::Enum0>) = ctx.top_module());
+        assert_formats_to!(test_enum0, top_0, top);
     });
 }
 
@@ -96,5 +96,13 @@ fn test_enum4() {
     Context::with(|ctx| {
         named!(let (top, _io): (_, Input<enum_mod::Enum4>) = ctx.top_module());
         assert_formats_to!(test_enum4, top_0, top);
+    });
+}
+
+#[test]
+fn test_enum_struct() {
+    Context::with(|ctx| {
+        named!(let (top, _io): (_, Input<enum_mod::EnumStruct<U8Shape>>) = ctx.top_module());
+        assert_formats_to!(test_enum_struct, top_0, top);
     });
 }
