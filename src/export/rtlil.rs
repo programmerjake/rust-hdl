@@ -170,7 +170,7 @@ impl fmt::Display for RtlilLiteral<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{bit_count}'{value:0bit_count$}",
+            "{bit_count}'{value:0bit_count$b}",
             bit_count = usize::try_from(self.0.bit_count()).expect("value too big to write"),
             value = self.0.value().clone().wrap_to_unsigned().value()
         )
