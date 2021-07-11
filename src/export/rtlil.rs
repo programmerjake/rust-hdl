@@ -477,8 +477,47 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 }
                 wires.into()
             }
-            IrValue::LiteralEnumVariant(_v) => {
-                todo!("enum types are not yet implemented")
+            IrValue::LiteralEnumVariant(v) => {
+                let discriminant_wire =
+                    if let Some(bit_count) = NonZeroU32::new(v.discriminant().bit_count()) {
+                        let name = self.new_anonymous_symbol(module);
+                        writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
+                        writeln!(
+                            self.writer,
+                            "  connect {} {}",
+                            name,
+                            RtlilLiteral(v.discriminant())
+                        )?;
+                        Some(RtlilWire {
+                            name,
+                            ty: RtlilWireType { bit_count },
+                            io_index: None,
+                        })
+                    } else {
+                        None
+                    };
+                let fields_wire = if let Some(fields_bit_count) =
+                    NonZeroU32::new(v.value_type().flattened_fields().bit_count)
+                {
+                    let name = self.new_anonymous_symbol(module);
+                    writeln!(self.writer, "  wire width {} {}", fields_bit_count, name)?;
+                    let wires = self.get_wires_for_value(module, v.fields_value())?;
+                    write!(self.writer, "  connect {} {{", name)?;
+                    for wire in wires.iter().rev() {
+                        write!(self.writer, " {}", wire.name)?;
+                    }
+                    writeln!(self.writer, " }}")?;
+                    Some(RtlilWire {
+                        name,
+                        ty: RtlilWireType {
+                            bit_count: fields_bit_count,
+                        },
+                        io_index: None,
+                    })
+                } else {
+                    None
+                };
+                discriminant_wire.into_iter().chain(fields_wire).collect()
             }
             IrValue::WireRead(v) => {
                 let mut wires = Vec::new();
@@ -1134,7 +1173,27 @@ fn visit_wire_types_in_type<'ctx, 'a, E, FR: FieldRange>(
                 )?;
             }
         }
-        IrValueType::Enum(_) => todo!("enum types are not yet implemented"),
+        IrValueType::Enum(e) => {
+            let checked_relation_to_selected_field =
+                relation_to_selected_field.map(|subfield_path| {
+                    // can't access subfields of enum
+                    assert!(subfield_path.is_empty());
+                });
+            if let Some(bit_count) = NonZeroU32::new(e.discriminant_type().bit_count) {
+                visitor(
+                    RtlilWireType { bit_count },
+                    path_builder.push_struct_member("$discriminant").get(),
+                    checked_relation_to_selected_field,
+                )?;
+            }
+            if let Some(bit_count) = NonZeroU32::new(e.flattened_fields().bit_count) {
+                visitor(
+                    RtlilWireType { bit_count },
+                    path_builder.push_struct_member("$fields").get(),
+                    checked_relation_to_selected_field,
+                )?;
+            }
+        }
     }
     Ok(())
 }

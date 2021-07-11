@@ -14,6 +14,62 @@ struct MyValue {
     a: bool,
     b: [Int8; 3],
     c: UInt<0>,
+    e1: MyEnum1,
+    e2: MyEnum2,
+    e3: MyEnum3,
+    e4: MyEnum4,
+}
+
+#[derive(Value, FixedTypeValue)]
+enum MyEnum1 {
+    A,
+}
+
+impl Default for MyEnum1 {
+    fn default() -> Self {
+        Self::A
+    }
+}
+
+#[derive(Value, FixedTypeValue)]
+#[allow(dead_code)]
+enum MyEnum2 {
+    A = -2,
+    B = 5,
+}
+
+impl Default for MyEnum2 {
+    fn default() -> Self {
+        Self::B
+    }
+}
+
+#[derive(Value, FixedTypeValue)]
+#[allow(dead_code)]
+enum MyEnum3 {
+    A,
+    B,
+    C(bool),
+}
+
+impl Default for MyEnum3 {
+    fn default() -> Self {
+        Self::C(false)
+    }
+}
+
+#[derive(Value, FixedTypeValue)]
+#[allow(dead_code)]
+enum MyEnum4 {
+    A,
+    B,
+    C { a: bool, b: bool },
+}
+
+impl Default for MyEnum4 {
+    fn default() -> Self {
+        Self::A
+    }
 }
 
 #[derive(IO, PlainIO)]
