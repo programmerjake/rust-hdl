@@ -18,15 +18,22 @@ use core::{
     marker::PhantomData,
 };
 
-pub use rust_hdl_macros::{FixedTypeValue, Value};
-
 pub mod aggregate;
+mod foreign_derives;
+pub mod integer;
+pub mod ops;
+
+pub use integer::{
+    Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, UInt, UInt1, UInt128, UInt16, UInt32,
+    UInt64, UInt8,
+};
+pub use rust_hdl_macros::{FixedTypeValue, Value};
 
 mod value_fns_sealed {
     pub trait Sealed {}
 }
 
-pub trait ValueFns<'ctx>: Sized + value_fns_sealed::Sealed {
+pub trait ValueFns<'ctx>: Sized + value_fns_sealed::Sealed + 'ctx {
     fn get_input(&self, ctx: ContextRef<'ctx>) -> Input<'ctx, Self>
     where
         Self: Value<'ctx>,
@@ -213,7 +220,7 @@ impl<'ctx, T: Value<'ctx>> Value<'ctx> for Vec<T> {
     }
 }
 
-impl<'ctx, T: ?Sized> Value<'ctx> for PhantomData<T> {
+impl<'ctx, T: ?Sized + 'ctx> Value<'ctx> for PhantomData<T> {
     fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, 'ctx, Self> {
         Val::from_ir_and_type_unchecked(
             IrValue::from(LiteralBits::new()).intern(ctx),
@@ -225,7 +232,7 @@ impl<'ctx, T: ?Sized> Value<'ctx> for PhantomData<T> {
     }
 }
 
-impl<'ctx, T: ?Sized> FixedTypeValue<'ctx> for PhantomData<T> {
+impl<'ctx, T: ?Sized + 'ctx> FixedTypeValue<'ctx> for PhantomData<T> {
     fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
         ValueType::from_ir_unchecked(
             ctx,
@@ -238,7 +245,7 @@ impl<'ctx, T: ?Sized> FixedTypeValue<'ctx> for PhantomData<T> {
     }
 }
 
-pub struct Val<'ctx, 'scope, T: Value<'ctx>> {
+pub struct Val<'ctx, 'scope, T> {
     ir: IrValueRef<'ctx>,
     value_type: ValueType<'ctx, T>,
     _phantom: PhantomData<&'scope ()>,
@@ -302,7 +309,7 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
     }
 }
 
-impl<'ctx, 'scope, T: Value<'ctx>> fmt::Debug for Val<'ctx, 'scope, T> {
+impl<'ctx, 'scope, T> fmt::Debug for Val<'ctx, 'scope, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Val")
             .field("ir", &self.ir)
@@ -311,15 +318,15 @@ impl<'ctx, 'scope, T: Value<'ctx>> fmt::Debug for Val<'ctx, 'scope, T> {
     }
 }
 
-impl<'ctx, 'scope, T: Value<'ctx>> Copy for Val<'ctx, 'scope, T> {}
+impl<'ctx, 'scope, T> Copy for Val<'ctx, 'scope, T> {}
 
-impl<'ctx, 'scope, T: Value<'ctx>> Clone for Val<'ctx, 'scope, T> {
+impl<'ctx, 'scope, T> Clone for Val<'ctx, 'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-pub struct ValueType<'ctx, T: Value<'ctx>> {
+pub struct ValueType<'ctx, T> {
     ir: IrValueTypeRef<'ctx>,
     ctx: ContextRef<'ctx>,
     _phantom: PhantomData<fn(T) -> T>,
@@ -341,39 +348,30 @@ impl<'ctx, T: Value<'ctx>> ValueType<'ctx, T> {
     }
 }
 
-impl<'ctx, T: Value<'ctx>> fmt::Debug for ValueType<'ctx, T> {
+impl<'ctx, T> fmt::Debug for ValueType<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("ValueType").field(&self.ir).finish()
     }
 }
 
-impl<'ctx, T: Value<'ctx>> Copy for ValueType<'ctx, T> {}
+impl<'ctx, T> Copy for ValueType<'ctx, T> {}
 
-impl<'ctx, T: Value<'ctx>> Clone for ValueType<'ctx, T> {
+impl<'ctx, T> Clone for ValueType<'ctx, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'ctx, T: Value<'ctx>> Eq for ValueType<'ctx, T> {}
+impl<'ctx, T> Eq for ValueType<'ctx, T> {}
 
-impl<'ctx, T: Value<'ctx>> PartialEq for ValueType<'ctx, T> {
+impl<'ctx, T> PartialEq for ValueType<'ctx, T> {
     fn eq(&self, other: &Self) -> bool {
         self.ir == other.ir
     }
 }
 
-impl<'ctx, T: Value<'ctx>> Hash for ValueType<'ctx, T> {
+impl<'ctx, T> Hash for ValueType<'ctx, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ir.hash(state)
     }
 }
-
-pub mod integer;
-
-pub use integer::{
-    Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, UInt, UInt1, UInt128, UInt16, UInt32,
-    UInt64, UInt8,
-};
-
-pub mod ops;

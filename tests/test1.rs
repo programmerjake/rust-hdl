@@ -20,6 +20,9 @@ struct Struct {
     c: TupleStruct,
 }
 
+#[derive(Value, FixedTypeValue, PlainIO, IO)]
+struct GenericStruct<T, U>(T, U);
+
 #[derive(IO)]
 struct IOStruct<'ctx> {
     a: Input<'ctx, bool>,

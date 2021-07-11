@@ -52,7 +52,7 @@ impl fmt::Display for IntShape {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstIntShape<const BIT_COUNT: u32, const SIGNED: bool>;
 
-pub trait IntShapeTrait: Copy + fmt::Debug {
+pub trait IntShapeTrait: Copy + fmt::Debug + 'static + Send + Sync {
     type UnsignedShape: IntShapeTrait<
         UnsignedShape = Self::UnsignedShape,
         SignedShape = Self::SignedShape,

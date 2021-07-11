@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
-use rust_hdl::{prelude::*, values::integer::U8Shape};
+use rust_hdl::prelude::*;
 #[macro_use]
 mod common;
 
@@ -40,17 +40,13 @@ mod enum_mod {
 
     #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
-    pub enum EnumStruct<Shape: 'static>
-    where
-        Shape: rust_hdl::values::integer::IntShapeTrait,
-        rust_hdl::values::Int<Shape>: for<'ctx2> rust_hdl::values::FixedTypeValue<'ctx2>,
-    {
+    pub enum EnumStruct<T> {
         A {
             f1: rust_hdl::values::Int8,
         },
         B(),
         C {},
-        D(rust_hdl::values::Int<Shape>),
+        D(T),
         E {
             #[rust_hdl(ignored)]
             f1: rust_hdl::values::Int8,
@@ -134,7 +130,7 @@ fn test_enum4() {
 #[test]
 fn test_enum_struct() {
     Context::with(|ctx| {
-        named!(let (top, _io): (_, Input<enum_mod::EnumStruct<U8Shape>>) = ctx.top_module());
+        named!(let (top, _io): (_, Input<enum_mod::EnumStruct<UInt8>>) = ctx.top_module());
         assert_formats_to!(test_enum_struct, top_0, top);
     });
 }
