@@ -516,7 +516,6 @@ struct ValueImplEnum {
 }
 
 impl ValueImplEnum {
-    // TODO: switch to using IrEnumType
     fn new(data: DataEnum, common: &ValueImplCommon) -> syn::Result<Self> {
         let ValueImplCommon {
             name,
