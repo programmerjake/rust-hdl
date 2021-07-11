@@ -57,6 +57,38 @@ mod enum_mod {
         },
         F(#[rust_hdl(ignored)] String),
     }
+
+    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #[allow(dead_code)]
+    enum PrivateEnum {
+        A {
+            f1: rust_hdl::values::Int8,
+        },
+        B(),
+        C {},
+        D(bool),
+        E {
+            #[rust_hdl(ignored)]
+            f1: rust_hdl::values::Int8,
+        },
+        F(#[rust_hdl(ignored)] String),
+    }
+
+    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #[allow(dead_code)]
+    pub(crate) enum CrateEnum {
+        A {
+            f1: rust_hdl::values::Int8,
+        },
+        B(),
+        C {},
+        D(bool),
+        E {
+            #[rust_hdl(ignored)]
+            f1: rust_hdl::values::Int8,
+        },
+        F(#[rust_hdl(ignored)] String),
+    }
 }
 
 #[test]

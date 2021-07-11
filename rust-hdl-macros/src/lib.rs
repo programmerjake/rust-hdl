@@ -8,7 +8,7 @@ use syn::{
     parse_macro_input,
     punctuated::Punctuated,
     Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Field, Fields, GenericParam,
-    Generics, Lifetime, LifetimeDef, Path, Token, Variant,
+    Generics, Lifetime, LifetimeDef, Path, Token, Variant, VisRestricted, Visibility,
 };
 
 mod kw {
@@ -204,6 +204,7 @@ impl ValueImplStruct {
             scope_lifetime,
             name: struct_name,
             original_generics,
+            top_vis,
         } = common;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
         let type_defs;
@@ -278,7 +279,7 @@ impl ValueImplStruct {
                     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
                     #[allow(non_camel_case_types)]
                     #field_enum_repr
-                    pub enum __FieldEnum {
+                    #top_vis enum __FieldEnum {
                         #(#enum_fields)*
                     }
 
@@ -290,12 +291,12 @@ impl ValueImplStruct {
 
                     #[derive(Clone, Copy)]
                     #[allow(non_snake_case)]
-                    pub struct __StructOfFieldEnums {
+                    #top_vis struct __StructOfFieldEnums {
                         #(#struct_of_field_enums_fields)*
                     }
 
                     #[allow(non_snake_case)]
-                    pub struct __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
+                    #top_vis struct __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
                         #(#struct_of_field_values_fields)*
                         __struct_phantom: ::core::marker::PhantomData<(&#scope_lifetime &#ctx_lifetime (), #struct_name #ty_generics)>,
                     }
@@ -360,16 +361,16 @@ impl ValueImplStruct {
                 }
                 type_defs = quote! {
                     #[allow(non_camel_case_types)]
-                    pub type __FieldEnum = usize;
+                    #top_vis type __FieldEnum = usize;
 
                     #[derive(Clone, Copy)]
                     #[allow(non_snake_case)]
-                    pub struct __StructOfFieldEnums(
+                    #top_vis struct __StructOfFieldEnums(
                         #(#struct_of_field_enums_fields)*
                     );
 
                     #[allow(non_snake_case)]
-                    pub struct __AggregateOfFieldValues #generics_with_added_lifetimes(
+                    #top_vis struct __AggregateOfFieldValues #generics_with_added_lifetimes(
                         #(#struct_of_field_values_fields)*
                         ::core::marker::PhantomData<(&#scope_lifetime &#ctx_lifetime (), #struct_name #ty_generics)>,
                     ) #where_clause;
@@ -385,7 +386,7 @@ impl ValueImplStruct {
                 type_defs = quote! {
                     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
                     #[allow(non_camel_case_types)]
-                    pub enum __FieldEnum {}
+                    #top_vis enum __FieldEnum {}
 
                     impl ::core::convert::From<__FieldEnum> for usize {
                         fn from(v: __FieldEnum) -> Self {
@@ -395,10 +396,10 @@ impl ValueImplStruct {
 
                     #[derive(Clone, Copy)]
                     #[allow(non_camel_case_types)]
-                    pub struct __StructOfFieldEnums;
+                    #top_vis struct __StructOfFieldEnums;
 
                     #[allow(non_camel_case_types)]
-                    pub struct __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
+                    #top_vis struct __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
                         __struct_phantom: ::core::marker::PhantomData<(&#scope_lifetime &#ctx_lifetime (), #struct_name #ty_generics)>,
                     }
                 };
@@ -431,6 +432,7 @@ impl ValueImplStruct {
             ctx_lifetime,
             scope_lifetime,
             name,
+            top_vis: _,
         } = common;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
         let (impl_generics, ty_generics_with_added_lifetimes, _) =
@@ -490,6 +492,7 @@ impl ValueImplStruct {
             ctx_lifetime,
             scope_lifetime,
             name,
+            top_vis: _,
         } = common;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
         let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
@@ -524,7 +527,39 @@ impl ValueImplEnum {
             generics_with_added_lifetimes,
             ctx_lifetime,
             scope_lifetime,
+            top_vis,
         } = common;
+        let variant_vis = match top_vis {
+            Visibility::Public(_) | Visibility::Crate(_) => top_vis.clone(),
+            Visibility::Restricted(VisRestricted {
+                pub_token: _,
+                paren_token: _,
+                in_token: None,
+                path,
+            }) if path.is_ident("crate") => top_vis.clone(),
+            Visibility::Inherited => Visibility::Restricted(VisRestricted {
+                pub_token: Default::default(),
+                paren_token: Default::default(),
+                in_token: None,
+                path: Path::from(Ident::new("super", Span::call_site())).into(),
+            }),
+            Visibility::Restricted(_) => {
+                return Err(Error::new_spanned(
+                    top_vis,
+                    "unsupported visibility on enum with #[derive(Value)], use `pub(crate)` instead",
+                ));
+            }
+        };
+        fn assert_field_visibility_is_inherited(vis: Visibility) -> syn::Result<()> {
+            if let Visibility::Inherited = vis {
+                Ok(())
+            } else {
+                Err(Error::new_spanned(
+                    vis,
+                    "#[derive(Value)] requires enum fields to have default (inherited) visibility",
+                ))
+            }
+        }
         let any_discriminants = data.variants.iter().any(|v| v.discriminant.is_some());
         let mut discriminants = Vec::with_capacity(data.variants.len());
         let mut visit_variant_match_arms = Vec::with_capacity(data.variants.len());
@@ -601,6 +636,7 @@ impl ValueImplEnum {
                             match_fields.push(quote! { #ident: _, });
                             continue;
                         }
+                        assert_field_visibility_is_inherited(vis)?;
                         let name_str = ident.as_ref().unwrap().to_string();
                         let field_index = visit_fields.len();
                         visit_fields.push(quote! {
@@ -621,10 +657,10 @@ impl ValueImplEnum {
                         match_fields.push(quote! { #ident, });
                         aggregate_of_field_values_needs_type_arguments = true;
                         aggregate_of_field_values_fields.push(quote! {
-                            #vis #ident: #crate_path::values::Val<#ctx_lifetime, #scope_lifetime, #ty>,
+                            #ident: #crate_path::values::Val<#ctx_lifetime, #scope_lifetime, #ty>,
                         });
                         variant_struct_fields.push(quote! {
-                            pub #ident: &#variant_struct_lifetime #ty,
+                            #variant_vis #ident: &#variant_struct_lifetime #ty,
                         });
                         field_names.push(ident);
                     }
@@ -654,9 +690,9 @@ impl ValueImplEnum {
                         )?;
                     });
                     variant_structs.push(quote! {
-                        pub struct #variant_name #variant_struct_generics #where_clause {
+                        #variant_vis struct #variant_name #variant_struct_generics #where_clause {
                             #(#variant_struct_fields)*
-                            pub __enum_phantom: ::core::marker::PhantomData<(
+                            #variant_vis __enum_phantom: ::core::marker::PhantomData<(
                                 &#scope_lifetime &#ctx_lifetime (),
                                 &#variant_struct_lifetime super::#name #ty_generics,
                             )>,
@@ -703,12 +739,13 @@ impl ValueImplEnum {
                         if ignored {
                             field_values.push(quote! { (), });
                             match_fields.push(quote! { _, });
-                            aggregate_of_field_values_fields.push(quote! { #vis (), });
+                            aggregate_of_field_values_fields.push(quote! { (), });
                             variant_struct_fields.push(quote! {
-                                pub (),
+                                #variant_vis (),
                             });
                             continue;
                         }
+                        assert_field_visibility_is_inherited(vis)?;
                         let ident = Literal::usize_unsuffixed(index);
                         let name_str = ident.to_string();
                         let field_index = visit_fields.len();
@@ -731,9 +768,9 @@ impl ValueImplEnum {
                         field_values.push(quote! { #var, });
                         match_fields.push(quote! { #var, });
                         aggregate_of_field_values_needs_type_arguments = true;
-                        aggregate_of_field_values_fields.push(quote! { #vis #crate_path::values::Val<#ctx_lifetime, #scope_lifetime, #ty>, });
+                        aggregate_of_field_values_fields.push(quote! { #crate_path::values::Val<#ctx_lifetime, #scope_lifetime, #ty>, });
                         variant_struct_fields.push(quote! {
-                            pub &#variant_struct_lifetime #ty,
+                            #variant_vis &#variant_struct_lifetime #ty,
                         });
                     }
                     aggregate_of_field_values_variants.push(quote! {
@@ -762,9 +799,9 @@ impl ValueImplEnum {
                         )?;
                     });
                     variant_structs.push(quote! {
-                        pub struct #variant_name #variant_struct_generics(
+                        #variant_vis struct #variant_name #variant_struct_generics(
                             #(#variant_struct_fields)*
-                            pub ::core::marker::PhantomData<(
+                            #variant_vis ::core::marker::PhantomData<(
                                 &#scope_lifetime &#ctx_lifetime (),
                                 &#variant_struct_lifetime super::#name #ty_generics,
                             )>,
@@ -816,7 +853,7 @@ impl ValueImplEnum {
                     });
                     variant_structs.push(quote! {
                         #[derive(Copy, Clone)]
-                        pub struct #variant_name;
+                        #variant_vis struct #variant_name;
                         #[automatically_derived]
                         impl #impl_generics #crate_path::values::aggregate::EnumVariantRef<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics> for #variant_name #where_clause {
                             fn visit_fields<__V: #crate_path::values::aggregate::EnumVariantFieldVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
@@ -838,7 +875,7 @@ impl ValueImplEnum {
         }
         let declare_aggregate_of_field_values = if aggregate_of_field_values_needs_type_arguments {
             quote! {
-                pub enum __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
+                #top_vis enum __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause {
                     #(#aggregate_of_field_values_variants)*
                 }
                 #[automatically_derived]
@@ -853,7 +890,7 @@ impl ValueImplEnum {
         } else {
             quote! {
                 #[derive(Copy, Clone)]
-                pub enum __AggregateOfFieldValues {
+                #top_vis enum __AggregateOfFieldValues {
                     #(#aggregate_of_field_values_variants)*
                 }
             }
@@ -896,6 +933,7 @@ impl ValueImplEnum {
             ctx_lifetime,
             scope_lifetime,
             name,
+            top_vis: _,
         } = common;
         let (impl_generics, ty_generics_with_added_lifetimes, _) =
             generics_with_added_lifetimes.split_for_impl();
@@ -948,6 +986,7 @@ impl ValueImplEnum {
             ctx_lifetime,
             scope_lifetime,
             name,
+            top_vis: _,
         } = common;
         let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
         let (_, ty_generics, where_clause) = original_generics.split_for_impl();
@@ -970,6 +1009,7 @@ struct ValueImplCommon {
     ctx_lifetime: Lifetime,
     scope_lifetime: Lifetime,
     name: Ident,
+    top_vis: Visibility,
 }
 
 struct ValueImpl {
@@ -993,6 +1033,7 @@ impl ValueImpl {
             scope_lifetime,
             original_generics: ast.generics,
             name: ast.ident,
+            top_vis: ast.vis,
         };
         let data = match ast.data {
             Data::Struct(v) => ValueImplData::Struct(ValueImplStruct::new(v, &common)?),
@@ -1131,7 +1172,7 @@ fn debug_input(_input: &DeriveInput, _derive_name: &str) {
     // eprintln!(
     //     "--------INPUT: {}\n{}\n--------",
     //     derive_name,
-    //     input.to_token_stream()
+    //     quote::ToTokens::to_token_stream(&input)
     // );
 }
 
