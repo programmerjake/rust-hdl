@@ -847,7 +847,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 }
             }
             IrValue::BoolOutBinOp(v) => {
-                if let Some(input_bit_count) = NonZeroU32::new(v.value_type().bit_count) {
+                if let Some(input_bit_count) = NonZeroU32::new(v.input_type().bit_count) {
                     let lhs_wire = self.get_int_wire_for_value(module, v.lhs())?.unwrap();
                     let rhs_wire = self.get_int_wire_for_value(module, v.rhs())?.unwrap();
                     let name = self.new_anonymous_symbol(module);
@@ -905,7 +905,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 }
             }
             IrValue::BoolOutUnOp(v) => {
-                if let Some(input_bit_count) = NonZeroU32::new(v.value_type().bit_count) {
+                if let Some(input_bit_count) = NonZeroU32::new(v.input_type().bit_count) {
                     let input_wire = self.get_int_wire_for_value(module, v.input())?.unwrap();
                     let name = self.new_anonymous_symbol(module);
                     writeln!(self.writer, "  wire width 1 {}", name)?;

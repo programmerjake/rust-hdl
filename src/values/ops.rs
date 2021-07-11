@@ -9,8 +9,8 @@ use crate::{
         types::IrBitVectorType,
         values::{
             BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ConvertIntWrapping,
-            IrValue, SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind, SliceArray,
-            SliceBitVector,
+            IrValue, Mux, SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind,
+            SliceArray, SliceBitVector,
         },
     },
     prelude::*,
@@ -605,5 +605,24 @@ impl<'ctx: 'scope, 'scope, Shape: IntShapeTrait> Val<'ctx, 'scope, Int<Shape>> {
     #[must_use]
     pub fn wrap_to_signed(self) -> Val<'ctx, 'scope, Int<Shape::SignedShape>> {
         wrap_to_signed_helper(self, true)
+    }
+}
+
+impl<'ctx: 'scope, 'scope> Val<'ctx, 'scope, bool> {
+    pub fn mux<T: Value<'ctx>>(
+        self,
+        true_value: Val<'ctx, 'scope, T>,
+        false_value: Val<'ctx, 'scope, T>,
+    ) -> Val<'ctx, 'scope, T> {
+        Val::from_ir_unchecked(
+            self.ctx(),
+            IrValue::from(Mux::new(
+                self.ctx(),
+                self.ir(),
+                true_value.ir(),
+                false_value.ir(),
+            ))
+            .intern(self.ctx()),
+        )
     }
 }

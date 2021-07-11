@@ -15,7 +15,6 @@ use crate::{
 use alloc::borrow::Cow;
 use core::{fmt, marker::PhantomData, ops::Deref};
 
-#[derive(Clone, Copy)]
 pub struct WireRef<'ctx, T: Value<'ctx>> {
     read_value: IrValueRef<'ctx>,
     ir: IrWireRef<'ctx>,
@@ -27,6 +26,14 @@ impl<'ctx, T: Value<'ctx>> fmt::Debug for WireRef<'ctx, T> {
         f.debug_struct("Wire")
             .field("ir", self.ir)
             .finish_non_exhaustive()
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> Copy for WireRef<'ctx, T> {}
+
+impl<'ctx, T: Value<'ctx>> Clone for WireRef<'ctx, T> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 
@@ -98,7 +105,6 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
     }
 }
 
-#[derive(Clone, Copy)]
 pub struct RegRef<'ctx, T: Value<'ctx>> {
     output_value: IrValueRef<'ctx>,
     ir: IrRegRef<'ctx>,
@@ -110,6 +116,14 @@ impl<'ctx, T: Value<'ctx>> fmt::Debug for RegRef<'ctx, T> {
         f.debug_struct("Reg")
             .field("ir", self.ir)
             .finish_non_exhaustive()
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> Copy for RegRef<'ctx, T> {}
+
+impl<'ctx, T: Value<'ctx>> Clone for RegRef<'ctx, T> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 
