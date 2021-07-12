@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use crate::context::{ContextRef, Intern, Interned};
+use crate::context::{AsContext, Intern, Interned};
 use core::{fmt, panic::Location};
 
 pub mod io;
@@ -42,8 +42,8 @@ impl<'ctx> SourceLocation<'ctx> {
     pub fn new_borrowed(file: &'ctx str, line: u32, column: u32) -> Self {
         Self { file, line, column }
     }
-    pub fn new_cloned(ctx: ContextRef<'ctx>, file: &str, line: u32, column: u32) -> Self {
-        let file: Interned<'_, str> = file.intern(ctx);
+    pub fn new_cloned(ctx: impl AsContext<'ctx>, file: &str, line: u32, column: u32) -> Self {
+        let file: Interned<'_, str> = file.intern(ctx.ctx());
         Self::new_borrowed(file.get(), line, column)
     }
     pub fn file(self) -> &'ctx str {

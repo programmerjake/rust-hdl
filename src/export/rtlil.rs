@@ -3,7 +3,7 @@
 //! Exporter for Yosys's RTLIL/ILANG
 
 use crate::{
-    context::Intern,
+    context::{AsContext, Intern},
     export::{
         rtlil::id::{GlobalSymbolTable, RtlilId, SymbolTable},
         Exporter,

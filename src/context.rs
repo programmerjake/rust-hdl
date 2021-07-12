@@ -9,7 +9,7 @@ use crate::ir::{
     types::{IrEnumVariantType, IrStructFieldType, IrValueType},
     values::{IrValue, IrValueRef, LiteralStructField},
 };
-use alloc::{string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
     borrow::Borrow,
     cell::{Cell, RefCell},
@@ -27,19 +27,19 @@ pub trait Internable<'ctx>: ArenaAllocatable<'ctx> + HasArena<'ctx> + Hash + Eq 
 
 pub trait InternImpl<'ctx, T: ArenaAllocatable<'ctx, Self>>: Internable<'ctx> {
     #[must_use]
-    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self>;
+    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self>;
 }
 
 pub trait Intern<'ctx, T: Internable<'ctx> + ?Sized = Self>: ArenaAllocatable<'ctx, T> {
     #[must_use]
-    fn intern(self, ctx: ContextRef<'ctx>) -> Interned<'ctx, T>
+    fn intern<Ctx: AsContext<'ctx>>(self, ctx: Ctx) -> Interned<'ctx, T>
     where
         Self: Sized;
 }
 
 impl<'ctx, T: ?Sized + InternImpl<'ctx, V>, V: ArenaAllocatable<'ctx, T>> Intern<'ctx, T> for V {
-    fn intern(self, ctx: ContextRef<'ctx>) -> Interned<'ctx, T> {
-        InternImpl::intern(self, ctx)
+    fn intern<Ctx: AsContext<'ctx>>(self, ctx: Ctx) -> Interned<'ctx, T> {
+        InternImpl::intern(self, ctx.ctx())
     }
 }
 
@@ -291,44 +291,44 @@ impl<'ctx> Context<'ctx> {
 }
 
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for str {
-    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
-        ctx.string_interner.intern_impl(value)
+    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
+        ctx.ctx().string_interner.intern_impl(value)
     }
 }
 
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for IrValueType<'ctx> {
-    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
-        ctx.value_type_interner.intern_impl(value)
+    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
+        ctx.ctx().value_type_interner.intern_impl(value)
     }
 }
 
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for IrValue<'ctx> {
-    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
-        ctx.value_interner.intern_impl(value)
+    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
+        ctx.ctx().value_interner.intern_impl(value)
     }
 }
 
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrValueRef<'ctx>] {
-    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
-        ctx.value_ref_interner.intern_impl(value)
+    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
+        ctx.ctx().value_ref_interner.intern_impl(value)
     }
 }
 
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrStructFieldType<'ctx>] {
-    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
-        ctx.struct_field_type_interner.intern_impl(value)
+    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
+        ctx.ctx().struct_field_type_interner.intern_impl(value)
     }
 }
 
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrEnumVariantType<'ctx>] {
-    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
-        ctx.enum_variant_type_interner.intern_impl(value)
+    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
+        ctx.ctx().enum_variant_type_interner.intern_impl(value)
     }
 }
 
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [LiteralStructField<'ctx>] {
-    fn intern(value: T, ctx: ContextRef<'ctx>) -> Interned<'ctx, Self> {
-        ctx.literal_struct_field_interner.intern_impl(value)
+    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
+        ctx.ctx().literal_struct_field_interner.intern_impl(value)
     }
 }
 
@@ -337,5 +337,33 @@ pub type ContextRef<'ctx> = &'ctx Context<'ctx>;
 impl fmt::Debug for Context<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Context").finish_non_exhaustive()
+    }
+}
+
+pub trait AsContext<'ctx> {
+    fn ctx(&self) -> ContextRef<'ctx>;
+}
+
+impl<'ctx> AsContext<'ctx> for ContextRef<'ctx> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        *self
+    }
+}
+
+impl<'ctx, T: ?Sized + AsContext<'ctx>> AsContext<'ctx> for &'_ T {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        T::ctx(self)
+    }
+}
+
+impl<'ctx, T: ?Sized + AsContext<'ctx>> AsContext<'ctx> for &'_ mut T {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        T::ctx(self)
+    }
+}
+
+impl<'ctx, T: ?Sized + AsContext<'ctx>> AsContext<'ctx> for Box<T> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        T::ctx(self)
     }
 }

@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Intern},
+    context::{AsContext, ContextRef, Intern},
     ir::{
         types::{IrEnumType, IrEnumVariantType, IrStructFieldType, IrStructType, IrValueType},
         values::{IrValue, LiteralBits, LiteralEnumVariant, LiteralStruct, LiteralStructField},
@@ -19,12 +19,12 @@ mod aggregate_value_kind_sealed {
 
 pub trait AggregateValueKind<'ctx: 'scope, 'scope>: aggregate_value_kind_sealed::Sealed {
     type AggregateValue: AggregateValue<'ctx, 'scope, AggregateValueKind = Self>;
-    fn get_value(
+    fn get_value<Ctx: AsContext<'ctx>>(
         value: &Self::AggregateValue,
-        ctx: ContextRef<'ctx>,
+        ctx: Ctx,
     ) -> Val<'ctx, 'ctx, Self::AggregateValue>;
-    fn static_value_type_opt(
-        ctx: ContextRef<'ctx>,
+    fn static_value_type_opt<Ctx: AsContext<'ctx>>(
+        ctx: Ctx,
     ) -> Option<ValueType<'ctx, Self::AggregateValue>>;
 }
 
@@ -33,7 +33,7 @@ pub trait FixedTypeAggregateValueKind<'ctx: 'scope, 'scope>:
 where
     Self::AggregateValue: FixedTypeValue<'ctx>,
 {
-    fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self::AggregateValue>;
+    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self::AggregateValue>;
 }
 
 pub trait AggregateValue<'ctx: 'scope, 'scope>: Value<'ctx> {
@@ -46,11 +46,11 @@ impl<'ctx: 'scope, 'scope, T: AggregateValue<'ctx, 'scope>> Value<'ctx> for T
 where
     T::AggregateValueKind: AggregateValueKind<'ctx, 'scope, AggregateValue = T>,
 {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, 'ctx, Self> {
-        T::AggregateValueKind::get_value(self, ctx)
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+        T::AggregateValueKind::get_value(self, ctx.ctx())
     }
-    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
-        T::AggregateValueKind::static_value_type_opt(ctx)
+    fn static_value_type_opt<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Option<ValueType<'ctx, Self>> {
+        T::AggregateValueKind::static_value_type_opt(ctx.ctx())
     }
 }
 
@@ -59,8 +59,8 @@ where
     T::AggregateValueKind: AggregateValueKind<'ctx, 'scope, AggregateValue = T>
         + FixedTypeAggregateValueKind<'ctx, 'scope>,
 {
-    fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
-        T::AggregateValueKind::static_value_type(ctx)
+    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self> {
+        T::AggregateValueKind::static_value_type(ctx.ctx())
     }
 }
 
@@ -79,10 +79,11 @@ impl<'ctx: 'scope, 'scope, T: StructValue<'ctx, 'scope>> AggregateValueKind<'ctx
     for StructAggregateValueKind<'ctx, 'scope, T>
 {
     type AggregateValue = T;
-    fn get_value(
+    fn get_value<Ctx: AsContext<'ctx>>(
         value: &Self::AggregateValue,
-        ctx: ContextRef<'ctx>,
+        ctx: Ctx,
     ) -> Val<'ctx, 'ctx, Self::AggregateValue> {
+        let ctx = ctx.ctx();
         struct ValueGetter<'ctx> {
             fields: Vec<LiteralStructField<'ctx>>,
             ctx: ContextRef<'ctx>,
@@ -120,9 +121,10 @@ impl<'ctx: 'scope, 'scope, T: StructValue<'ctx, 'scope>> AggregateValueKind<'ctx
             IrValue::from(LiteralStruct::new(ctx, fields)).intern(ctx),
         )
     }
-    fn static_value_type_opt(
-        ctx: ContextRef<'ctx>,
+    fn static_value_type_opt<Ctx: AsContext<'ctx>>(
+        ctx: Ctx,
     ) -> Option<ValueType<'ctx, Self::AggregateValue>> {
+        let ctx = ctx.ctx();
         struct ValueTypeOptGetter<'ctx> {
             fields: Vec<IrStructFieldType<'ctx>>,
             ctx: ContextRef<'ctx>,
@@ -163,10 +165,11 @@ impl<'ctx: 'scope, 'scope, T: StructValue<'ctx, 'scope>> AggregateValueKind<'ctx
 impl<'ctx: 'scope, 'scope, T: FixedTypeStructValue<'ctx, 'scope>>
     FixedTypeAggregateValueKind<'ctx, 'scope> for StructAggregateValueKind<'ctx, 'scope, T>
 {
-    fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self::AggregateValue> {
+    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self::AggregateValue> {
+        let ctx = ctx.ctx();
         ValueType::from_ir_unchecked(
             ctx,
-            IrValueType::from(fixed_type_struct_ir_type::<T>(ctx)).intern(ctx),
+            IrValueType::from(fixed_type_struct_ir_type::<T, _>(ctx)).intern(ctx),
         )
     }
 }
@@ -362,9 +365,15 @@ impl<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>> aggregate_value_kind_seal
 {
 }
 
-fn fixed_type_struct_ir_type<'ctx: 'scope, 'scope, T: FixedTypeStructValue<'ctx, 'scope>>(
-    ctx: ContextRef<'ctx>,
+fn fixed_type_struct_ir_type<
+    'ctx: 'scope,
+    'scope,
+    T: FixedTypeStructValue<'ctx, 'scope>,
+    Ctx: AsContext<'ctx>,
+>(
+    ctx: Ctx,
 ) -> IrStructType<'ctx> {
+    let ctx = ctx.ctx();
     struct ValueTypeGetter<'ctx> {
         fields: Vec<IrStructFieldType<'ctx>>,
         ctx: ContextRef<'ctx>,
@@ -398,9 +407,10 @@ fn fixed_type_struct_ir_type<'ctx: 'scope, 'scope, T: FixedTypeStructValue<'ctx,
     IrStructType::new(ctx, fields)
 }
 
-fn enum_ir_type<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>>(
-    ctx: ContextRef<'ctx>,
+fn enum_ir_type<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>, Ctx: AsContext<'ctx>>(
+    ctx: Ctx,
 ) -> IrEnumType<'ctx> {
+    let ctx = ctx.ctx();
     struct VariantValueTypeGetter<'ctx> {
         fields: Vec<IrStructFieldType<'ctx>>,
         ctx: ContextRef<'ctx>,
@@ -473,10 +483,11 @@ impl<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>> AggregateValueKind<'ctx, 
     for EnumAggregateValueKind<'ctx, 'scope, T>
 {
     type AggregateValue = T;
-    fn get_value(
+    fn get_value<Ctx: AsContext<'ctx>>(
         value: &Self::AggregateValue,
-        ctx: ContextRef<'ctx>,
+        ctx: Ctx,
     ) -> Val<'ctx, 'ctx, Self::AggregateValue> {
+        let ctx = ctx.ctx();
         struct VariantFieldsValueGetter<'ctx> {
             ctx: ContextRef<'ctx>,
             fields: Vec<LiteralStructField<'ctx>>,
@@ -518,7 +529,7 @@ impl<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>> AggregateValueKind<'ctx, 
                 discriminant: Int<Enum::DiscriminantShape>,
                 variant: VariantType,
             ) -> Self::ResultType {
-                let enum_type = enum_ir_type::<Enum>(self.ctx);
+                let enum_type = enum_ir_type::<Enum, _>(self.ctx);
                 let variant_index = enum_type
                     .get_variant_index(&discriminant.into())
                     .expect("variant not found");
@@ -546,12 +557,13 @@ impl<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>> AggregateValueKind<'ctx, 
         }
         value.visit_variant(ValueGetter { ctx })
     }
-    fn static_value_type_opt(
-        ctx: ContextRef<'ctx>,
+    fn static_value_type_opt<Ctx: AsContext<'ctx>>(
+        ctx: Ctx,
     ) -> Option<ValueType<'ctx, Self::AggregateValue>> {
+        let ctx = ctx.ctx();
         Some(ValueType::from_ir_unchecked(
             ctx,
-            IrValueType::from(enum_ir_type::<T>(ctx)).intern(ctx),
+            IrValueType::from(enum_ir_type::<T, _>(ctx)).intern(ctx),
         ))
     }
 }
@@ -559,8 +571,12 @@ impl<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>> AggregateValueKind<'ctx, 
 impl<'ctx: 'scope, 'scope, T: FixedTypeEnumValue<'ctx, 'scope>>
     FixedTypeAggregateValueKind<'ctx, 'scope> for EnumAggregateValueKind<'ctx, 'scope, T>
 {
-    fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self::AggregateValue> {
-        ValueType::from_ir_unchecked(ctx, IrValueType::from(enum_ir_type::<T>(ctx)).intern(ctx))
+    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self::AggregateValue> {
+        let ctx = ctx.ctx();
+        ValueType::from_ir_unchecked(
+            ctx,
+            IrValueType::from(enum_ir_type::<T, _>(ctx)).intern(ctx),
+        )
     }
 }
 

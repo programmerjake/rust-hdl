@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Intern, Interned},
+    context::{AsContext, Intern, Interned},
     ir::{
         io::{IrModuleInput, IrOutputRead},
         logic::{IrRegOutput, IrWireRead},
@@ -119,10 +119,11 @@ impl<'ctx> OwningModule<'ctx> for LiteralArray<'ctx> {
 
 impl<'ctx> LiteralArray<'ctx> {
     pub fn new(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         element_type: IrValueTypeRef<'ctx>,
         elements: impl AsRef<[IrValueRef<'ctx>]>,
     ) -> Self {
+        let ctx = ctx.ctx();
         let elements = elements.as_ref();
         for element in elements {
             assert_eq!(element.get_type(ctx), element_type);
@@ -174,8 +175,9 @@ pub struct LiteralStruct<'ctx> {
 }
 
 impl<'ctx> LiteralStruct<'ctx> {
-    pub fn new(ctx: ContextRef<'ctx>, fields: impl AsRef<[LiteralStructField<'ctx>]>) -> Self {
+    pub fn new(ctx: impl AsContext<'ctx>, fields: impl AsRef<[LiteralStructField<'ctx>]>) -> Self {
         let fields = fields.as_ref();
+        let ctx = ctx.ctx();
         let mut field_types = Vec::with_capacity(fields.len());
         let mut owning_module = None;
         for field in fields {
@@ -223,11 +225,12 @@ pub struct LiteralEnumVariant<'ctx> {
 
 impl<'ctx> LiteralEnumVariant<'ctx> {
     pub fn new(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         value_type: IrEnumType<'ctx>,
         variant_index: usize,
         fields_value: IrValueRef<'ctx>,
     ) -> Self {
+        let ctx = ctx.ctx();
         let variant = &value_type.variants()[variant_index];
         let fields_type = fields_value.get_type(ctx);
         assert_eq!(IrValueType::from(variant.fields), *fields_type);
@@ -290,8 +293,16 @@ pub struct ExtractStructField<'ctx> {
 }
 
 impl<'ctx> ExtractStructField<'ctx> {
-    pub fn new(ctx: ContextRef<'ctx>, struct_value: IrValueRef<'ctx>, field_index: usize) -> Self {
-        Self::new_with_struct_type_unchecked(struct_value, struct_value.get_type(ctx), field_index)
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        struct_value: IrValueRef<'ctx>,
+        field_index: usize,
+    ) -> Self {
+        Self::new_with_struct_type_unchecked(
+            struct_value,
+            struct_value.get_type(ctx.ctx()),
+            field_index,
+        )
     }
     pub fn new_with_struct_type_unchecked(
         struct_value: IrValueRef<'ctx>,
@@ -359,8 +370,16 @@ pub struct ExtractArrayElement<'ctx> {
 }
 
 impl<'ctx> ExtractArrayElement<'ctx> {
-    pub fn new(ctx: ContextRef<'ctx>, array_value: IrValueRef<'ctx>, element_index: usize) -> Self {
-        Self::new_with_array_type_unchecked(array_value, array_value.get_type(ctx), element_index)
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        array_value: IrValueRef<'ctx>,
+        element_index: usize,
+    ) -> Self {
+        Self::new_with_array_type_unchecked(
+            array_value,
+            array_value.get_type(ctx.ctx()),
+            element_index,
+        )
     }
     pub fn new_with_array_type_unchecked(
         array_value: IrValueRef<'ctx>,
@@ -424,11 +443,15 @@ pub struct SliceArray<'ctx> {
 
 impl<'ctx> SliceArray<'ctx> {
     pub fn new(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         array_value: IrValueRef<'ctx>,
         element_indexes: Range<usize>,
     ) -> Self {
-        Self::new_with_array_type_unchecked(array_value, array_value.get_type(ctx), element_indexes)
+        Self::new_with_array_type_unchecked(
+            array_value,
+            array_value.get_type(ctx.ctx()),
+            element_indexes,
+        )
     }
     pub fn new_with_array_type_unchecked(
         array_value: IrValueRef<'ctx>,
@@ -505,11 +528,15 @@ impl<'ctx> SliceBitVector<'ctx> {
     /// bit_indexes is in LSB0 order
     #[track_caller]
     pub fn new(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         base_value: IrValueRef<'ctx>,
         bit_indexes: Range<u32>,
     ) -> Self {
-        Self::new_with_bit_vector_type_unchecked(base_value, base_value.get_type(ctx), bit_indexes)
+        Self::new_with_bit_vector_type_unchecked(
+            base_value,
+            base_value.get_type(ctx.ctx()),
+            bit_indexes,
+        )
     }
     /// bit_indexes is in LSB0 order
     #[track_caller]
@@ -585,11 +612,12 @@ pub struct Mux<'ctx> {
 
 impl<'ctx> Mux<'ctx> {
     pub fn new(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         condition: IrValueRef<'ctx>,
         true_value: IrValueRef<'ctx>,
         false_value: IrValueRef<'ctx>,
     ) -> Self {
+        let ctx = ctx.ctx();
         assert!(condition.get_type(ctx).is_bool());
         let value_type = true_value.get_type(ctx);
         assert_eq!(value_type, false_value.get_type(ctx));
@@ -637,7 +665,8 @@ pub struct ConcatBitVectors<'ctx> {
 
 impl<'ctx> ConcatBitVectors<'ctx> {
     #[track_caller]
-    pub fn new(ctx: ContextRef<'ctx>, bit_vectors: impl AsRef<[IrValueRef<'ctx>]>) -> Self {
+    pub fn new(ctx: impl AsContext<'ctx>, bit_vectors: impl AsRef<[IrValueRef<'ctx>]>) -> Self {
+        let ctx = ctx.ctx();
         let bit_vectors = bit_vectors.as_ref();
         let mut value_type = IrBitVectorType {
             bit_count: 0,
@@ -706,11 +735,12 @@ impl<'ctx> SameSizeBinOp<'ctx> {
     /// for all binary operations, both inputs and the output type must match
     #[track_caller]
     pub fn new(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         kind: SameSizeBinOpKind,
         lhs: IrValueRef<'ctx>,
         rhs: IrValueRef<'ctx>,
     ) -> Self {
+        let ctx = ctx.ctx();
         let value_type = lhs
             .get_type(ctx)
             .bit_vector()
@@ -771,9 +801,9 @@ pub struct SameSizeUnOp<'ctx> {
 impl<'ctx> SameSizeUnOp<'ctx> {
     /// for all unary operations, the input and the output type match
     #[track_caller]
-    pub fn new(ctx: ContextRef<'ctx>, kind: SameSizeUnOpKind, input: IrValueRef<'ctx>) -> Self {
+    pub fn new(ctx: impl AsContext<'ctx>, kind: SameSizeUnOpKind, input: IrValueRef<'ctx>) -> Self {
         let value_type = input
-            .get_type(ctx)
+            .get_type(ctx.ctx())
             .bit_vector()
             .expect("input type must be a bit vector");
         Self {
@@ -824,11 +854,12 @@ pub struct BoolOutBinOp<'ctx> {
 impl<'ctx> BoolOutBinOp<'ctx> {
     #[track_caller]
     pub fn new(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         kind: BoolOutBinOpKind,
         lhs: IrValueRef<'ctx>,
         rhs: IrValueRef<'ctx>,
     ) -> Self {
+        let ctx = ctx.ctx();
         let input_type = lhs
             .get_type(ctx)
             .bit_vector()
@@ -895,9 +926,9 @@ pub struct BoolOutUnOp<'ctx> {
 
 impl<'ctx> BoolOutUnOp<'ctx> {
     #[track_caller]
-    pub fn new(ctx: ContextRef<'ctx>, kind: BoolOutUnOpKind, input: IrValueRef<'ctx>) -> Self {
+    pub fn new(ctx: impl AsContext<'ctx>, kind: BoolOutUnOpKind, input: IrValueRef<'ctx>) -> Self {
         let input_type = input
-            .get_type(ctx)
+            .get_type(ctx.ctx())
             .bit_vector()
             .expect("input type must be a bit vector");
         Self {
@@ -945,12 +976,12 @@ pub struct ConvertIntWrapping<'ctx> {
 impl<'ctx> ConvertIntWrapping<'ctx> {
     #[track_caller]
     pub fn new(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         value_type: IrBitVectorType,
         input: IrValueRef<'ctx>,
     ) -> Self {
         let input_type = input
-            .get_type(ctx)
+            .get_type(ctx.ctx())
             .bit_vector()
             .expect("input type must be a bit vector");
         Self {
@@ -1015,7 +1046,8 @@ fn check_types() {
 }
 
 impl<'ctx> IrValue<'ctx> {
-    pub fn get_type(&self, ctx: ContextRef<'ctx>) -> IrValueTypeRef<'ctx> {
+    pub fn get_type(&self, ctx: impl AsContext<'ctx>) -> IrValueTypeRef<'ctx> {
+        let ctx = ctx.ctx();
         match self {
             IrValue::LiteralBits(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::LiteralArray(v) => IrValueType::from(v.value_type()).intern(ctx),

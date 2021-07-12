@@ -3,7 +3,7 @@
 
 use crate::{
     clocking::ClockDomain,
-    context::{Context, ContextRef},
+    context::{AsContext, Context, ContextRef},
     export::Exporter,
     io::{Output, PlainIO, IO},
     ir::{
@@ -16,7 +16,7 @@ use crate::{
 use alloc::borrow::Cow;
 use core::fmt;
 
-pub trait AsIrModule<'ctx> {
+pub trait AsIrModule<'ctx>: AsContext<'ctx> {
     fn as_ir_module(&self) -> IrModuleRef<'ctx>;
 }
 
@@ -35,6 +35,12 @@ impl<'ctx, T: ?Sized + AsIrModule<'ctx>> AsIrModule<'ctx> for &'_ T {
 impl<'ctx> AsIrModule<'ctx> for Module<'ctx> {
     fn as_ir_module(&self) -> IrModuleRef<'ctx> {
         self.ir
+    }
+}
+
+impl<'ctx> AsContext<'ctx> for Module<'ctx> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        self.ir.ctx()
     }
 }
 
@@ -92,9 +98,6 @@ impl<'ctx> Module<'ctx> {
     }
     pub fn ir(&self) -> IrModuleRef<'ctx> {
         self.ir
-    }
-    pub fn ctx(&self) -> ContextRef<'ctx> {
-        self.ir.ctx()
     }
     #[track_caller]
     pub fn wire<'a, N: Into<Cow<'a, str>>, T: FixedTypeValue<'ctx>>(

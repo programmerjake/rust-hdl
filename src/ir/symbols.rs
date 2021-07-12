@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use crate::context::{ContextRef, Intern, Interned};
+use crate::context::{AsContext, Intern, Interned};
 use alloc::{
     borrow::Cow,
     collections::{btree_map::Entry, BTreeMap},
@@ -138,11 +138,12 @@ impl<'ctx> IrSymbolTable<'ctx> {
     fn insert_uniquified_fallback(
         &self,
         symbols: &mut SymbolTableImpl<'ctx>,
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         mut name: String,
         interned_original_name: Interned<'ctx, str>,
         mut next_suffix_to_try: usize,
     ) -> IrSymbol<'ctx> {
+        let ctx = ctx.ctx();
         loop {
             name.truncate(interned_original_name.len());
             write!(name, "#{}", next_suffix_to_try).unwrap();
@@ -160,11 +161,12 @@ impl<'ctx> IrSymbolTable<'ctx> {
             }
         }
     }
-    pub fn insert_uniquified<'a, 'b, Name: Into<Cow<'b, str>>>(
+    pub fn insert_uniquified<'a, 'b, Name: Into<Cow<'b, str>>, Ctx: AsContext<'ctx>>(
         &'a self,
-        ctx: ContextRef<'ctx>,
+        ctx: Ctx,
         name: Name,
     ) -> IrSymbol<'ctx> {
+        let ctx = ctx.ctx();
         let name: Cow<'b, str> = name.into();
         let mut symbols = self.symbols.borrow_mut();
         let interned_name = (*name).intern(ctx);
@@ -190,7 +192,7 @@ impl<'ctx> Default for IrSymbolTable<'ctx> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::Context;
+    use crate::context::{Context, ContextRef};
 
     #[test]
     fn test() {

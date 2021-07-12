@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Intern},
+    context::{AsContext, ContextRef, Intern},
     fmt_utils::{debug_format_option_as_value_or_invalid, debug_format_option_as_value_or_none},
     ir::{
         logic::{IrWire, IrWireRef},
@@ -90,13 +90,13 @@ impl<'ctx> IrInput<'ctx> {
             None
         }
     }
-    pub fn value_type(&self, ctx: ContextRef<'ctx>) -> IrValueTypeRef<'ctx> {
+    pub fn value_type(&self, ctx: impl AsContext<'ctx>) -> IrValueTypeRef<'ctx> {
         match *self {
-            IrInput::Input { value } => value.get_type(ctx),
+            IrInput::Input { value } => value.get_type(ctx.ctx()),
             IrInput::ExternalInput { value_type } => value_type,
         }
     }
-    pub fn external(ctx: ContextRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
+    pub fn external(ctx: impl AsContext<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
         let _ = ctx;
         Self::ExternalInput { value_type }
     }
@@ -176,13 +176,16 @@ enum ModuleOrContext<'ctx> {
     Context(ContextRef<'ctx>),
 }
 
-impl<'ctx> ModuleOrContext<'ctx> {
-    pub fn ctx(self) -> ContextRef<'ctx> {
-        match self {
-            ModuleOrContext::Module(v) => v.ctx(),
-            ModuleOrContext::Context(v) => v,
+impl<'ctx> AsContext<'ctx> for ModuleOrContext<'ctx> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        match *self {
+            Self::Module(v) => v.ctx(),
+            Self::Context(v) => v,
         }
     }
+}
+
+impl<'ctx> ModuleOrContext<'ctx> {
     pub fn module(self) -> Option<IrModuleRef<'ctx>> {
         match self {
             ModuleOrContext::Module(v) => Some(v),
@@ -213,6 +216,12 @@ impl fmt::Debug for IrOutputReadData<'_> {
     }
 }
 
+impl<'ctx> AsContext<'ctx> for IrOutputReadData<'ctx> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        self.module_or_context.ctx()
+    }
+}
+
 impl<'ctx> IrOutputReadData<'ctx> {
     pub fn write_data(&self) -> Option<&IrOutputWriteData<'ctx>> {
         self.write_data.get()
@@ -222,9 +231,6 @@ impl<'ctx> IrOutputReadData<'ctx> {
     }
     pub fn module(&self) -> Option<IrModuleRef<'ctx>> {
         self.module_or_context.module()
-    }
-    pub fn ctx(&self) -> ContextRef<'ctx> {
-        self.module_or_context.ctx()
     }
     pub fn read(&'ctx self) -> IrValueRef<'ctx> {
         IrValue::OutputRead(IrOutputRead(self)).intern(
@@ -251,7 +257,8 @@ impl<'ctx> IrOutputRead<'ctx> {
             write_data: OnceCell::new(),
         }))
     }
-    pub fn external(ctx: ContextRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
+    pub fn external(ctx: impl AsContext<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
+        let ctx = ctx.ctx();
         IrOutputRead(ctx.output_read_data_arena.alloc(IrOutputReadData {
             module_or_context: ModuleOrContext::Context(ctx),
             value_type,
@@ -280,17 +287,32 @@ impl<'ctx> Hash for IrOutputRead<'ctx> {
     }
 }
 
+impl<'ctx> AsContext<'ctx> for IrOutputRead<'ctx> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        self.0.ctx()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum IrOutput<'ctx> {
     WriteEnd(IrWireRef<'ctx>),
     ReadEnd(IrOutputRead<'ctx>),
 }
 
+impl<'ctx> AsContext<'ctx> for IrOutput<'ctx> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        match self {
+            IrOutput::WriteEnd(v) => v.ctx(),
+            IrOutput::ReadEnd(v) => v.ctx(),
+        }
+    }
+}
+
 impl<'ctx> IrOutput<'ctx> {
     pub fn new(module: IrModuleRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
         IrOutput::ReadEnd(IrOutputRead::new(module, value_type))
     }
-    pub fn external(ctx: ContextRef<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
+    pub fn external(ctx: impl AsContext<'ctx>, value_type: IrValueTypeRef<'ctx>) -> Self {
         IrOutput::ReadEnd(IrOutputRead::external(ctx, value_type))
     }
     #[track_caller]
@@ -306,12 +328,6 @@ impl<'ctx> IrOutput<'ctx> {
         match self {
             IrOutput::WriteEnd(v) => v.read(),
             IrOutput::ReadEnd(v) => v.read(),
-        }
-    }
-    pub fn ctx(&self) -> ContextRef<'ctx> {
-        match self {
-            IrOutput::WriteEnd(v) => v.module().ctx(),
-            IrOutput::ReadEnd(v) => v.0.ctx(),
         }
     }
     pub fn value_type(&self) -> IrValueTypeRef<'ctx> {

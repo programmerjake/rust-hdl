@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use alloc::borrow::Cow;
-use core::fmt;
-
 use crate::{
-    context::ContextRef,
+    context::AsContext,
     ir::{module::IrModuleRef, symbols::IrSymbolTable},
 };
+use alloc::borrow::Cow;
+use core::fmt;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RtlilId<'ctx> {
@@ -103,9 +102,10 @@ pub(crate) struct GlobalSymbolTable<'ctx>(IrSymbolTable<'ctx>);
 impl<'ctx> GlobalSymbolTable<'ctx> {
     pub(crate) fn new_id<'a>(
         &self,
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         name: impl Into<Cow<'a, str>>,
     ) -> RtlilId<'ctx> {
+        let ctx = ctx.ctx();
         RtlilId {
             id: self.0.insert_uniquified(ctx, name).get(),
             module: None,

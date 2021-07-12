@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use alloc::{boxed::Box, vec::Vec};
-
 use crate::{
-    context::Intern,
+    context::{AsContext, Intern},
     ir::{
         types::IrBitVectorType,
         values::{
@@ -16,24 +14,11 @@ use crate::{
     prelude::*,
     values::integer::IntShapeTrait,
 };
+use alloc::{boxed::Box, vec::Vec};
 use core::ops::{
     Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Bound, Mul,
     MulAssign, Neg, Not, Range, RangeBounds, Shl, ShlAssign, Shr, ShrAssign, Sub, SubAssign,
 };
-
-impl<'ctx: 'scope, 'scope> From<Val<'ctx, 'scope, UInt1>> for Val<'ctx, 'scope, bool> {
-    #[must_use]
-    fn from(v: Val<'ctx, 'scope, UInt1>) -> Self {
-        Self::from_ir_unchecked(v.ctx(), v.ir())
-    }
-}
-
-impl<'ctx: 'scope, 'scope> From<Val<'ctx, 'scope, bool>> for Val<'ctx, 'scope, UInt1> {
-    #[must_use]
-    fn from(v: Val<'ctx, 'scope, bool>) -> Self {
-        Self::from_ir_unchecked(v.ctx(), v.ir())
-    }
-}
 
 #[track_caller]
 fn same_size_bin_op_unchecked<'ctx: 'scope, 'scope, T: Value<'ctx>>(

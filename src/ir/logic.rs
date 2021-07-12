@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::Intern,
+    context::{AsContext, ContextRef, Intern},
     fmt_utils::debug_format_option_as_value_or_none,
     ir::{
         module::{combine_owning_modules, IrModuleRef, OwningModule},
@@ -27,6 +27,12 @@ pub struct IrWire<'ctx> {
     name: IrSymbol<'ctx>,
     value_type: IrValueTypeRef<'ctx>,
     assigned_value: OnceCell<IrValueRef<'ctx>>,
+}
+
+impl<'ctx> AsContext<'ctx> for IrWire<'ctx> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        self.module.ctx()
+    }
 }
 
 pub type IrWireRef<'ctx> = &'ctx IrWire<'ctx>;

@@ -3,6 +3,7 @@
 
 use crate::{
     clocking::ClockDomain,
+    context::AsContext,
     field,
     ir::{
         logic::{IrReg, IrRegRef, IrRegReset, IrWire, IrWireRef},
@@ -51,7 +52,7 @@ impl<'ctx, T: Value<'ctx>> WireRef<'ctx, T> {
     pub fn read(self) -> Val<'ctx, 'ctx, T> {
         Val::from_ir_and_type_unchecked(
             self.read_value,
-            ValueType::from_ir_unchecked(self.ir.module().ctx(), self.ir.value_type()),
+            ValueType::from_ir_unchecked(self.ir.ctx(), self.ir.value_type()),
         )
     }
 }

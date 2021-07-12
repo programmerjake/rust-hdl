@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
+use std::fmt;
+
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Field, Fields, GenericParam,
-    Generics, Lifetime, LifetimeDef, Path, Token, Variant, VisRestricted, Visibility, WhereClause,
-    WherePredicate,
+    Attribute, BinOp, Data, DataEnum, DataStruct, DeriveInput, Error, Expr, Field, Fields,
+    GenericParam, Generics, Lifetime, LifetimeDef, Path, Token, UnOp, Variant, VisRestricted,
+    Visibility, WhereClause, WherePredicate,
 };
 
 mod kw {
@@ -1250,14 +1252,62 @@ fn derive_plain_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     Ok(quote! {
         #[automatically_derived]
         impl #impl_generics #crate_path::io::PlainIO<#ctx_lifetime> for #name #ty_generics #adjusted_where_clause {
-            fn external(ctx: #crate_path::context::ContextRef<'ctx>) -> Self {
+            fn external<__Ctx: #crate_path::context::AsContext<'ctx>>(ctx: __Ctx) -> Self {
+                let ctx = #crate_path::context::AsContext::ctx(&ctx);
                 #external_body
             }
         }
     })
 }
 
-fn debug_input(_input: &DeriveInput, _derive_name: &str) {
+fn val_impl(ast: Expr) -> syn::Result<TokenStream> {
+    match ast {
+        Expr::Array(expr) => todo!(),
+        Expr::Binary(expr) => match expr.op {
+            BinOp::Add(_) => todo!(),
+            BinOp::Sub(_) => todo!(),
+            BinOp::Mul(_) => todo!(),
+            BinOp::And(_) => todo!(),
+            BinOp::Or(_) => todo!(),
+            BinOp::BitXor(_) => todo!(),
+            BinOp::BitAnd(_) => todo!(),
+            BinOp::BitOr(_) => todo!(),
+            BinOp::Shl(_) => todo!(),
+            BinOp::Shr(_) => todo!(),
+            BinOp::Eq(_) => todo!(),
+            BinOp::Lt(_) => todo!(),
+            BinOp::Le(_) => todo!(),
+            BinOp::Ne(_) => todo!(),
+            BinOp::Ge(_) => todo!(),
+            BinOp::Gt(_) => todo!(),
+            _ => Err(Error::new_spanned(expr.op, "unsupported binary op")),
+        },
+        Expr::Call(expr) => todo!(),
+        Expr::Cast(expr) => todo!(),
+        Expr::Field(expr) => todo!(),
+        Expr::Group(expr) => val_impl(*expr.expr),
+        Expr::If(expr) => todo!(),
+        Expr::Index(expr) => todo!(),
+        Expr::Let(expr) => todo!(),
+        Expr::Lit(expr) => todo!(),
+        Expr::Match(expr) => todo!(),
+        Expr::MethodCall(expr) => todo!(),
+        Expr::Paren(expr) => val_impl(*expr.expr),
+        Expr::Path(expr) => todo!(),
+        Expr::Repeat(expr) => todo!(),
+        Expr::Struct(expr) => todo!(),
+        Expr::Tuple(expr) => todo!(),
+        Expr::Unary(expr) => match expr.op {
+            UnOp::Not(_) => todo!(),
+            UnOp::Neg(_) => todo!(),
+            _ => Err(Error::new_spanned(expr.op, "unsupported unary op")),
+        },
+        Expr::Block(expr) => Ok(quote! { #expr }),
+        _ => Err(Error::new_spanned(ast, "unsupported expression")),
+    }
+}
+
+fn debug_input(_input: &impl quote::ToTokens, _derive_name: &str) {
     // eprintln!(
     //     "--------INPUT: {}\n{}\n--------",
     //     derive_name,
@@ -1307,6 +1357,16 @@ pub fn derive_io(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn derive_plain_io(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     let retval = match derive_plain_io_impl(ast) {
+        Ok(retval) => retval,
+        Err(e) => e.into_compile_error(),
+    };
+    retval.into()
+}
+
+#[proc_macro]
+pub fn val(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ast = parse_macro_input!(input as Expr);
+    let retval = match val_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),
     };

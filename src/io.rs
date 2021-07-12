@@ -2,10 +2,12 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{Context, ContextRef},
+    context::{AsContext, Context, ContextRef},
     ir::io::{InOrOut, IrIOCallback, IrIOMutRef, IrInput, IrOutput},
     module::{AsIrModule, Module},
-    values::{integer::IntShapeTrait, FixedTypeValue, Int, SInt, UInt, Val, Value, ValueType},
+    values::{
+        integer::IntShapeTrait, FixedTypeValue, Int, SInt, ToVal, UInt, Val, Value, ValueType,
+    },
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
@@ -127,7 +129,7 @@ pub trait IO<'ctx> {
 }
 
 pub trait PlainIO<'ctx>: IO<'ctx> + Sized {
-    fn external(ctx: ContextRef<'ctx>) -> Self;
+    fn external<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Self;
 }
 
 impl<'ctx> Context<'ctx> {
@@ -143,8 +145,8 @@ impl<'ctx, T: IO<'ctx> + ?Sized> IO<'ctx> for Box<T> {
 }
 
 impl<'ctx, T: PlainIO<'ctx>> PlainIO<'ctx> for Box<T> {
-    fn external(ctx: ContextRef<'ctx>) -> Self {
-        Box::new(ctx.external())
+    fn external<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Self {
+        Box::new(ctx.ctx().external())
     }
 }
 
@@ -181,7 +183,8 @@ impl<'ctx, T: IO<'ctx>, const N: usize> IO<'ctx> for [T; N] {
 }
 
 impl<'ctx, T: PlainIO<'ctx>, const N: usize> PlainIO<'ctx> for [T; N] {
-    fn external(ctx: ContextRef<'ctx>) -> Self {
+    fn external<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Self {
+        let ctx = ctx.ctx();
         let mut elements = Vec::with_capacity(N);
         for _ in 0..N {
             elements.push(ctx.external());
@@ -239,19 +242,19 @@ no_op_impl_io!(Module<'_>);
 no_op_impl_io!(&'_ str);
 
 impl<'ctx> PlainIO<'ctx> for ContextRef<'ctx> {
-    fn external(ctx: ContextRef<'ctx>) -> Self {
-        ctx
+    fn external<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Self {
+        ctx.ctx()
     }
 }
 
 impl<'ctx> PlainIO<'ctx> for SInt<0> {
-    fn external(_ctx: ContextRef<'ctx>) -> Self {
+    fn external<Ctx: AsContext<'ctx>>(_ctx: Ctx) -> Self {
         SInt::default()
     }
 }
 
 impl<'ctx> PlainIO<'ctx> for UInt<0> {
-    fn external(_ctx: ContextRef<'ctx>) -> Self {
+    fn external<Ctx: AsContext<'ctx>>(_ctx: Ctx) -> Self {
         UInt::default()
     }
 }
@@ -288,7 +291,8 @@ macro_rules! impl_io_trait_for_tuples {
         }
         impl<'ctx, $($T: PlainIO<'ctx>),*> PlainIO<'ctx> for ($($T,)*) {
             #[allow(unused_variables)]
-            fn external(ctx: ContextRef<'ctx>) -> Self {
+            fn external<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Self {
+                let ctx = ctx.ctx();
                 ($($T::external(ctx),)*)
             }
         }
@@ -369,8 +373,8 @@ impl<'ctx, T: Value<'ctx>> IO<'ctx> for Input<'ctx, T> {
 }
 
 impl<'ctx, T: FixedTypeValue<'ctx>> PlainIO<'ctx> for Input<'ctx, T> {
-    fn external(ctx: ContextRef<'ctx>) -> Self {
-        ctx.external_input()
+    fn external<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Self {
+        ctx.ctx().external_input()
     }
 }
 
@@ -405,16 +409,17 @@ impl<'ctx> Context<'ctx> {
 }
 
 impl<'ctx, T: Value<'ctx>> Input<'ctx, T> {
-    pub fn external_with_type(ctx: ContextRef<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
+    pub fn external_with_type(ctx: impl AsContext<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
         Self {
-            ir: IrInput::external(ctx, value_type.ir()),
+            ir: IrInput::external(ctx.ctx(), value_type.ir()),
             value_type,
         }
     }
-    pub fn external(ctx: ContextRef<'ctx>) -> Self
+    pub fn external(ctx: impl AsContext<'ctx>) -> Self
     where
         T: FixedTypeValue<'ctx>,
     {
+        let ctx = ctx.ctx();
         Self::external_with_type(ctx, T::static_value_type(ctx))
     }
     #[track_caller]
@@ -453,21 +458,23 @@ impl<'ctx, T: Value<'ctx>> Output<'ctx, T> {
         let module = module.as_ir_module();
         Self::with_type(module, T::static_value_type(module.ctx()))
     }
-    pub fn external_with_type(ctx: ContextRef<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
+    pub fn external_with_type(ctx: impl AsContext<'ctx>, value_type: ValueType<'ctx, T>) -> Self {
         Output {
-            ir: IrOutput::external(ctx, value_type.ir()),
+            ir: IrOutput::external(ctx.ctx(), value_type.ir()),
             _phantom: PhantomData,
         }
     }
-    pub fn external(ctx: ContextRef<'ctx>) -> Self
+    pub fn external(ctx: impl AsContext<'ctx>) -> Self
     where
         T: FixedTypeValue<'ctx>,
     {
+        let ctx = ctx.ctx();
         Self::external_with_type(ctx, T::static_value_type(ctx))
     }
     #[track_caller]
-    pub fn assign(self, assigned_value: Val<'ctx, 'ctx, T>) {
-        self.ir.assign(assigned_value.ir())
+    pub fn assign(self, assigned_value: impl ToVal<'ctx, 'ctx, T>) {
+        let ctx = self.ir.ctx();
+        self.ir.assign(assigned_value.to_val(ctx).ir())
     }
     pub fn ir(&self) -> &IrOutput<'ctx> {
         &self.ir
@@ -487,7 +494,7 @@ impl<'ctx, T: Value<'ctx>> IO<'ctx> for Output<'ctx, T> {
 }
 
 impl<'ctx, T: FixedTypeValue<'ctx>> PlainIO<'ctx> for Output<'ctx, T> {
-    fn external(ctx: ContextRef<'ctx>) -> Self {
-        ctx.external_output()
+    fn external<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Self {
+        ctx.ctx().external_output()
     }
 }

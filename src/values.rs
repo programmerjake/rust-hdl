@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Intern},
+    context::{AsContext, ContextRef, Intern},
     io::Input,
     ir::{
         types::{IrArrayType, IrBitVectorType, IrValueType, IrValueTypeRef},
@@ -10,13 +10,14 @@ use crate::{
     },
     values::aggregate::StructValue,
 };
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
 use core::{
     convert::Infallible,
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
 };
+use once_cell::unsync::OnceCell;
 
 pub mod aggregate;
 mod foreign_derives;
@@ -27,23 +28,24 @@ pub use integer::{
     Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, UInt, UInt1, UInt128, UInt16, UInt32,
     UInt64, UInt8,
 };
-pub use rust_hdl_macros::{FixedTypeValue, Value};
+pub use rust_hdl_macros::{val, FixedTypeValue, Value};
 
 mod value_fns_sealed {
     pub trait Sealed {}
 }
 
 pub trait ValueFns<'ctx>: Sized + value_fns_sealed::Sealed + 'ctx {
-    fn get_input(&self, ctx: ContextRef<'ctx>) -> Input<'ctx, Self>
+    fn get_input<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Input<'ctx, Self>
     where
         Self: Value<'ctx>,
     {
-        self.get_value(ctx).into()
+        self.get_value(ctx.ctx()).into()
     }
-    fn get_value_type(&self, ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self>
+    fn get_value_type<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> ValueType<'ctx, Self>
     where
         Self: Value<'ctx>,
     {
+        let ctx = ctx.ctx();
         Self::static_value_type_opt(ctx).unwrap_or_else(|| self.get_value(ctx).value_type())
     }
 }
@@ -53,29 +55,31 @@ impl<'ctx, T: Value<'ctx>> value_fns_sealed::Sealed for T {}
 impl<'ctx, T: Value<'ctx>> ValueFns<'ctx> for T {}
 
 pub trait Value<'ctx>: ValueFns<'ctx> {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, 'ctx, Self>;
-    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self>;
+    fn static_value_type_opt<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Option<ValueType<'ctx, Self>> {
         let _ = ctx;
         None
     }
 }
 
 pub trait FixedTypeValue<'ctx>: Value<'ctx> {
-    fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
-        Self::static_value_type_opt(ctx).unwrap()
+    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self> {
+        Self::static_value_type_opt(ctx.ctx()).unwrap()
     }
 }
 
 impl<'ctx> FixedTypeValue<'ctx> for bool {}
 
 impl<'ctx> Value<'ctx> for bool {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+        let ctx = ctx.ctx();
         Val::from_ir_unchecked(
             ctx,
             IrValue::LiteralBits(LiteralBits::new_bool(*self)).intern(ctx),
         )
     }
-    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+    fn static_value_type_opt<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Option<ValueType<'ctx, Self>> {
+        let ctx = ctx.ctx();
         Some(ValueType::from_ir_unchecked(
             ctx,
             IrValueType::BitVector(IrBitVectorType {
@@ -90,10 +94,12 @@ impl<'ctx> Value<'ctx> for bool {
 impl<'ctx, Shape: integer::FixedIntShape> FixedTypeValue<'ctx> for Int<Shape> {}
 
 impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+        let ctx = ctx.ctx();
         Val::from_ir_unchecked(ctx, IrValue::LiteralBits(self.clone().into()).intern(ctx))
     }
-    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+    fn static_value_type_opt<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Option<ValueType<'ctx, Self>> {
+        let ctx = ctx.ctx();
         let static_shape = Shape::static_shape()?;
         Some(ValueType::from_ir_unchecked(
             ctx,
@@ -104,8 +110,9 @@ impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
 
 fn array_get_value<'ctx: 'scope, 'scope, A: AsRef<[T]> + Value<'ctx>, T: Value<'ctx>>(
     this: &A,
-    ctx: ContextRef<'ctx>,
+    ctx: impl AsContext<'ctx>,
 ) -> Val<'ctx, 'scope, A> {
+    let ctx = ctx.ctx();
     let mut element_type = T::static_value_type_opt(ctx);
     let elements: Vec<_> = this
         .as_ref()
@@ -132,10 +139,12 @@ fn array_get_value<'ctx: 'scope, 'scope, A: AsRef<[T]> + Value<'ctx>, T: Value<'
 impl<'ctx, T: FixedTypeValue<'ctx>, const N: usize> FixedTypeValue<'ctx> for [T; N] {}
 
 impl<'ctx, T: Value<'ctx>, const N: usize> Value<'ctx> for [T; N] {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+        let ctx = ctx.ctx();
         array_get_value(self, ctx)
     }
-    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+    fn static_value_type_opt<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Option<ValueType<'ctx, Self>> {
+        let ctx = ctx.ctx();
         let element_type = T::static_value_type_opt(ctx)?;
         Some(ValueType::from_ir_unchecked(
             ctx,
@@ -209,31 +218,36 @@ impl<'ctx, T: Value<'ctx>> From<ValueType<'ctx, Box<[T]>>> for ValueType<'ctx, V
 }
 
 impl<'ctx, T: Value<'ctx>> Value<'ctx> for Box<[T]> {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+        let ctx = ctx.ctx();
         array_get_value(self, ctx)
     }
 }
 
 impl<'ctx, T: Value<'ctx>> Value<'ctx> for Vec<T> {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+        let ctx = ctx.ctx();
         array_get_value(self, ctx)
     }
 }
 
 impl<'ctx, T: ?Sized + 'ctx> Value<'ctx> for PhantomData<T> {
-    fn get_value(&self, ctx: ContextRef<'ctx>) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+        let ctx = ctx.ctx();
         Val::from_ir_and_type_unchecked(
             IrValue::from(LiteralBits::new()).intern(ctx),
             Self::static_value_type(ctx),
         )
     }
-    fn static_value_type_opt(ctx: ContextRef<'ctx>) -> Option<ValueType<'ctx, Self>> {
+    fn static_value_type_opt<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Option<ValueType<'ctx, Self>> {
+        let ctx = ctx.ctx();
         Some(Self::static_value_type(ctx))
     }
 }
 
 impl<'ctx, T: ?Sized + 'ctx> FixedTypeValue<'ctx> for PhantomData<T> {
-    fn static_value_type(ctx: ContextRef<'ctx>) -> ValueType<'ctx, Self> {
+    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self> {
+        let ctx = ctx.ctx();
         ValueType::from_ir_unchecked(
             ctx,
             IrValueType::from(IrBitVectorType {
@@ -245,14 +259,80 @@ impl<'ctx, T: ?Sized + 'ctx> FixedTypeValue<'ctx> for PhantomData<T> {
     }
 }
 
+pub trait ToVal<'ctx: 'scope, 'scope, T: Value<'ctx>> {
+    #[track_caller]
+    fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, T>;
+}
+
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope, T> for T {
+    fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, T> {
+        self.get_value(ctx.ctx())
+    }
+}
+
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope, T> for Val<'ctx, 'scope, T> {
+    fn to_val<Ctx: AsContext<'ctx>>(&self, _ctx: Ctx) -> Val<'ctx, 'scope, T> {
+        *self
+    }
+}
+
+struct LazyValData<'ctx: 'scope, 'scope, T: Value<'ctx>, F: ?Sized> {
+    val: OnceCell<Val<'ctx, 'scope, T>>,
+    f: F,
+}
+
+pub struct LazyVal<'ctx: 'scope, 'scope, T: Value<'ctx>> {
+    data:
+        Rc<LazyValData<'ctx, 'scope, T, dyn Fn(ContextRef<'ctx>) -> Val<'ctx, 'scope, T> + 'scope>>,
+}
+
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> LazyVal<'ctx, 'scope, T> {
+    pub fn new<V: ToVal<'ctx, 'scope, T> + 'scope>(v: V) -> Self {
+        Self {
+            data: Rc::new(LazyValData {
+                val: OnceCell::new(),
+                f: move |ctx| v.to_val(ctx),
+            }),
+        }
+    }
+}
+
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Clone for LazyVal<'ctx, 'scope, T> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+        }
+    }
+}
+
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope, T> for LazyVal<'ctx, 'scope, T> {
+    fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, T> {
+        match self.data.val.get() {
+            Some(&retval) => retval,
+            None => {
+                let retval = (self.data.f)(ctx.ctx());
+                let _ = self.data.val.set(retval);
+                retval
+            }
+        }
+    }
+}
+
 pub struct Val<'ctx, 'scope, T> {
     ir: IrValueRef<'ctx>,
     value_type: ValueType<'ctx, T>,
     _phantom: PhantomData<&'scope ()>,
 }
 
+impl<'ctx: 'scope, 'scope, T> AsContext<'ctx> for Val<'ctx, 'scope, T> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        self.value_type.ctx()
+    }
+}
+
 impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
-    pub fn from_ir_unchecked(ctx: ContextRef<'ctx>, ir: IrValueRef<'ctx>) -> Self {
+    pub fn from_ir_unchecked(ctx: impl AsContext<'ctx>, ir: IrValueRef<'ctx>) -> Self {
+        let ctx = ctx.ctx();
         Self::from_ir_and_type_unchecked(ir, ValueType::from_ir_unchecked(ctx, ir.get_type(ctx)))
     }
     pub fn from_ir_and_type_unchecked(
@@ -267,9 +347,6 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
     }
     pub fn value_type(self) -> ValueType<'ctx, T> {
         self.value_type
-    }
-    pub fn ctx(self) -> ContextRef<'ctx> {
-        self.value_type.ctx()
     }
     pub fn ir(self) -> IrValueRef<'ctx> {
         self.ir
@@ -332,8 +409,15 @@ pub struct ValueType<'ctx, T> {
     _phantom: PhantomData<fn(T) -> T>,
 }
 
+impl<'ctx, T> AsContext<'ctx> for ValueType<'ctx, T> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        self.ctx
+    }
+}
+
 impl<'ctx, T: Value<'ctx>> ValueType<'ctx, T> {
-    pub fn from_ir_unchecked(ctx: ContextRef<'ctx>, ir: IrValueTypeRef<'ctx>) -> Self {
+    pub fn from_ir_unchecked(ctx: impl AsContext<'ctx>, ir: IrValueTypeRef<'ctx>) -> Self {
+        let ctx = ctx.ctx();
         ValueType {
             ir,
             ctx,
@@ -342,9 +426,6 @@ impl<'ctx, T: Value<'ctx>> ValueType<'ctx, T> {
     }
     pub fn ir(self) -> IrValueTypeRef<'ctx> {
         self.ir
-    }
-    pub fn ctx(self) -> ContextRef<'ctx> {
-        self.ctx
     }
 }
 
@@ -373,5 +454,19 @@ impl<'ctx, T> PartialEq for ValueType<'ctx, T> {
 impl<'ctx, T> Hash for ValueType<'ctx, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ir.hash(state)
+    }
+}
+
+impl<'ctx: 'scope, 'scope> From<Val<'ctx, 'scope, UInt1>> for Val<'ctx, 'scope, bool> {
+    #[must_use]
+    fn from(v: Val<'ctx, 'scope, UInt1>) -> Self {
+        Self::from_ir_unchecked(v.ctx(), v.ir())
+    }
+}
+
+impl<'ctx: 'scope, 'scope> From<Val<'ctx, 'scope, bool>> for Val<'ctx, 'scope, UInt1> {
+    #[must_use]
+    fn from(v: Val<'ctx, 'scope, bool>) -> Self {
+        Self::from_ir_unchecked(v.ctx(), v.ir())
     }
 }

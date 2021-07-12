@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Internable, Interned},
+    context::{AsContext, ContextRef, Internable, Interned},
     fmt_utils::{debug_format_option_as_value_or_none, NestedDebugTracking},
     io::{IOVisitor, IO},
     ir::{
@@ -123,6 +123,12 @@ pub struct IrModule<'ctx> {
     debug_formatting: Cell<bool>,
 }
 
+impl<'ctx> AsContext<'ctx> for IrModule<'ctx> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        self.ctx
+    }
+}
+
 impl Eq for IrModule<'_> {}
 
 impl Hash for IrModule<'_> {
@@ -163,10 +169,11 @@ impl fmt::Display for IrModulePath<'_, '_> {
 }
 
 impl<'ctx> IrModule<'ctx> {
-    pub fn extract_interface_types<T: IO<'ctx> + ?Sized>(
-        ctx: ContextRef<'ctx>,
+    pub fn extract_interface_types<T: IO<'ctx> + ?Sized, Ctx: AsContext<'ctx>>(
+        ctx: Ctx,
         external_interface: &mut T,
     ) -> Vec<InOrOut<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>> {
+        let ctx = ctx.ctx();
         let mut interface_types = Vec::new();
         IOVisitor::visit(
             external_interface,
@@ -180,12 +187,13 @@ impl<'ctx> IrModule<'ctx> {
         interface_types
     }
     pub fn new_without_interface(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         source_location: SourceLocation<'ctx>,
         name: Cow<'_, str>,
         parent: Option<IrModuleRef<'ctx>>,
         interface_types: Vec<InOrOut<IrValueTypeRef<'ctx>, IrValueTypeRef<'ctx>>>,
     ) -> IrModuleRef<'ctx> {
+        let ctx = ctx.ctx();
         if let Some(parent) = parent {
             assert!(core::ptr::eq(parent.ctx(), ctx));
         }
@@ -210,13 +218,15 @@ impl<'ctx> IrModule<'ctx> {
         T: IO<'ctx> + ?Sized,
         F: FnOnce(IrModuleRef<'ctx>, &mut T) -> Result<(), E>,
         E,
+        Ctx: AsContext<'ctx>,
     >(
-        ctx: ContextRef<'ctx>,
+        ctx: Ctx,
         source_location: SourceLocation<'ctx>,
         name: Cow<'_, str>,
         before_map_interface: F,
         external_interface: &mut T,
     ) -> Result<IrModuleRef<'ctx>, E> {
+        let ctx = ctx.ctx();
         let module = Self::new_without_interface(
             ctx,
             source_location,
@@ -229,11 +239,12 @@ impl<'ctx> IrModule<'ctx> {
         Ok(module)
     }
     pub fn new_top_module<T: IO<'ctx> + ?Sized>(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         source_location: SourceLocation<'ctx>,
         name: Cow<'_, str>,
         external_interface: &mut T,
     ) -> IrModuleRef<'ctx> {
+        let ctx = ctx.ctx();
         let retval: Result<_, Infallible> = Self::try_new_top_module(
             ctx,
             source_location,
@@ -312,23 +323,20 @@ impl<'ctx> IrModule<'ctx> {
     ) -> Option<&[InOrOut<IrModuleInputData<'ctx>, IrModuleOutputData<'ctx>>]> {
         self.interface.get().map(Deref::deref)
     }
-    pub fn ctx(&self) -> ContextRef<'ctx> {
-        self.ctx
-    }
     pub fn parent(&self) -> Option<IrModuleRef<'ctx>> {
         self.parent
     }
     fn parent_symbol_table_impl(
-        ctx: ContextRef<'ctx>,
+        ctx: impl AsContext<'ctx>,
         parent: Option<IrModuleRef<'ctx>>,
     ) -> &'ctx IrSymbolTable<'ctx> {
         match parent {
             Some(parent) => parent.symbol_table(),
-            None => ctx.root_symbol_table(),
+            None => ctx.ctx().root_symbol_table(),
         }
     }
     pub fn parent_symbol_table(&self) -> &IrSymbolTable<'ctx> {
-        Self::parent_symbol_table_impl(self.ctx(), self.parent())
+        Self::parent_symbol_table_impl(self, self.parent())
     }
     pub fn symbol_table(&self) -> &IrSymbolTable<'ctx> {
         &self.symbol_table

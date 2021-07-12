@@ -3,7 +3,7 @@
 
 pub use crate::{
     clocking::ClockDomain,
-    context::{Context, ContextRef},
+    context::{AsContext, Context, ContextRef},
     field,
     io::{Input, NotIO, Output, PlainIO, IO},
     logic::{Reg, RegRef, Wire, WireRef},
@@ -11,7 +11,7 @@ pub use crate::{
     named,
     values::{
         ops::{Compare, CompareEq, CompareGtLE, CompareLtGE, Len, ReduceBitwise, Slice},
-        FixedTypeValue, Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, UInt, UInt1, UInt128,
-        UInt16, UInt32, UInt64, UInt8, Val, Value, ValueType,
+        val, FixedTypeValue, Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, UInt, UInt1,
+        UInt128, UInt16, UInt32, UInt64, UInt8, Val, Value, ValueType,
     },
 };

@@ -2,7 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{ContextRef, Intern, Interned},
+    context::{AsContext, Intern, Interned},
     ir::values::LiteralBits,
     prelude::Int,
     values::integer::IntShape,
@@ -67,7 +67,8 @@ pub struct IrStructType<'ctx> {
 
 impl<'ctx> IrStructType<'ctx> {
     #[track_caller]
-    pub fn new(ctx: ContextRef<'ctx>, fields: impl AsRef<[IrStructFieldType<'ctx>]>) -> Self {
+    pub fn new(ctx: impl AsContext<'ctx>, fields: impl AsRef<[IrStructFieldType<'ctx>]>) -> Self {
+        let ctx = ctx.ctx();
         let fields: Interned<'ctx, [_]> = fields.as_ref().intern(ctx);
         let flattened = flatten_struct_field_types(fields.iter().map(|v| *v.ty));
         Self { fields, flattened }
@@ -112,11 +113,12 @@ pub struct IrEnumType<'ctx> {
 impl<'ctx> IrEnumType<'ctx> {
     /// the variants are sorted in ascending order by their discriminant, asserting that there are no duplicate discriminants
     #[track_caller]
-    pub fn new<I: IntoIterator<Item = IrEnumVariantType<'ctx>>>(
-        ctx: ContextRef<'ctx>,
+    pub fn new<I: IntoIterator<Item = IrEnumVariantType<'ctx>>, Ctx: AsContext<'ctx>>(
+        ctx: Ctx,
         discriminant_type: IrBitVectorType,
         variants: I,
     ) -> Self {
+        let ctx = ctx.ctx();
         let mut variants: Vec<IrEnumVariantType<'ctx>> = variants.into_iter().collect();
         for i in &variants {
             assert_eq!(
@@ -159,10 +161,14 @@ impl<'ctx> IrEnumType<'ctx> {
             signed: false,
         }
     }
-    pub fn with_generated_discriminant<I: IntoIterator<Item = IrEnumVariantType<'ctx, ()>>>(
-        ctx: ContextRef<'ctx>,
+    pub fn with_generated_discriminant<
+        I: IntoIterator<Item = IrEnumVariantType<'ctx, ()>>,
+        Ctx: AsContext<'ctx>,
+    >(
+        ctx: Ctx,
         variants: I,
     ) -> Self {
+        let ctx = ctx.ctx();
         let mut variants: Vec<IrEnumVariantType<'ctx>> = variants
             .into_iter()
             .map(
@@ -344,7 +350,10 @@ pub type IrValueTypeRef<'ctx> = Interned<'ctx, IrValueType<'ctx>>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{context::Context, prelude::UInt};
+    use crate::{
+        context::{Context, ContextRef},
+        prelude::UInt,
+    };
 
     #[test]
     fn test_generate_discriminant_type() {
