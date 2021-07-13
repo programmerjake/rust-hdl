@@ -1353,9 +1353,13 @@ impl ValTranslator {
         })
     }
 
-    fn block_uninterpreted(&self, block: Block) -> syn::Result<TokenStream> {
+    fn block_uninterpreted(&self, mut block: Block) -> syn::Result<TokenStream> {
         let crate_path = &self.crate_path;
-        Ok(quote! { #crate_path::values::ops::identity(#block) })
+        // add useless let to shut-up #[warn(unused_braces)]
+        block.stmts.insert(0, parse_quote! {let () = ();});
+        Ok(quote_spanned! {block.brace_token.span=>
+            #crate_path::values::ops::identity(#block)
+        })
     }
 
     fn expr_if(&self, expr_if: ExprIf) -> syn::Result<TokenStream> {
