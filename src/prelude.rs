@@ -10,8 +10,7 @@ pub use crate::{
     module::Module,
     named,
     values::{
-        ops::{Compare, CompareEq, CompareGtLE, CompareLtGE, Len, ReduceBitwise, Slice},
-        val, FixedTypeValue, Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, UInt, UInt1,
-        UInt128, UInt16, UInt32, UInt64, UInt8, Val, Value, ValueType,
+        val, FixedTypeValue, Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, ToVal, UInt,
+        UInt1, UInt128, UInt16, UInt32, UInt64, UInt8, Val, Value, ValueType,
     },
 };

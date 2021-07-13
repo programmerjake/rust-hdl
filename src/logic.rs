@@ -11,7 +11,7 @@ use crate::{
         SourceLocation,
     },
     module::AsIrModule,
-    values::{FixedTypeValue, Val, Value, ValueType},
+    values::{FixedTypeValue, ToVal, Val, Value, ValueType},
 };
 use alloc::borrow::Cow;
 use core::{fmt, marker::PhantomData, ops::Deref};
@@ -222,8 +222,12 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
         )
     }
     #[track_caller]
-    pub fn assign_data_in(self, assigned_value: Val<'ctx, 'ctx, T>) -> RegRef<'ctx, T> {
-        self.ir.assign_data_in(assigned_value.ir());
+    pub fn assign_data_in(
+        self,
+        assigned_value: impl ToVal<'ctx, 'ctx, ValueType = T>,
+    ) -> RegRef<'ctx, T> {
+        self.ir
+            .assign_data_in(assigned_value.to_val(self.ir.ctx()).ir());
         self.0
     }
 }

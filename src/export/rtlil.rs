@@ -443,7 +443,10 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
         module: IrModuleRef<'ctx>,
         value: IrValueRef<'ctx>,
     ) -> Result<Rc<[RtlilWire<'ctx>]>, W::Error> {
-        combine_owning_modules([Some(module), value.owning_module()]);
+        combine_owning_modules(
+            [Some(module), value.owning_module()],
+            &module.source_location(),
+        );
         let module_data = self.get_module_data(module);
         if let Some(retval) = module_data.wires_for_values.borrow().get(&value) {
             return Ok(retval.clone());
@@ -774,10 +777,13 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                         SameSizeBinOpKind::Or => "$or",
                         SameSizeBinOpKind::Xor => "$xor",
                         SameSizeBinOpKind::ShiftLeft => "$shl",
-                        SameSizeBinOpKind::LogicalShiftRight => "$shr",
-                        SameSizeBinOpKind::ArithmeticShiftRight => {
-                            lhs_signed = true;
-                            "$sshr"
+                        SameSizeBinOpKind::ShiftRight => {
+                            if v.value_type().signed {
+                                lhs_signed = true;
+                                "$sshr"
+                            } else {
+                                "$shr"
+                            }
                         }
                     };
                     writeln!(
@@ -857,10 +863,10 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     let mut rhs_signed = false;
                     let cell_kind = match v.kind() {
                         BoolOutBinOpKind::CompareEq => "$eq",
-                        BoolOutBinOpKind::CompareUnsignedLt => "$lt",
-                        BoolOutBinOpKind::CompareSignedLt => {
-                            lhs_signed = true;
-                            rhs_signed = true;
+                        BoolOutBinOpKind::CompareLt => {
+                            let signed = v.input_type().signed;
+                            lhs_signed = signed;
+                            rhs_signed = signed;
                             "$lt"
                         }
                     };
@@ -895,8 +901,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 } else {
                     let retval = match v.kind() {
                         BoolOutBinOpKind::CompareEq => true,
-                        BoolOutBinOpKind::CompareUnsignedLt => false,
-                        BoolOutBinOpKind::CompareSignedLt => false,
+                        BoolOutBinOpKind::CompareLt => false,
                     };
                     self.get_wires_for_value(
                         module,
@@ -1286,6 +1291,7 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
                         reset_enable,
                         reset_value,
                         input_value,
+                        &reg.source_location(),
                     ))
                     .intern(module.ctx());
                 }

@@ -1,22 +1,46 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use std::fmt;
-
 use proc_macro2::{Ident, Literal, Span, TokenStream};
-use quote::quote;
+use quote::{quote, quote_spanned, ToTokens};
+use std::{fmt, panic::Location};
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    Attribute, BinOp, Data, DataEnum, DataStruct, DeriveInput, Error, Expr, Field, Fields,
-    GenericParam, Generics, Lifetime, LifetimeDef, Path, Token, UnOp, Variant, VisRestricted,
-    Visibility, WhereClause, WherePredicate,
+    Attribute, BinOp, Block, Data, DataEnum, DataStruct, DeriveInput, Error, Expr, ExprArray,
+    ExprBinary, ExprBlock, ExprGroup, ExprIf, ExprLit, Field, Fields, GenericParam, Generics,
+    Lifetime, LifetimeDef, Local, Path, Stmt, Token, UnOp, Variant, VisRestricted, Visibility,
+    WhereClause, WherePredicate,
 };
 
 mod kw {
     syn::custom_keyword!(ignored);
     syn::custom_keyword!(real_type_name);
+}
+
+#[allow(dead_code)]
+#[track_caller]
+fn make_todo_error(tokens: impl ToTokens, arg: Option<fmt::Arguments<'_>>) -> syn::Error {
+    match arg {
+        Some(arg) => Error::new_spanned(
+            tokens,
+            format_args!("not yet implemented: {}\nat {}", arg, Location::caller()),
+        ),
+        None => Error::new_spanned(
+            tokens,
+            format_args!("not yet implemented\nat {}", Location::caller()),
+        ),
+    }
+}
+
+macro_rules! todo_err {
+    ($tokens:expr, $format_string:literal $($args:tt)*) => {
+        return Err(make_todo_error($tokens, Some(format_args!($format_string $($args)*))))
+    };
+    ($tokens:expr) => {
+        return Err(make_todo_error($tokens, None))
+    };
 }
 
 enum RustHdlAttributeArg {
@@ -57,8 +81,14 @@ struct RustHdlAttributes {
     real_type_name: Option<Ident>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AttributesFor {
+    Derive,
+    Val,
+}
+
 impl RustHdlAttributes {
-    fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
+    fn parse(attrs: &[Attribute], attributes_for: AttributesFor) -> syn::Result<Self> {
         let mut crate_path = None;
         let mut real_type_name = None;
         for attribute in attrs {
@@ -82,6 +112,12 @@ impl RustHdlAttributes {
                             eq,
                             ident,
                         } => {
+                            if attributes_for == AttributesFor::Val {
+                                return Err(Error::new_spanned(
+                                    real_type_name_kw,
+                                    "`real_type_name` is not allowed here",
+                                ));
+                            }
                             let _ = eq;
                             if real_type_name.replace(ident).is_some() {
                                 return Err(Error::new_spanned(
@@ -92,6 +128,11 @@ impl RustHdlAttributes {
                         }
                     }
                 }
+            } else if attributes_for == AttributesFor::Val {
+                return Err(Error::new_spanned(
+                    attribute,
+                    "attributes other than #[rust_hdl(...)] are not allowed here",
+                ));
             }
         }
         let crate_path = crate_path.unwrap_or_else(|| {
@@ -1099,7 +1140,7 @@ impl ValueImpl {
         let RustHdlAttributes {
             crate_path,
             real_type_name,
-        } = RustHdlAttributes::parse(&ast.attrs)?;
+        } = RustHdlAttributes::parse(&ast.attrs, AttributesFor::Derive)?;
         let GenericsWithAddedLifetimes {
             generics: generics_with_added_lifetimes,
             ctx_lifetime,
@@ -1152,7 +1193,7 @@ fn derive_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     let RustHdlAttributes {
         crate_path,
         real_type_name,
-    } = RustHdlAttributes::parse(&ast.attrs)?;
+    } = RustHdlAttributes::parse(&ast.attrs, AttributesFor::Derive)?;
     let (_, ty_generics, _) = ast.generics.split_for_impl();
     let GenericsWithAddedLifetimes {
         generics,
@@ -1209,7 +1250,7 @@ fn derive_plain_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     let RustHdlAttributes {
         crate_path,
         real_type_name,
-    } = RustHdlAttributes::parse(&ast.attrs)?;
+    } = RustHdlAttributes::parse(&ast.attrs, AttributesFor::Derive)?;
     let (_, ty_generics, _) = ast.generics.split_for_impl();
     let GenericsWithAddedLifetimes {
         generics,
@@ -1260,51 +1301,270 @@ fn derive_plain_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     })
 }
 
-fn val_impl(ast: Expr) -> syn::Result<TokenStream> {
-    match ast {
-        Expr::Array(expr) => todo!(),
-        Expr::Binary(expr) => match expr.op {
-            BinOp::Add(_) => todo!(),
-            BinOp::Sub(_) => todo!(),
-            BinOp::Mul(_) => todo!(),
-            BinOp::And(_) => todo!(),
-            BinOp::Or(_) => todo!(),
-            BinOp::BitXor(_) => todo!(),
-            BinOp::BitAnd(_) => todo!(),
-            BinOp::BitOr(_) => todo!(),
-            BinOp::Shl(_) => todo!(),
-            BinOp::Shr(_) => todo!(),
-            BinOp::Eq(_) => todo!(),
-            BinOp::Lt(_) => todo!(),
-            BinOp::Le(_) => todo!(),
-            BinOp::Ne(_) => todo!(),
-            BinOp::Ge(_) => todo!(),
-            BinOp::Gt(_) => todo!(),
-            _ => Err(Error::new_spanned(expr.op, "unsupported binary op")),
-        },
-        Expr::Call(expr) => todo!(),
-        Expr::Cast(expr) => todo!(),
-        Expr::Field(expr) => todo!(),
-        Expr::Group(expr) => val_impl(*expr.expr),
-        Expr::If(expr) => todo!(),
-        Expr::Index(expr) => todo!(),
-        Expr::Let(expr) => todo!(),
-        Expr::Lit(expr) => todo!(),
-        Expr::Match(expr) => todo!(),
-        Expr::MethodCall(expr) => todo!(),
-        Expr::Paren(expr) => val_impl(*expr.expr),
-        Expr::Path(expr) => todo!(),
-        Expr::Repeat(expr) => todo!(),
-        Expr::Struct(expr) => todo!(),
-        Expr::Tuple(expr) => todo!(),
-        Expr::Unary(expr) => match expr.op {
-            UnOp::Not(_) => todo!(),
-            UnOp::Neg(_) => todo!(),
-            _ => Err(Error::new_spanned(expr.op, "unsupported unary op")),
-        },
-        Expr::Block(expr) => Ok(quote! { #expr }),
-        _ => Err(Error::new_spanned(ast, "unsupported expression")),
+fn assert_no_attrs(attrs: impl AsRef<[Attribute]>) -> syn::Result<()> {
+    if let [attr, ..] = attrs.as_ref() {
+        Err(Error::new_spanned(attr, "attributes not supported here"))
+    } else {
+        Ok(())
     }
+}
+
+struct ValTranslator {
+    crate_path: Path,
+}
+
+impl ValTranslator {
+    fn lit(&self, neg: Option<Token![-]>, lit: ExprLit) -> syn::Result<TokenStream> {
+        let _ = neg;
+        todo_err!(lit)
+    }
+
+    fn stmt(&self, stmt: Stmt) -> syn::Result<TokenStream> {
+        match stmt {
+            Stmt::Local(Local {
+                attrs,
+                let_token,
+                pat: _,
+                init: _,
+                semi_token: _,
+            }) => {
+                assert_no_attrs(attrs)?;
+                todo_err!(let_token)
+            }
+            Stmt::Item(item) => Err(Error::new_spanned(item, "items are not supported")),
+            Stmt::Expr(expr) => self.expr(expr),
+            Stmt::Semi(expr, semi) => {
+                let expr = self.expr(expr)?;
+                Ok(quote! {#expr #semi})
+            }
+        }
+    }
+
+    fn block_interpreted(&self, block: Block) -> syn::Result<TokenStream> {
+        let Block { brace_token, stmts } = block;
+        let stmts = stmts
+            .into_iter()
+            .map(|stmt| self.stmt(stmt))
+            .collect::<syn::Result<Vec<_>>>()?;
+        Ok(quote_spanned! {brace_token.span=>
+            {
+                #(#stmts)*
+            }
+        })
+    }
+
+    fn block_uninterpreted(&self, block: Block) -> syn::Result<TokenStream> {
+        let crate_path = &self.crate_path;
+        Ok(quote! { #crate_path::values::ops::identity(#block) })
+    }
+
+    fn expr_if(&self, expr_if: ExprIf) -> syn::Result<TokenStream> {
+        let crate_path = &self.crate_path;
+        let ExprIf {
+            attrs,
+            if_token,
+            cond,
+            then_branch,
+            else_branch,
+        } = expr_if;
+        assert_no_attrs(attrs)?;
+        let cond = self.expr(*cond)?;
+        let then_branch = self.block_interpreted(then_branch)?;
+        let else_expr = else_branch
+            .ok_or_else(|| Error::new_spanned(if_token, "`if` expression must have `else` branch"))?
+            .1;
+        let else_branch = match *else_expr {
+            Expr::If(expr_if) => self.expr_if(expr_if)?,
+            Expr::Block(ExprBlock {
+                attrs,
+                label,
+                block,
+            }) => {
+                assert_no_attrs(attrs)?;
+                if let Some(label) = label {
+                    return Err(Error::new_spanned(label, "block labels are not supported"));
+                }
+                self.block_interpreted(block)?
+            }
+            _ => unreachable!(
+                "the parser should produce only an if expression or a block expression"
+            ),
+        };
+        Ok(quote_spanned! {if_token.span=>
+            #crate_path::values::ops::mux(#cond, #then_branch, #else_branch)
+        })
+    }
+
+    fn expr(&self, expr: Expr) -> syn::Result<TokenStream> {
+        let crate_path = &self.crate_path;
+        match expr {
+            Expr::Array(ExprArray {
+                attrs,
+                bracket_token,
+                elems,
+            }) => {
+                assert_no_attrs(&attrs)?;
+                todo_err!(ExprArray {
+                    attrs,
+                    bracket_token,
+                    elems
+                })
+            }
+            Expr::Binary(ExprBinary {
+                attrs,
+                left,
+                op,
+                right,
+            }) => {
+                assert_no_attrs(attrs)?;
+                let left = self.expr(*left)?;
+                let right = self.expr(*right)?;
+                match op {
+                    BinOp::Add(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlAdd::add(#left, #right)
+                    }),
+                    BinOp::Sub(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlSub::sub(#left, #right)
+                    }),
+                    BinOp::Mul(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlMul::mul(#left, #right)
+                    }),
+                    BinOp::And(op) => Ok(quote_spanned! {op.spans[0]=>
+                        <bool as #crate_path::values::ops::HdlAnd<'_, '_, bool>>::and(#left, #right)
+                    }),
+                    BinOp::Or(op) => Ok(quote_spanned! {op.spans[0]=>
+                        <bool as #crate_path::values::ops::HdlOr<'_, '_, bool>>::or(#left, #right)
+                    }),
+                    BinOp::BitXor(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlXor::xor(#left, #right)
+                    }),
+                    BinOp::BitAnd(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlAnd::and(#left, #right)
+                    }),
+                    BinOp::BitOr(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlOr::or(#left, #right)
+                    }),
+                    BinOp::Shl(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlShiftLeft::shift_left(#left, #right)
+                    }),
+                    BinOp::Shr(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlShiftRight::shift_right(#left, #right)
+                    }),
+                    BinOp::Eq(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlCompareEqual::compare_equal(#left, #right)
+                    }),
+                    BinOp::Lt(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlCompareLess::compare_less(#left, #right)
+                    }),
+                    BinOp::Le(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlCompareLessEqual::compare_less_equal(#left, #right)
+                    }),
+                    BinOp::Ne(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlCompareNotEqual::compare_not_equal(#left, #right)
+                    }),
+                    BinOp::Ge(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlCompareGreaterEqual::compare_greater_equal(#left, #right)
+                    }),
+                    BinOp::Gt(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlCompareGreater::compare_greater(#left, #right)
+                    }),
+                    op => Err(Error::new_spanned(op, "unsupported binary op")),
+                }
+            }
+            Expr::Call(expr) => todo_err!(expr),
+            Expr::Cast(expr) => todo_err!(expr),
+            Expr::Field(expr) => todo_err!(expr),
+            Expr::Group(ExprGroup {
+                attrs,
+                group_token: _,
+                expr,
+            }) => {
+                assert_no_attrs(attrs)?;
+                self.expr(*expr)
+            }
+            Expr::If(expr_if) => self.expr_if(expr_if),
+            Expr::Index(expr) => todo_err!(expr),
+            Expr::Let(expr) => todo_err!(expr),
+            Expr::Lit(expr) => todo_err!(expr),
+            Expr::Match(expr) => todo_err!(expr),
+            Expr::MethodCall(expr) => todo_err!(expr),
+            Expr::Paren(expr) => {
+                if let Expr::Block(ExprBlock {
+                    attrs,
+                    label,
+                    block,
+                }) = *expr.expr
+                {
+                    assert_no_attrs(attrs)?;
+                    if let Some(label) = label {
+                        return Err(Error::new_spanned(label, "block labels are not supported"));
+                    }
+                    self.block_uninterpreted(block)
+                } else {
+                    self.expr(*expr.expr)
+                }
+            }
+            Expr::Path(expr) => Ok(
+                quote! { #crate_path::values::ops::identity(::core::clone::Clone::clone(&#expr)) },
+            ),
+            Expr::Repeat(expr) => todo_err!(expr),
+            Expr::Struct(expr) => todo_err!(expr),
+            Expr::Tuple(expr) => todo_err!(expr),
+            Expr::Unary(expr) => {
+                if let UnOp::Neg(op) = expr.op {
+                    if let Expr::Lit(expr) = *expr.expr {
+                        return self.lit(Some(op), expr);
+                    }
+                }
+                let input = self.expr(*expr.expr)?;
+                match expr.op {
+                    UnOp::Not(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlNot::not(#input)
+                    }),
+                    UnOp::Neg(op) => Ok(quote_spanned! {op.spans[0]=>
+                        #crate_path::values::ops::HdlNeg::neg(#input)
+                    }),
+                    _ => Err(Error::new_spanned(expr.op, "unsupported unary op")),
+                }
+            }
+            Expr::Block(ExprBlock {
+                attrs,
+                label,
+                block,
+            }) => {
+                assert_no_attrs(attrs)?;
+                if let Some(label) = label {
+                    return Err(Error::new_spanned(label, "block labels are not supported"));
+                }
+                Err(Error::new_spanned(block, "uninterpreted blocks must be surrounded with both parenthesis and curly braces, like so: `({ uninterpreted() })`"))
+            }
+            _ => Err(Error::new_spanned(expr, "unsupported expression")),
+        }
+    }
+}
+
+struct ValInput {
+    attrs: Vec<Attribute>,
+    expr: Expr,
+}
+
+impl Parse for ValInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        Ok(Self {
+            attrs: Attribute::parse_inner(input)?,
+            expr: input.parse()?,
+        })
+    }
+}
+
+fn val_impl(ast: ValInput) -> syn::Result<TokenStream> {
+    let ValInput { attrs, expr } = ast;
+    let RustHdlAttributes {
+        crate_path,
+        real_type_name,
+    } = RustHdlAttributes::parse(&attrs, AttributesFor::Val)?;
+    assert!(real_type_name.is_none());
+    ValTranslator { crate_path }.expr(expr)
 }
 
 fn debug_input(_input: &impl quote::ToTokens, _derive_name: &str) {
@@ -1365,7 +1625,7 @@ pub fn derive_plain_io(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
 
 #[proc_macro]
 pub fn val(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let ast = parse_macro_input!(input as Expr);
+    let ast = parse_macro_input!(input as ValInput);
     let retval = match val_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),

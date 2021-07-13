@@ -6,6 +6,7 @@ use crate::{
     ir::{
         types::{IrEnumType, IrEnumVariantType, IrStructFieldType, IrStructType, IrValueType},
         values::{IrValue, LiteralBits, LiteralEnumVariant, LiteralStruct, LiteralStructField},
+        SourceLocation,
     },
     prelude::{FixedTypeValue, Int, Val, Value, ValueType},
     values::integer::{IntShape, IntShapeTrait, UIntShape},
@@ -118,7 +119,7 @@ impl<'ctx: 'scope, 'scope, T: StructValue<'ctx, 'scope>> AggregateValueKind<'ctx
         assert_eq!(fields.len(), T::FIELD_COUNT);
         Val::from_ir_unchecked(
             ctx,
-            IrValue::from(LiteralStruct::new(ctx, fields)).intern(ctx),
+            IrValue::from(LiteralStruct::new(ctx, fields, &SourceLocation::caller())).intern(ctx),
         )
     }
     fn static_value_type_opt<Ctx: AsContext<'ctx>>(
@@ -476,6 +477,7 @@ fn enum_ir_type<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>, Ctx: AsContext
         ctx,
         T::DiscriminantShape::default().shape().into(),
         variants,
+        &SourceLocation::caller(),
     )
 }
 
@@ -544,10 +546,19 @@ impl<'ctx: 'scope, 'scope, T: EnumValue<'ctx, 'scope>> AggregateValueKind<'ctx, 
                     })
                     .unwrap()
                     .fields;
-                let fields_value =
-                    IrValue::from(LiteralStruct::new(self.ctx, fields)).intern(self.ctx);
-                let literal_enum_variant =
-                    LiteralEnumVariant::new(self.ctx, enum_type, variant_index, fields_value);
+                let fields_value = IrValue::from(LiteralStruct::new(
+                    self.ctx,
+                    fields,
+                    &SourceLocation::caller(),
+                ))
+                .intern(self.ctx);
+                let literal_enum_variant = LiteralEnumVariant::new(
+                    self.ctx,
+                    enum_type,
+                    variant_index,
+                    fields_value,
+                    &SourceLocation::caller(),
+                );
                 assert_eq!(*name, *literal_enum_variant.variant().name);
                 Val::from_ir_and_type_unchecked(
                     IrValue::from(literal_enum_variant).intern(self.ctx),

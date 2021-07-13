@@ -472,7 +472,7 @@ impl<'ctx, T: Value<'ctx>> Output<'ctx, T> {
         Self::external_with_type(ctx, T::static_value_type(ctx))
     }
     #[track_caller]
-    pub fn assign(self, assigned_value: impl ToVal<'ctx, 'ctx, T>) {
+    pub fn assign(self, assigned_value: impl ToVal<'ctx, 'ctx, ValueType = T>) {
         let ctx = self.ir.ctx();
         self.ir.assign(assigned_value.to_val(ctx).ir())
     }

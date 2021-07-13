@@ -13,18 +13,19 @@ pub fn blinky<'ctx>(parent: &Module<'ctx>, io: BlinkyIO<'ctx>) {
     let (m, io) = parent.submodule("blinky", io);
     named!(let counter = m.reg(io.cd.get(), UInt32::default()));
 
-    let limit = UInt32::wrapping_new(1_000_000).get_value(m.ctx());
-
-    let overflowed = counter.output().ge(limit);
-    let counter_next = overflowed.mux(
-        UInt32::wrapping_new(0).get_value(m.ctx()),
-        counter.output() + UInt32::wrapping_new(1).get_value(m.ctx()),
-    );
-    counter.assign_data_in(counter_next);
-
+    let limit = UInt32::wrapping_new(1_000_000);
+    let zero = UInt32::default();
+    let one = UInt32::wrapping_new(1);
+    let counter_output = counter.output();
+    let overflowed = val!(counter_output >= limit);
+    counter.assign_data_in(val!(if overflowed {
+        zero
+    } else {
+        counter_output + one
+    }));
     named!(let led_toggle = m.reg(io.cd.get(), false));
-    let led_toggle_next = led_toggle.output() ^ overflowed;
-    let led_toggle = led_toggle.assign_data_in(led_toggle_next);
+    let led_toggle_output = led_toggle.output();
+    let led_toggle = led_toggle.assign_data_in(val!(led_toggle_output ^ overflowed));
     io.led0.assign(led_toggle.output());
 }
 

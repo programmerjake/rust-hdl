@@ -125,7 +125,10 @@ impl<'ctx> IrInput<'ctx> {
         assert_eq!(self.value_type(module.ctx()), module_input.value_type());
         match (&*self, parent_module) {
             (IrInput::Input { value }, Some(parent_module)) => {
-                combine_owning_modules([Some(parent_module), value.owning_module()]);
+                combine_owning_modules(
+                    [Some(parent_module), value.owning_module()],
+                    &module.source_location(),
+                );
             }
             (IrInput::Input { .. }, None) => {
                 panic!("input to top module must be an external input")

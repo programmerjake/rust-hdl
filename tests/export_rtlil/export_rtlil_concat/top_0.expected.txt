@@ -1,6 +1,6 @@
 IrModule {
     path: "top",
-    source_location: SourceLocation($FILE, $LINE-12, 9),
+    source_location: SourceLocation($FILE, $LINE-13, 9),
     parent: <None>,
     interface_types: [
         Input(
@@ -103,7 +103,7 @@ IrModule {
                 ),
                 wire: IrWire {
                     path: "top"."io.o",
-                    source_location: SourceLocation($FILE, $LINE-12, 9),
+                    source_location: SourceLocation($FILE, $LINE-13, 9),
                     value_type: IrBitVectorType {
                         bit_count: 24,
                         signed: false,
@@ -156,7 +156,7 @@ IrModule {
     ],
     wires: {
         "io.o": IrWire {
-            source_location: SourceLocation($FILE, $LINE-12, 9),
+            source_location: SourceLocation($FILE, $LINE-13, 9),
             value_type: IrBitVectorType {
                 bit_count: 24,
                 signed: false,

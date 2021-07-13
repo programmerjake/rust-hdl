@@ -53,15 +53,20 @@ impl<'ctx, T: ?Sized + OwningModule<'ctx> + Internable<'ctx>> OwningModule<'ctx>
     }
 }
 
-#[track_caller]
 pub fn combine_owning_modules<'ctx, T: OwningModule<'ctx>, I: IntoIterator<Item = T>>(
     values: I,
+    caller: &SourceLocation<'ctx>,
 ) -> Option<IrModuleRef<'ctx>> {
     let mut owning_module = None::<IrModuleRef<'ctx>>;
     for value in values {
         match (owning_module, value.owning_module()) {
             (Some(a), Some(b)) if a != b => {
-                panic!("owning modules don't match: {} != {}", a.path(), b.path())
+                panic!(
+                    "owning modules don't match: {} != {}\nat {}",
+                    a.path(),
+                    b.path(),
+                    caller
+                )
             }
             (None, Some(v)) => owning_module = Some(v),
             _ => {}

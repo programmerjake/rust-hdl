@@ -7,6 +7,7 @@ use crate::{
     ir::{
         types::{IrArrayType, IrBitVectorType, IrValueType, IrValueTypeRef},
         values::{ExtractStructField, IrValue, IrValueRef, LiteralArray, LiteralBits},
+        SourceLocation,
     },
     values::aggregate::StructValue,
 };
@@ -132,7 +133,13 @@ fn array_get_value<'ctx: 'scope, 'scope, A: AsRef<[T]> + Value<'ctx>, T: Value<'
         .ir();
     Val::from_ir_unchecked(
         ctx,
-        IrValue::LiteralArray(LiteralArray::new(ctx, element_type, elements)).intern(ctx),
+        IrValue::LiteralArray(LiteralArray::new(
+            ctx,
+            element_type,
+            elements,
+            &SourceLocation::caller(),
+        ))
+        .intern(ctx),
     )
 }
 
@@ -259,18 +266,21 @@ impl<'ctx, T: ?Sized + 'ctx> FixedTypeValue<'ctx> for PhantomData<T> {
     }
 }
 
-pub trait ToVal<'ctx: 'scope, 'scope, T: Value<'ctx>> {
+pub trait ToVal<'ctx: 'scope, 'scope> {
+    type ValueType: Value<'ctx>;
     #[track_caller]
-    fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, T>;
+    fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, Self::ValueType>;
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope, T> for T {
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope> for T {
+    type ValueType = T;
     fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, T> {
         self.get_value(ctx.ctx())
     }
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope, T> for Val<'ctx, 'scope, T> {
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope> for Val<'ctx, 'scope, T> {
+    type ValueType = T;
     fn to_val<Ctx: AsContext<'ctx>>(&self, _ctx: Ctx) -> Val<'ctx, 'scope, T> {
         *self
     }
@@ -287,11 +297,14 @@ pub struct LazyVal<'ctx: 'scope, 'scope, T: Value<'ctx>> {
 }
 
 impl<'ctx: 'scope, 'scope, T: Value<'ctx>> LazyVal<'ctx, 'scope, T> {
-    pub fn new<V: ToVal<'ctx, 'scope, T> + 'scope>(v: V) -> Self {
+    pub fn new<V: ToVal<'ctx, 'scope, ValueType = T> + 'scope>(v: V) -> Self {
+        Self::from_fn(move |ctx| v.to_val(ctx))
+    }
+    pub fn from_fn<F: 'scope + Fn(ContextRef<'ctx>) -> Val<'ctx, 'scope, T>>(f: F) -> Self {
         Self {
             data: Rc::new(LazyValData {
                 val: OnceCell::new(),
-                f: move |ctx| v.to_val(ctx),
+                f,
             }),
         }
     }
@@ -305,7 +318,8 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Clone for LazyVal<'ctx, 'scope, T> {
     }
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope, T> for LazyVal<'ctx, 'scope, T> {
+impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope> for LazyVal<'ctx, 'scope, T> {
+    type ValueType = T;
     fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, T> {
         match self.data.val.get() {
             Some(&retval) => retval,
@@ -351,6 +365,7 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
     pub fn ir(self) -> IrValueRef<'ctx> {
         self.ir
     }
+    #[track_caller]
     pub fn extract_field_unchecked<Field: Value<'ctx>>(
         self,
         field_enum: T::FieldEnum,
@@ -358,10 +373,11 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
     where
         T: StructValue<'ctx, 'scope>,
     {
-        let extract_struct_field = ExtractStructField::new_with_struct_type_unchecked(
+        let extract_struct_field = ExtractStructField::new(
+            self.ctx(),
             self.ir,
-            self.value_type.ir,
             field_enum.into(),
+            &SourceLocation::caller(),
         );
         let ir = IrValue::from(extract_struct_field).intern(self.ctx());
         let value_type =
@@ -369,6 +385,7 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
         Val::from_ir_and_type_unchecked(ir, value_type)
     }
     #[doc(hidden)]
+    #[track_caller]
     pub fn extract_field_unchecked_macro_helper<
         Field: Value<'ctx>,
         GetFieldEnum: FnOnce(

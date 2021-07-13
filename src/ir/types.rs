@@ -3,7 +3,7 @@
 
 use crate::{
     context::{AsContext, Intern, Interned},
-    ir::values::LiteralBits,
+    ir::{values::LiteralBits, SourceLocation},
     prelude::Int,
     values::integer::IntShape,
 };
@@ -66,7 +66,6 @@ pub struct IrStructType<'ctx> {
 }
 
 impl<'ctx> IrStructType<'ctx> {
-    #[track_caller]
     pub fn new(ctx: impl AsContext<'ctx>, fields: impl AsRef<[IrStructFieldType<'ctx>]>) -> Self {
         let ctx = ctx.ctx();
         let fields: Interned<'ctx, [_]> = fields.as_ref().intern(ctx);
@@ -112,11 +111,11 @@ pub struct IrEnumType<'ctx> {
 
 impl<'ctx> IrEnumType<'ctx> {
     /// the variants are sorted in ascending order by their discriminant, asserting that there are no duplicate discriminants
-    #[track_caller]
     pub fn new<I: IntoIterator<Item = IrEnumVariantType<'ctx>>, Ctx: AsContext<'ctx>>(
         ctx: Ctx,
         discriminant_type: IrBitVectorType,
         variants: I,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
         let ctx = ctx.ctx();
         let mut variants: Vec<IrEnumVariantType<'ctx>> = variants.into_iter().collect();
@@ -124,16 +123,17 @@ impl<'ctx> IrEnumType<'ctx> {
             assert_eq!(
                 i.discriminant.value_type(),
                 discriminant_type,
-                "variant {:?} has an unexpected discriminant type",
+                "variant {:?} has an unexpected discriminant type\nat {}",
                 i.name,
+                caller,
             );
         }
         variants.sort_unstable_by(|a, b| a.discriminant.value().cmp_value(b.discriminant.value()));
         for i in variants.windows(2) {
             assert_ne!(
                 i[0].discriminant, i[1].discriminant,
-                "duplicate discriminant for variants: {:?} and {:?}",
-                i[0].name, i[1].name,
+                "duplicate discriminant for variants: {:?} and {:?}\nat {}",
+                i[0].name, i[1].name, caller,
             );
         }
         Self::new_unchecked(discriminant_type, variants.intern(ctx))
@@ -434,6 +434,7 @@ mod tests {
                         fields: IrStructType::new(ctx, []),
                     },
                 ],
+                &SourceLocation::caller(),
             );
             let type2 = IrEnumType::with_generated_discriminant(
                 ctx,

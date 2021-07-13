@@ -11,6 +11,7 @@ use crate::{
             IrArrayType, IrBitVectorType, IrEnumType, IrEnumVariantType, IrStructFieldType,
             IrStructType, IrValueType, IrValueTypeRef,
         },
+        SourceLocation,
     },
     values::integer::{Int, IntShape, IntShapeTrait},
 };
@@ -122,16 +123,17 @@ impl<'ctx> LiteralArray<'ctx> {
         ctx: impl AsContext<'ctx>,
         element_type: IrValueTypeRef<'ctx>,
         elements: impl AsRef<[IrValueRef<'ctx>]>,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
         let ctx = ctx.ctx();
         let elements = elements.as_ref();
         for element in elements {
-            assert_eq!(element.get_type(ctx), element_type);
+            assert_eq!(element.get_type(ctx), element_type, "at {}", caller);
         }
         let elements: Interned<'_, [_]> = elements.intern(ctx);
         Self {
             element_type,
-            owning_module: combine_owning_modules(elements.iter()),
+            owning_module: combine_owning_modules(elements.iter(), caller),
             elements,
         }
     }
@@ -175,7 +177,11 @@ pub struct LiteralStruct<'ctx> {
 }
 
 impl<'ctx> LiteralStruct<'ctx> {
-    pub fn new(ctx: impl AsContext<'ctx>, fields: impl AsRef<[LiteralStructField<'ctx>]>) -> Self {
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        fields: impl AsRef<[LiteralStructField<'ctx>]>,
+        caller: &SourceLocation<'ctx>,
+    ) -> Self {
         let fields = fields.as_ref();
         let ctx = ctx.ctx();
         let mut field_types = Vec::with_capacity(fields.len());
@@ -186,7 +192,8 @@ impl<'ctx> LiteralStruct<'ctx> {
                 ty: field.value.get_type(ctx),
             };
             field_types.push(field_type);
-            owning_module = combine_owning_modules([owning_module, field.value.owning_module()]);
+            owning_module =
+                combine_owning_modules([owning_module, field.value.owning_module()], caller);
         }
         let fields = fields.intern(ctx);
         Self {
@@ -229,11 +236,17 @@ impl<'ctx> LiteralEnumVariant<'ctx> {
         value_type: IrEnumType<'ctx>,
         variant_index: usize,
         fields_value: IrValueRef<'ctx>,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
         let ctx = ctx.ctx();
         let variant = &value_type.variants()[variant_index];
         let fields_type = fields_value.get_type(ctx);
-        assert_eq!(IrValueType::from(variant.fields), *fields_type);
+        assert_eq!(
+            IrValueType::from(variant.fields),
+            *fields_type,
+            "enum variant fields type must match the type of the fields value\nat {}",
+            caller
+        );
         Self {
             value_type,
             owning_module: fields_value.owning_module(),
@@ -297,22 +310,26 @@ impl<'ctx> ExtractStructField<'ctx> {
         ctx: impl AsContext<'ctx>,
         struct_value: IrValueRef<'ctx>,
         field_index: usize,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
-        Self::new_with_struct_type_unchecked(
-            struct_value,
-            struct_value.get_type(ctx.ctx()),
+        let struct_type = match *struct_value.get_type(ctx.ctx()) {
+            IrValueType::Struct(v) => v,
+            _ => panic!("value type is not a struct\nat {}", caller),
+        };
+        assert!(
+            field_index < struct_type.fields().len(),
+            "field_index is out of bounds: field_index = {}, fields.len() = {}\nat {}",
             field_index,
-        )
+            struct_type.fields().len(),
+            caller,
+        );
+        Self::new_with_struct_type_unchecked(struct_value, struct_type, field_index)
     }
     pub fn new_with_struct_type_unchecked(
         struct_value: IrValueRef<'ctx>,
-        struct_type: IrValueTypeRef<'ctx>,
+        struct_type: IrStructType<'ctx>,
         field_index: usize,
     ) -> Self {
-        let struct_type = match *struct_type {
-            IrValueType::Struct(v) => v,
-            _ => panic!("value type is not a struct"),
-        };
         assert!(field_index < struct_type.fields().len());
         Self {
             struct_value,
@@ -374,22 +391,26 @@ impl<'ctx> ExtractArrayElement<'ctx> {
         ctx: impl AsContext<'ctx>,
         array_value: IrValueRef<'ctx>,
         element_index: usize,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
-        Self::new_with_array_type_unchecked(
-            array_value,
-            array_value.get_type(ctx.ctx()),
+        let array_type = match *array_value.get_type(ctx) {
+            IrValueType::Array(v) => v,
+            _ => panic!("value type is not a array\nat {}", caller),
+        };
+        assert!(
+            element_index < array_type.length,
+            "element_index out of bounds: element_index = {}, array_type.length = {}\nat {}",
             element_index,
-        )
+            array_type.length,
+            caller,
+        );
+        Self::new_with_array_type_unchecked(array_value, array_type, element_index)
     }
     pub fn new_with_array_type_unchecked(
         array_value: IrValueRef<'ctx>,
-        array_type: IrValueTypeRef<'ctx>,
+        array_type: IrArrayType<'ctx>,
         element_index: usize,
     ) -> Self {
-        let array_type = match *array_type {
-            IrValueType::Array(v) => v,
-            _ => panic!("value type is not a array"),
-        };
         assert!(element_index < array_type.length);
         Self {
             array_value,
@@ -446,33 +467,35 @@ impl<'ctx> SliceArray<'ctx> {
         ctx: impl AsContext<'ctx>,
         array_value: IrValueRef<'ctx>,
         element_indexes: Range<usize>,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
-        Self::new_with_array_type_unchecked(
-            array_value,
-            array_value.get_type(ctx.ctx()),
-            element_indexes,
-        )
+        let array_type = match *array_value.get_type(ctx) {
+            IrValueType::Array(v) => v,
+            _ => panic!("value type is not a array\nat {}", caller),
+        };
+        assert!(
+            element_indexes.end <= array_type.length
+                && element_indexes.start <= element_indexes.end,
+            "element_indexes is invalid: element_indexes = {}..{}, array_type.length = {}\nat {}",
+            element_indexes.start,
+            element_indexes.end,
+            array_type.length,
+            caller,
+        );
+        Self::new_with_array_type_unchecked(array_value, array_type, element_indexes)
     }
     pub fn new_with_array_type_unchecked(
         array_value: IrValueRef<'ctx>,
-        array_type: IrValueTypeRef<'ctx>,
+        array_type: IrArrayType<'ctx>,
         element_indexes: Range<usize>,
     ) -> Self {
-        let array_type = match *array_type {
-            IrValueType::Array(v) => v,
-            _ => panic!("value type is not a array"),
-        };
-        let Range {
-            start: element_start_index,
-            end: element_end_index,
-        } = element_indexes;
-        assert!(element_end_index <= array_type.length);
-        assert!(element_start_index <= element_end_index);
+        assert!(element_indexes.end <= array_type.length);
+        assert!(element_indexes.start <= element_indexes.end);
         Self {
             array_value,
             array_type,
-            element_start_index,
-            element_end_index,
+            element_start_index: element_indexes.start,
+            element_end_index: element_indexes.end,
         }
     }
     pub fn array_value(self) -> IrValueRef<'ctx> {
@@ -526,34 +549,40 @@ pub struct SliceBitVector<'ctx> {
 
 impl<'ctx> SliceBitVector<'ctx> {
     /// bit_indexes is in LSB0 order
-    #[track_caller]
     pub fn new(
         ctx: impl AsContext<'ctx>,
         base_value: IrValueRef<'ctx>,
         bit_indexes: Range<u32>,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
         Self::new_with_bit_vector_type_unchecked(
             base_value,
             base_value.get_type(ctx.ctx()),
             bit_indexes,
+            caller,
         )
     }
     /// bit_indexes is in LSB0 order
-    #[track_caller]
     pub fn new_with_bit_vector_type_unchecked(
         base_value: IrValueRef<'ctx>,
         base_type: IrValueTypeRef<'ctx>,
         bit_indexes: Range<u32>,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
         let base_type = base_type
             .bit_vector()
-            .expect("base value type is not a bit vector");
+            .unwrap_or_else(|| panic!("base value type is not a bit vector\nat {}", caller));
         let Range {
             start: bit_start_index,
             end: bit_end_index,
         } = bit_indexes;
-        assert!(bit_end_index <= base_type.bit_count);
-        assert!(bit_start_index <= bit_end_index);
+        if bit_end_index > base_type.bit_count || bit_start_index > bit_end_index {
+            panic!(
+                "bit_indexes are not a valid range: bit_indexes = {}..{}, \
+                base_type.bit_count = {}\nat {}",
+                bit_indexes.start, bit_indexes.end, base_type.bit_count, caller,
+            );
+        }
         Self {
             base_value,
             base_type,
@@ -616,12 +645,22 @@ impl<'ctx> Mux<'ctx> {
         condition: IrValueRef<'ctx>,
         true_value: IrValueRef<'ctx>,
         false_value: IrValueRef<'ctx>,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
         let ctx = ctx.ctx();
-        assert!(condition.get_type(ctx).is_bool());
+        assert!(
+            condition.get_type(ctx).is_bool(),
+            "condition must be a bool (UInt<1>)\nat {}",
+            caller
+        );
         let value_type = true_value.get_type(ctx);
-        assert_eq!(value_type, false_value.get_type(ctx));
-        let owning_module = combine_owning_modules([condition, true_value, false_value]);
+        assert_eq!(
+            value_type,
+            false_value.get_type(ctx),
+            "true_value and false_value must have the same type\nat {}",
+            caller
+        );
+        let owning_module = combine_owning_modules([condition, true_value, false_value], caller);
         Self {
             condition,
             value_type,
@@ -664,8 +703,11 @@ pub struct ConcatBitVectors<'ctx> {
 }
 
 impl<'ctx> ConcatBitVectors<'ctx> {
-    #[track_caller]
-    pub fn new(ctx: impl AsContext<'ctx>, bit_vectors: impl AsRef<[IrValueRef<'ctx>]>) -> Self {
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        bit_vectors: impl AsRef<[IrValueRef<'ctx>]>,
+        caller: &SourceLocation<'ctx>,
+    ) -> Self {
         let ctx = ctx.ctx();
         let bit_vectors = bit_vectors.as_ref();
         let mut value_type = IrBitVectorType {
@@ -676,13 +718,13 @@ impl<'ctx> ConcatBitVectors<'ctx> {
             let IrBitVectorType { bit_count, .. } = bit_vector
                 .get_type(ctx)
                 .bit_vector()
-                .expect("input type must be a bit vector");
+                .unwrap_or_else(|| panic!("input type must be a bit vector\nat {}", caller));
             value_type.bit_count = value_type
                 .bit_count
                 .checked_add(bit_count)
-                .expect("too many bits in bit vector");
+                .unwrap_or_else(|| panic!("too many bits in bit vector\nat {}", caller));
         }
-        let owning_module = combine_owning_modules(bit_vectors);
+        let owning_module = combine_owning_modules(bit_vectors, caller);
         Self {
             value_type,
             owning_module,
@@ -718,8 +760,7 @@ pub enum SameSizeBinOpKind {
     Or,
     Xor,
     ShiftLeft,
-    LogicalShiftRight,
-    ArithmeticShiftRight,
+    ShiftRight,
 }
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
@@ -733,24 +774,28 @@ pub struct SameSizeBinOp<'ctx> {
 
 impl<'ctx> SameSizeBinOp<'ctx> {
     /// for all binary operations, both inputs and the output type must match
-    #[track_caller]
     pub fn new(
         ctx: impl AsContext<'ctx>,
         kind: SameSizeBinOpKind,
         lhs: IrValueRef<'ctx>,
         rhs: IrValueRef<'ctx>,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
         let ctx = ctx.ctx();
         let value_type = lhs
             .get_type(ctx)
             .bit_vector()
-            .expect("lhs type must be a bit vector");
+            .unwrap_or_else(|| panic!("lhs type must be a bit vector\nat {}", caller));
         let rhs_value_type = rhs
             .get_type(ctx)
             .bit_vector()
-            .expect("rhs type must be a bit vector");
-        assert_eq!(value_type, rhs_value_type);
-        let owning_module = combine_owning_modules([lhs, rhs]);
+            .unwrap_or_else(|| panic!("rhs type must be a bit vector\nat {}", caller));
+        assert_eq!(
+            value_type, rhs_value_type,
+            "input types must be the same\nat {}",
+            caller
+        );
+        let owning_module = combine_owning_modules([lhs, rhs], caller);
         Self {
             kind,
             value_type,
@@ -800,12 +845,16 @@ pub struct SameSizeUnOp<'ctx> {
 
 impl<'ctx> SameSizeUnOp<'ctx> {
     /// for all unary operations, the input and the output type match
-    #[track_caller]
-    pub fn new(ctx: impl AsContext<'ctx>, kind: SameSizeUnOpKind, input: IrValueRef<'ctx>) -> Self {
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        kind: SameSizeUnOpKind,
+        input: IrValueRef<'ctx>,
+        caller: &SourceLocation<'ctx>,
+    ) -> Self {
         let value_type = input
             .get_type(ctx.ctx())
             .bit_vector()
-            .expect("input type must be a bit vector");
+            .unwrap_or_else(|| panic!("input type must be a bit vector\nat {}", caller));
         Self {
             kind,
             value_type,
@@ -838,8 +887,7 @@ impl<'ctx> From<SameSizeUnOp<'ctx>> for IrValue<'ctx> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BoolOutBinOpKind {
     CompareEq,
-    CompareUnsignedLt,
-    CompareSignedLt,
+    CompareLt,
 }
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
@@ -852,24 +900,28 @@ pub struct BoolOutBinOp<'ctx> {
 }
 
 impl<'ctx> BoolOutBinOp<'ctx> {
-    #[track_caller]
     pub fn new(
         ctx: impl AsContext<'ctx>,
         kind: BoolOutBinOpKind,
         lhs: IrValueRef<'ctx>,
         rhs: IrValueRef<'ctx>,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
         let ctx = ctx.ctx();
         let input_type = lhs
             .get_type(ctx)
             .bit_vector()
-            .expect("lhs type must be a bit vector");
+            .unwrap_or_else(|| panic!("lhs type must be a bit vector\nat {}", caller));
         let rhs_value_type = rhs
             .get_type(ctx)
             .bit_vector()
-            .expect("rhs type must be a bit vector");
-        assert_eq!(input_type, rhs_value_type);
-        let owning_module = combine_owning_modules([lhs, rhs]);
+            .unwrap_or_else(|| panic!("rhs type must be a bit vector\nat {}", caller));
+        assert_eq!(
+            input_type, rhs_value_type,
+            "input types must be the same\nat {}",
+            caller
+        );
+        let owning_module = combine_owning_modules([lhs, rhs], caller);
         Self {
             kind,
             input_type,
@@ -925,12 +977,16 @@ pub struct BoolOutUnOp<'ctx> {
 }
 
 impl<'ctx> BoolOutUnOp<'ctx> {
-    #[track_caller]
-    pub fn new(ctx: impl AsContext<'ctx>, kind: BoolOutUnOpKind, input: IrValueRef<'ctx>) -> Self {
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        kind: BoolOutUnOpKind,
+        input: IrValueRef<'ctx>,
+        caller: &SourceLocation<'ctx>,
+    ) -> Self {
         let input_type = input
             .get_type(ctx.ctx())
             .bit_vector()
-            .expect("input type must be a bit vector");
+            .unwrap_or_else(|| panic!("input type must be a bit vector\nat {}", caller));
         Self {
             kind,
             input_type,
@@ -974,16 +1030,16 @@ pub struct ConvertIntWrapping<'ctx> {
 }
 
 impl<'ctx> ConvertIntWrapping<'ctx> {
-    #[track_caller]
     pub fn new(
         ctx: impl AsContext<'ctx>,
         value_type: IrBitVectorType,
         input: IrValueRef<'ctx>,
+        caller: &SourceLocation<'ctx>,
     ) -> Self {
         let input_type = input
             .get_type(ctx.ctx())
             .bit_vector()
-            .expect("input type must be a bit vector");
+            .unwrap_or_else(|| panic!("input type must be a bit vector\nat {}", caller));
         Self {
             value_type,
             input_type,
