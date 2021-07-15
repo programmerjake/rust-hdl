@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
+use num_bigint::{BigInt, Sign};
+use num_traits::ToPrimitive;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::{quote, quote_spanned, ToTokens};
-use std::{fmt, panic::Location};
+use rust_hdl_int::{Int, IntShape};
+use std::{convert::TryInto, fmt, panic::Location};
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
     Attribute, BinOp, Block, Data, DataEnum, DataStruct, DeriveInput, Error, Expr, ExprArray,
     ExprBinary, ExprBlock, ExprGroup, ExprIf, ExprLit, Field, Fields, GenericParam, Generics,
-    Lifetime, LifetimeDef, Local, Path, Stmt, Token, UnOp, Variant, VisRestricted, Visibility,
-    WhereClause, WherePredicate,
+    Lifetime, LifetimeDef, Lit, LitInt, Local, Path, Stmt, Token, UnOp, Variant, VisRestricted,
+    Visibility, WhereClause, WherePredicate,
 };
 
 mod kw {
@@ -41,6 +44,52 @@ macro_rules! todo_err {
     ($tokens:expr) => {
         return Err(make_todo_error($tokens, None))
     };
+}
+
+fn parse_int_literal(
+    sign: Option<&Token![-]>,
+    lit: &LitInt,
+) -> syn::Result<(BigInt, Option<IntShape>)> {
+    let mut value: BigInt = lit.base10_parse()?;
+    if sign.is_some() {
+        value = -value;
+    }
+    if lit.suffix().is_empty() {
+        return Ok((value, None));
+    }
+    let shape: IntShape = lit
+        .suffix()
+        .parse()
+        .map_err(|e| Error::new_spanned(&lit, format!("invalid literal type: {}", e)))?;
+    let mut adjusted_shape = shape;
+    let adjusted_shape = loop {
+        if value == Int::wrapping_with_shape(value.clone(), adjusted_shape).into_value() {
+            break Some(adjusted_shape);
+        }
+        if let Some(bit_count) = adjusted_shape.bit_count.checked_add(1) {
+            // avoid many iterations by using bits() to get a value close to the correct answer
+            if let Ok(bits) = value.bits().try_into() {
+                adjusted_shape.bit_count = bit_count.max(bits);
+                continue;
+            }
+        }
+        break None;
+    };
+    if adjusted_shape != Some(shape) {
+        Err(Error::new_spanned(
+            quote! {#sign #lit},
+            if let Some(adjusted_shape) = adjusted_shape {
+                format!(
+                    "literal out of range for `{}`, consider using `{}` instead",
+                    shape, adjusted_shape,
+                )
+            } else {
+                format!("literal out of range for `{}`", shape)
+            },
+        ))
+    } else {
+        Ok((value, Some(shape)))
+    }
 }
 
 enum RustHdlAttributeArg {
@@ -1314,9 +1363,54 @@ struct ValTranslator {
 }
 
 impl ValTranslator {
-    fn lit(&self, neg: Option<Token![-]>, lit: ExprLit) -> syn::Result<TokenStream> {
-        let _ = neg;
-        todo_err!(lit)
+    fn expr_lit(&self, neg: Option<Token![-]>, lit: ExprLit) -> syn::Result<TokenStream> {
+        let crate_path = &self.crate_path;
+        let ExprLit { attrs, lit } = lit;
+        assert_no_attrs(attrs)?;
+        match lit {
+            Lit::ByteStr(lit) => todo_err!(lit),
+            Lit::Byte(lit) => Ok(quote_spanned! {lit.span()=>
+                <#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#lit)
+            }),
+            Lit::Bool(lit) => Ok(quote! {#lit}),
+            Lit::Int(lit) => {
+                let (value, shape) = parse_int_literal(neg.as_ref(), &lit)?;
+                let value = if let Some(value) = value.to_i128() {
+                    quote_spanned! {lit.span()=>
+                        #value
+                    }
+                } else {
+                    let (sign, magnitude) = value.into_parts();
+                    let sign = match sign {
+                        Sign::Minus => quote_spanned! {lit.span()=>
+                            #crate_path::bigint::Sign::Minus
+                        },
+                        Sign::NoSign => quote_spanned! {lit.span()=>
+                            #crate_path::bigint::Sign::NoSign
+                        },
+                        Sign::Plus => quote_spanned! {lit.span()=>
+                            #crate_path::bigint::Sign::Plus
+                        },
+                    };
+                    let digits = magnitude.to_u32_digits();
+                    quote_spanned! {lit.span()=>
+                        #crate_path::bigint::BigInt::from_slice(#sign, &[#(#digits,)*])
+                    }
+                };
+                Ok(match shape {
+                    None => quote_spanned! {lit.span()=>
+                        #crate_path::values::integer::Int::new(#value).expect("literal out of range")
+                    },
+                    Some(IntShape { bit_count, signed }) => quote_spanned! {lit.span()=>
+                        #crate_path::values::integer::Int::<#crate_path::values::integer::ConstIntShape<#bit_count, #signed>>::new(#value).expect("literal out of range")
+                    },
+                })
+            }
+            Lit::Str(lit) => Err(Error::new_spanned(lit, "string literals are not supported, did you mean to use byte strings instead? (`b\"...\"`)")),
+            Lit::Char(lit) => Err(Error::new_spanned(lit, "char literals are not supported, did you mean to use byte literals instead? (`b\'...\'`)")),
+            Lit::Float(lit) => Err(Error::new_spanned(lit, "float literals are not supported")),
+            Lit::Verbatim(lit) => Err(Error::new_spanned(lit, "literal not supported")),
+        }
     }
 
     fn stmt(&self, stmt: Stmt) -> syn::Result<TokenStream> {
@@ -1348,6 +1442,7 @@ impl ValTranslator {
             .collect::<syn::Result<Vec<_>>>()?;
         Ok(quote_spanned! {brace_token.span=>
             {
+                let () = (); // useless let to shut-up #[warn(unused_braces)]
                 #(#stmts)*
             }
         })
@@ -1489,7 +1584,7 @@ impl ValTranslator {
             Expr::If(expr_if) => self.expr_if(expr_if),
             Expr::Index(expr) => todo_err!(expr),
             Expr::Let(expr) => todo_err!(expr),
-            Expr::Lit(expr) => todo_err!(expr),
+            Expr::Lit(expr) => self.expr_lit(None, expr),
             Expr::Match(expr) => todo_err!(expr),
             Expr::MethodCall(expr) => todo_err!(expr),
             Expr::Paren(expr) => {
@@ -1517,7 +1612,7 @@ impl ValTranslator {
             Expr::Unary(expr) => {
                 if let UnOp::Neg(op) = expr.op {
                     if let Expr::Lit(expr) = *expr.expr {
-                        return self.lit(Some(op), expr);
+                        return self.expr_lit(Some(op), expr);
                     }
                 }
                 let input = self.expr(*expr.expr)?;

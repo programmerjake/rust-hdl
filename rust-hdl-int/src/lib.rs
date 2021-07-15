@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
+#![no_std]
 
 use core::{
     cmp::Ordering,
     convert::identity,
     fmt,
     hash::{Hash, Hasher},
+    num::ParseIntError,
     ops::{
         Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Mul,
         MulAssign, Neg, Not, Sub, SubAssign,
     },
+    str::FromStr,
 };
 use num_bigint::BigInt;
 use num_traits::{One, ToPrimitive, Zero};
+
+#[cfg(test)]
+#[macro_use]
+extern crate std;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct IntShape {
@@ -46,6 +53,43 @@ impl fmt::Display for IntShape {
         } else {
             write!(f, "u{}", self.bit_count)
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum IntShapeParseError {
+    InvalidSignedness,
+    InvalidBitCount(ParseIntError),
+}
+
+impl fmt::Display for IntShapeParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IntShapeParseError::InvalidSignedness => {
+                write!(f, "invalid signedness: expected `u` or `i`")
+            }
+            IntShapeParseError::InvalidBitCount(v) => write!(f, "invalid bit-count: {}", v),
+        }
+    }
+}
+
+impl FromStr for IntShape {
+    type Err = IntShapeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let signed = match s.as_bytes().get(0) {
+            Some(b'i') => true,
+            Some(b'u') => false,
+            _ => return Err(IntShapeParseError::InvalidSignedness),
+        };
+        let s = &s[1..];
+        if !s.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(IntShapeParseError::InvalidBitCount(
+                "a".parse::<u32>().unwrap_err(),
+            ));
+        }
+        let bit_count = s.parse().map_err(IntShapeParseError::InvalidBitCount)?;
+        Ok(Self { bit_count, signed })
     }
 }
 
@@ -226,6 +270,21 @@ impl<Shape: IntShapeTrait> Int<Shape> {
         Shape: Default,
     {
         Self::unchecked_new_with_shape(value, Shape::default())
+    }
+    pub fn new_with_shape<T: Into<BigInt>>(value: T, shape: Shape) -> Option<Self> {
+        let value = value.into();
+        let retval = Self::wrapping_with_shape(value.clone(), shape);
+        if retval.value != value {
+            None
+        } else {
+            Some(retval)
+        }
+    }
+    pub fn new<T: Into<BigInt>>(value: T) -> Option<Self>
+    where
+        Shape: Default,
+    {
+        Self::new_with_shape(value, Shape::default())
     }
     pub fn wrapping_with_shape<T: Into<BigInt>>(value: T, shape: Shape) -> Self {
         Self {
@@ -618,7 +677,7 @@ pub type Int128 = Int<I128Shape>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{format, prelude::v1::*};
+    use std::prelude::v1::*;
 
     #[test]
     fn test_format() {
@@ -633,5 +692,103 @@ mod tests {
         assert_eq!(format!("{:X}", Int::from(0x123456EFu32)), "0x123456EF_u32");
         assert_eq!(format!("{:b}", Int::from(0b10101110u8)), "0b10101110_u8");
         assert_eq!(format!("{:o}", Int::from(0o257323u32)), "0o257323_u32");
+    }
+
+    macro_rules! assert_matches {
+        ($v:expr, $pat:pat $(,)?) => {{
+            match $v {
+                $pat => {}
+                v => panic!(
+                    "assertion failed: `(left matches right)`\n  left: `{:?}`,\n right: `{}`",
+                    v,
+                    stringify!($pat)
+                ),
+            }
+        }};
+    }
+
+    #[test]
+    fn test_int_shape() {
+        assert_eq!(
+            IntShape {
+                bit_count: 1234,
+                signed: false,
+            }
+            .to_string(),
+            "u1234",
+        );
+        assert_eq!(
+            IntShape {
+                bit_count: 5678,
+                signed: true,
+            }
+            .to_string(),
+            "i5678",
+        );
+        assert_eq!(
+            IntShape {
+                bit_count: 0,
+                signed: true,
+            }
+            .to_string(),
+            "i0",
+        );
+        assert_eq!(
+            IntShape {
+                bit_count: 0,
+                signed: false,
+            }
+            .to_string(),
+            "u0",
+        );
+        assert_matches!(
+            "i3".parse(),
+            Ok(IntShape {
+                bit_count: 3,
+                signed: true,
+            }),
+        );
+        assert_matches!(
+            "i0".parse(),
+            Ok(IntShape {
+                bit_count: 0,
+                signed: true,
+            }),
+        );
+        assert_matches!(
+            "u12345".parse(),
+            Ok(IntShape {
+                bit_count: 12345,
+                signed: false,
+            }),
+        );
+        assert_matches!(
+            "u+1".parse::<IntShape>(),
+            Err(IntShapeParseError::InvalidBitCount(_)),
+        );
+        assert_matches!(
+            "u-1".parse::<IntShape>(),
+            Err(IntShapeParseError::InvalidBitCount(_)),
+        );
+        assert_matches!(
+            "a".parse::<IntShape>(),
+            Err(IntShapeParseError::InvalidSignedness),
+        );
+        assert_matches!(
+            "".parse::<IntShape>(),
+            Err(IntShapeParseError::InvalidSignedness),
+        );
+        assert_matches!(
+            "U45".parse::<IntShape>(),
+            Err(IntShapeParseError::InvalidSignedness),
+        );
+        assert_matches!(
+            "u".parse::<IntShape>(),
+            Err(IntShapeParseError::InvalidBitCount(_)),
+        );
+        assert_matches!(
+            "u12345678901234567890".parse::<IntShape>(),
+            Err(IntShapeParseError::InvalidBitCount(_)),
+        );
     }
 }

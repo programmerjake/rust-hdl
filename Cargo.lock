@@ -146,16 +146,28 @@ dependencies = [
  "num-traits",
  "once_cell",
  "regex",
+ "rust-hdl-int",
  "rust-hdl-macros",
  "typed-arena",
+]
+
+[[package]]
+name = "rust-hdl-int"
+version = "0.1.0"
+dependencies = [
+ "num-bigint",
+ "num-traits",
 ]
 
 [[package]]
 name = "rust-hdl-macros"
 version = "0.1.0"
 dependencies = [
+ "num-bigint",
+ "num-traits",
  "proc-macro2",
  "quote",
+ "rust-hdl-int",
  "syn",
 ]
 

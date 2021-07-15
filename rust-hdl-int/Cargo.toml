@@ -1,18 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # See Notices.txt for copyright information
 [package]
-name = "rust-hdl-macros"
+name = "rust-hdl-int"
 version = "0.1.0"
 edition = "2018"
 license = "LGPL-3.0-or-later"
 
-[lib]
-proc-macro = true
-
 [dependencies]
-quote = "1.0"
-proc-macro2 = "1.0"
-syn = { version = "1.0", features = ["parsing", "full"] }
-rust-hdl-int = { version = "=0.1.0", path = "../rust-hdl-int" }
 num-bigint = { version = "0.4", default-features = false }
 num-traits = { version = "0.2.14", default-features = false }

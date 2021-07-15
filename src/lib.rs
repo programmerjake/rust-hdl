@@ -8,6 +8,9 @@ extern crate alloc;
 #[cfg(any(test, feature = "std"))]
 extern crate std;
 
+#[doc(hidden)]
+pub use num_bigint as bigint;
+
 pub mod clocking;
 pub mod context;
 pub mod export;

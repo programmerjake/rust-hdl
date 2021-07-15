@@ -8,18 +8,23 @@ edition = "2018"
 license = "LGPL-3.0-or-later"
 
 [dependencies]
-num-bigint = { version="0.4", default-features=false }
-num-traits = { version="0.2.14", default-features=false }
-once_cell = { version="1.7.2", default-features=false }
-typed-arena = { version="2.0.1", default-features=false }
-hashbrown = { version="0.11.2", default-features=false, features=["ahash", "raw"] }
-rust-hdl-macros = { version="=0.1.0", path="rust-hdl-macros" }
+num-bigint = { version = "0.4", default-features = false }
+num-traits = { version = "0.2.14", default-features = false }
+once_cell = { version = "1.7.2", default-features = false }
+typed-arena = { version = "2.0.1", default-features = false }
+rust-hdl-macros = { version = "=0.1.0", path = "rust-hdl-macros" }
+rust-hdl-int = { version = "=0.1.0", path = "rust-hdl-int" }
+
+[dependencies.hashbrown]
+version = "0.11.2"
+default-features = false
+features = ["ahash", "raw"]
 
 [dev-dependencies]
 regex = "1.5.4"
 
 [workspace]
-members = [".", "rust-hdl-macros"]
+members = [".", "rust-hdl-int", "rust-hdl-macros"]
 
 [features]
 std = []

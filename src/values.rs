@@ -22,13 +22,13 @@ use once_cell::unsync::OnceCell;
 
 pub mod aggregate;
 mod foreign_derives;
-pub mod integer;
 pub mod ops;
 
 pub use integer::{
     Int, Int1, Int128, Int16, Int32, Int64, Int8, SInt, UInt, UInt1, UInt128, UInt16, UInt32,
     UInt64, UInt8,
 };
+pub use rust_hdl_int as integer;
 pub use rust_hdl_macros::{val, FixedTypeValue, Value};
 
 mod value_fns_sealed {
