@@ -8,8 +8,11 @@ use crate::{
         values::{IrValue, LiteralBits, LiteralEnumVariant, LiteralStruct, LiteralStructField},
         SourceLocation,
     },
-    prelude::{FixedTypeValue, Int, Val, Value, ValueType},
-    values::integer::{IntShape, IntShapeTrait, UIntShape},
+    prelude::{FixedTypeValue, Int, ToVal, Val, Value, ValueType},
+    values::{
+        integer::{IntShape, IntShapeTrait, UIntShape},
+        LazyVal,
+    },
 };
 use alloc::vec::Vec;
 use core::{convert::Infallible, hash::Hash, marker::PhantomData};
@@ -37,10 +40,41 @@ where
     fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self::AggregateValue>;
 }
 
-pub trait AggregateValue<'ctx: 'scope, 'scope>: Value<'ctx> {
+// TODO: fix lifetimes
+pub trait AggregateMatchCallback<'ctx: 'scope, 'scope>: 'scope {
+    type Input: AggregateOfFieldValues<'ctx, 'scope>;
+    type Output: Value<'ctx>;
+    fn callback<'inner_scope>(
+        &mut self,
+        value: Self::Input,
+    ) -> LazyVal<'ctx, 'inner_scope, Self::Output>
+    where
+        'scope: 'inner_scope,
+        <Self::Input as AggregateOfFieldValues<'ctx, 'scope>>::Aggregate:
+            AggregateValue<'ctx, 'inner_scope>;
+}
+
+pub trait AggregateValueMatch<'ctx: 'scope, 'scope> {
+    fn match_value<
+        Callback: AggregateMatchCallback<'ctx, 'scope, Input = Self::AggregateOfFieldValues>,
+    >(
+        value: Val<'ctx, 'scope, Self>,
+        callback: Callback,
+    ) -> Val<'ctx, 'scope, Callback::Output>
+    where
+        Self: AggregateValue<'ctx, 'scope>;
+}
+
+pub trait AggregateOfFieldValues<'ctx: 'scope, 'scope>: 'scope + Copy {
+    type Aggregate: AggregateValue<'ctx, 'scope, AggregateOfFieldValues = Self>;
+}
+
+pub trait AggregateValue<'ctx: 'scope, 'scope>:
+    Value<'ctx> + AggregateValueMatch<'ctx, 'scope>
+{
     type AggregateValueKind: AggregateValueKind<'ctx, 'scope>;
     type DiscriminantShape: IntShapeTrait + Default;
-    type AggregateOfFieldValues: Copy;
+    type AggregateOfFieldValues: AggregateOfFieldValues<'ctx, 'scope, Aggregate = Self>;
 }
 
 impl<'ctx: 'scope, 'scope, T: AggregateValue<'ctx, 'scope>> Value<'ctx> for T
@@ -196,6 +230,23 @@ pub trait StructValue<'ctx: 'scope, 'scope>:
     fn visit_field_types<V: StructFieldTypeVisitor<'ctx, 'scope, Self>>(
         visitor: V,
     ) -> Result<V, V::BreakType>;
+    fn get_field_values(value: Val<'ctx, 'scope, Self>) -> Self::AggregateOfFieldValues;
+}
+
+impl<'ctx: 'scope, 'scope, T: StructValue<'ctx, 'scope>> AggregateValueMatch<'ctx, 'scope> for T {
+    fn match_value<
+        Callback: AggregateMatchCallback<'ctx, 'scope, Input = T::AggregateOfFieldValues>,
+    >(
+        value: Val<'ctx, 'scope, Self>,
+        mut callback: Callback,
+    ) -> Val<'ctx, 'scope, Callback::Output>
+    where
+        Self: AggregateValue<'ctx, 'scope>,
+    {
+        callback
+            .callback(Self::get_field_values(value))
+            .to_val(value.ctx())
+    }
 }
 
 pub trait StructFieldVisitor<'ctx: 'scope, 'scope, Struct: StructValue<'ctx, 'scope>>:
