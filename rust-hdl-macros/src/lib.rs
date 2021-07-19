@@ -1821,16 +1821,28 @@ fn val_impl(ast: ValInput) -> syn::Result<TokenStream> {
     ValTranslator { crate_path }.expr(expr)
 }
 
-fn debug_input(_input: &impl quote::ToTokens, _derive_name: &str) {
-    // eprintln!(
-    //     "--------INPUT: {}\n{}\n--------",
-    //     derive_name,
-    //     quote::ToTokens::to_token_stream(&input)
-    // );
+fn debug_input(input: &impl quote::ToTokens, derive_name: &str) {
+    #[cfg(feature = "debug-tokens")]
+    eprintln!(
+        "--------INPUT: {}\n{}\n--------",
+        derive_name,
+        quote::ToTokens::to_token_stream(&input)
+    );
+    #[cfg(not(feature = "debug-tokens"))]
+    {
+        let _ = input;
+        let _ = derive_name;
+    }
 }
 
-fn debug_output(_output: &TokenStream, _derive_name: &str) {
-    // eprintln!("--------OUTPUT: {}\n{}\n--------", derive_name, output);
+fn debug_output(output: &TokenStream, derive_name: &str) {
+    #[cfg(feature = "debug-tokens")]
+    eprintln!("--------OUTPUT: {}\n{}\n--------", derive_name, output);
+    #[cfg(not(feature = "debug-tokens"))]
+    {
+        let _ = output;
+        let _ = derive_name;
+    }
 }
 
 #[proc_macro_derive(Value, attributes(rust_hdl))]
