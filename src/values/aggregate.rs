@@ -8,7 +8,7 @@ use crate::{
         values::{IrValue, LiteralBits, LiteralEnumVariant, LiteralStruct, LiteralStructField},
         SourceLocation,
     },
-    prelude::{FixedTypeValue, Int, ToVal, Val, Value, ValueType},
+    prelude::{FixedTypeValue, Int, Val, Value, ValueType},
     values::{
         integer::{IntShape, IntShapeTrait, UIntShape},
         LazyVal,
@@ -40,41 +40,27 @@ where
     fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self::AggregateValue>;
 }
 
-// TODO: fix lifetimes
-pub trait AggregateMatchCallback<'ctx: 'scope, 'scope>: 'scope {
-    type Input: AggregateOfFieldValues<'ctx, 'scope>;
-    type Output: Value<'ctx>;
-    fn callback<'inner_scope>(
-        &mut self,
-        value: Self::Input,
-    ) -> LazyVal<'ctx, 'inner_scope, Self::Output>
-    where
-        'scope: 'inner_scope,
-        <Self::Input as AggregateOfFieldValues<'ctx, 'scope>>::Aggregate:
-            AggregateValue<'ctx, 'inner_scope>;
-}
-
 pub trait AggregateValueMatch<'ctx: 'scope, 'scope> {
-    fn match_value<
-        Callback: AggregateMatchCallback<'ctx, 'scope, Input = Self::AggregateOfFieldValues>,
+    fn match_value_without_scope_check<
+        R,
+        E,
+        F: FnMut(Self::AggregateOfFieldLazyValues) -> Result<R, E>,
     >(
-        value: Val<'ctx, 'scope, Self>,
-        callback: Callback,
-    ) -> Val<'ctx, 'scope, Callback::Output>
+        value: LazyVal<'ctx, 'scope, Self>,
+        f: F,
+    ) -> Result<R, E>
     where
         Self: AggregateValue<'ctx, 'scope>;
 }
 
-pub trait AggregateOfFieldValues<'ctx: 'scope, 'scope>: 'scope + Copy {
-    type Aggregate: AggregateValue<'ctx, 'scope, AggregateOfFieldValues = Self>;
+pub trait AggregateOfFieldLazyValues<'ctx: 'scope, 'scope>: 'scope + Clone {
+    type Aggregate: AggregateValue<'ctx, 'scope, AggregateOfFieldLazyValues = Self>;
 }
 
-pub trait AggregateValue<'ctx: 'scope, 'scope>:
-    Value<'ctx> + AggregateValueMatch<'ctx, 'scope>
-{
+pub trait AggregateValue<'ctx: 'scope, 'scope>: Value<'ctx> {
     type AggregateValueKind: AggregateValueKind<'ctx, 'scope>;
     type DiscriminantShape: IntShapeTrait + Default;
-    type AggregateOfFieldValues: AggregateOfFieldValues<'ctx, 'scope, Aggregate = Self>;
+    type AggregateOfFieldLazyValues: AggregateOfFieldLazyValues<'ctx, 'scope, Aggregate = Self>;
 }
 
 impl<'ctx: 'scope, 'scope, T: AggregateValue<'ctx, 'scope>> Value<'ctx> for T
@@ -230,22 +216,21 @@ pub trait StructValue<'ctx: 'scope, 'scope>:
     fn visit_field_types<V: StructFieldTypeVisitor<'ctx, 'scope, Self>>(
         visitor: V,
     ) -> Result<V, V::BreakType>;
-    fn get_field_values(value: Val<'ctx, 'scope, Self>) -> Self::AggregateOfFieldValues;
+    fn get_field_lazy_values(
+        value: LazyVal<'ctx, 'scope, Self>,
+    ) -> Self::AggregateOfFieldLazyValues;
 }
 
 impl<'ctx: 'scope, 'scope, T: StructValue<'ctx, 'scope>> AggregateValueMatch<'ctx, 'scope> for T {
-    fn match_value<
-        Callback: AggregateMatchCallback<'ctx, 'scope, Input = T::AggregateOfFieldValues>,
+    fn match_value_without_scope_check<
+        R,
+        E,
+        F: FnMut(T::AggregateOfFieldLazyValues) -> Result<R, E>,
     >(
-        value: Val<'ctx, 'scope, Self>,
-        mut callback: Callback,
-    ) -> Val<'ctx, 'scope, Callback::Output>
-    where
-        Self: AggregateValue<'ctx, 'scope>,
-    {
-        callback
-            .callback(Self::get_field_values(value))
-            .to_val(value.ctx())
+        value: LazyVal<'ctx, 'scope, Self>,
+        mut f: F,
+    ) -> Result<R, E> {
+        f(Self::get_field_lazy_values(value))
     }
 }
 

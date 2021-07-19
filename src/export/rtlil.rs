@@ -609,6 +609,9 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 .unwrap();
                 wires.into()
             }
+            IrValue::ExtractEnumVariantFields(_) => todo!(),
+            IrValue::IsEnumVariant(_) => todo!(),
+            IrValue::MatchEnum(_) => todo!(),
             IrValue::ExtractArrayElement(v) => {
                 let array_wires = self.get_wires_for_value(module, v.array_value())?;
                 let mut array_wires = array_wires.iter();

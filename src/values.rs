@@ -308,6 +308,24 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> LazyVal<'ctx, 'scope, T> {
             }),
         }
     }
+    #[track_caller]
+    pub fn extract_field_unchecked<Field: Value<'ctx>>(
+        &self,
+        field_enum: T::FieldEnum,
+    ) -> LazyVal<'ctx, 'scope, Field>
+    where
+        T: StructValue<'ctx, 'scope>,
+    {
+        let caller = SourceLocation::caller();
+        let this = self.clone();
+        LazyVal::from_fn(move |ctx: ContextRef<'ctx>| {
+            let extract_struct_field =
+                ExtractStructField::new(ctx, this.to_val(ctx).ir(), field_enum.into(), &caller);
+            let ir = IrValue::from(extract_struct_field).intern(ctx);
+            let value_type = ValueType::from_ir_unchecked(ctx, extract_struct_field.value_type());
+            Val::from_ir_and_type_unchecked(ir, value_type)
+        })
+    }
 }
 
 impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Clone for LazyVal<'ctx, 'scope, T> {
@@ -400,6 +418,28 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
         T: StructValue<'ctx, 'scope>,
     {
         self.extract_field_unchecked(get_field_enum(None, T::STRUCT_OF_FIELD_ENUMS).0)
+    }
+    pub fn transmute_scope_unchecked<'scope2>(self) -> Val<'ctx, 'scope2, T> {
+        Val {
+            ir: self.ir,
+            value_type: self.value_type,
+            _phantom: PhantomData,
+        }
+    }
+    pub fn inner_scope<
+        'inner_scope,
+        F: 'scope + FnOnce(Val<'ctx, 'inner_scope, T>) -> Result<Val<'ctx, 'scope, R>, E>,
+        R: Value<'ctx>,
+        E: 'scope,
+    >(
+        self,
+        f: F,
+        _inner_scope: &'inner_scope (),
+    ) -> Result<Val<'ctx, 'scope, R>, E>
+    where
+        'scope: 'inner_scope,
+    {
+        Ok(f(self.transmute_scope_unchecked())?.transmute_scope_unchecked())
     }
 }
 

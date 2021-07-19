@@ -5,23 +5,25 @@ use rust_hdl::prelude::*;
 mod common;
 
 mod enum_mod {
-    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #![no_implicit_prelude]
+
+    #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     pub enum Enum0 {}
 
-    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     pub enum Enum1 {
         A,
     }
 
-    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     pub enum Enum2 {
         A,
         B,
     }
 
-    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     pub enum Enum3 {
         A,
@@ -29,7 +31,7 @@ mod enum_mod {
         C,
     }
 
-    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     pub enum Enum4 {
         A,
@@ -38,52 +40,52 @@ mod enum_mod {
         D,
     }
 
-    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     pub enum EnumStruct<T> {
         A {
-            f1: rust_hdl::values::Int8,
+            f1: ::rust_hdl::values::Int8,
         },
         B(),
         C {},
         D(T),
         E {
             #[rust_hdl(ignored)]
-            f1: rust_hdl::values::Int8,
+            f1: ::rust_hdl::values::Int8,
         },
-        F(#[rust_hdl(ignored)] String),
+        F(#[rust_hdl(ignored)] ::std::string::String),
     }
 
-    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     enum PrivateEnum {
         A {
-            f1: rust_hdl::values::Int8,
+            f1: ::rust_hdl::values::Int8,
         },
         B(),
         C {},
         D(bool),
         E {
             #[rust_hdl(ignored)]
-            f1: rust_hdl::values::Int8,
+            f1: ::rust_hdl::values::Int8,
         },
-        F(#[rust_hdl(ignored)] String),
+        F(#[rust_hdl(ignored)] ::std::string::String),
     }
 
-    #[derive(rust_hdl::values::Value, rust_hdl::values::FixedTypeValue)]
+    #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     pub(crate) enum CrateEnum {
         A {
-            f1: rust_hdl::values::Int8,
+            f1: ::rust_hdl::values::Int8,
         },
         B(),
         C {},
         D(bool),
         E {
             #[rust_hdl(ignored)]
-            f1: rust_hdl::values::Int8,
+            f1: ::rust_hdl::values::Int8,
         },
-        F(#[rust_hdl(ignored)] String),
+        F(#[rust_hdl(ignored)] ::std::string::String),
     }
 }
 

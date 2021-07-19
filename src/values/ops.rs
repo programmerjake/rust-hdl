@@ -11,7 +11,11 @@ use crate::{
         SourceLocation,
     },
     prelude::*,
-    values::{integer::IntShapeTrait, LazyVal, ToVal},
+    values::{
+        aggregate::{AggregateValue, AggregateValueMatch},
+        integer::IntShapeTrait,
+        LazyVal, ToVal,
+    },
 };
 
 fn same_size_bin_op_unchecked<'ctx: 'scope, 'scope, T: Value<'ctx>>(
@@ -513,4 +517,22 @@ pub fn mux<
             .intern(ctx),
         )
     })
+}
+
+pub fn match_value_without_scope_check<
+    'ctx: 'scope,
+    'scope,
+    T: Value<'ctx>,
+    V: ToVal<'ctx, 'scope, ValueType = T> + 'scope,
+    R,
+    E,
+    F: FnMut(T::AggregateOfFieldLazyValues) -> Result<R, E>,
+>(
+    value: V,
+    f: F,
+) -> Result<R, E>
+where
+    T: AggregateValue<'ctx, 'scope> + AggregateValueMatch<'ctx, 'scope>,
+{
+    AggregateValueMatch::match_value_without_scope_check(LazyVal::new(value), f)
 }

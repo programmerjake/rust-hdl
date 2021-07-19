@@ -15,7 +15,7 @@ use crate::{
     },
     values::integer::{Int, IntShape, IntShapeTrait},
 };
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use core::{fmt, ops::Range};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -376,6 +376,294 @@ impl fmt::Debug for ExtractStructField<'_> {
 impl<'ctx> From<ExtractStructField<'ctx>> for IrValue<'ctx> {
     fn from(v: ExtractStructField<'ctx>) -> Self {
         Self::ExtractStructField(v)
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+pub struct ExtractEnumVariantFields<'ctx> {
+    enum_value: IrValueRef<'ctx>,
+    enum_type: IrEnumType<'ctx>,
+    variant_index: usize,
+}
+
+impl<'ctx> ExtractEnumVariantFields<'ctx> {
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        enum_value: IrValueRef<'ctx>,
+        variant_index: usize,
+        caller: &SourceLocation<'ctx>,
+    ) -> Self {
+        let enum_type = match *enum_value.get_type(ctx.ctx()) {
+            IrValueType::Enum(v) => v,
+            _ => panic!("value type is not a enum\nat {}", caller),
+        };
+        assert!(
+            variant_index < enum_type.variants().len(),
+            "variant_index is out of bounds: variant_index = {}, variants.len() = {}\nat {}",
+            variant_index,
+            enum_type.variants().len(),
+            caller,
+        );
+        Self::new_with_enum_type_unchecked(enum_value, enum_type, variant_index)
+    }
+    pub fn new_with_enum_type_unchecked(
+        enum_value: IrValueRef<'ctx>,
+        enum_type: IrEnumType<'ctx>,
+        variant_index: usize,
+    ) -> Self {
+        assert!(variant_index < enum_type.variants().len());
+        Self {
+            enum_value,
+            enum_type,
+            variant_index,
+        }
+    }
+    pub fn enum_value(self) -> IrValueRef<'ctx> {
+        self.enum_value
+    }
+    pub fn enum_variant_type(self) -> &'ctx IrEnumVariantType<'ctx> {
+        &self.enum_type.variants().get()[self.variant_index]
+    }
+    pub fn value_type(self) -> IrStructType<'ctx> {
+        self.enum_variant_type().fields
+    }
+    pub fn variant_name(self) -> Interned<'ctx, str> {
+        self.enum_variant_type().name
+    }
+    pub fn variant_discriminant(self) -> &'ctx LiteralBits {
+        &self.enum_variant_type().discriminant
+    }
+    pub fn enum_type(self) -> IrEnumType<'ctx> {
+        self.enum_type
+    }
+    pub fn variant_index(self) -> usize {
+        self.variant_index
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for ExtractEnumVariantFields<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.enum_value.owning_module()
+    }
+}
+
+impl fmt::Debug for ExtractEnumVariantFields<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExtractEnumVariantFields")
+            .field("enum_value", &self.enum_value())
+            .field("enum_variant_type", &self.enum_variant_type())
+            .field("variant_index", &self.variant_index())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'ctx> From<ExtractEnumVariantFields<'ctx>> for IrValue<'ctx> {
+    fn from(v: ExtractEnumVariantFields<'ctx>) -> Self {
+        Self::ExtractEnumVariantFields(v)
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+pub struct IsEnumVariant<'ctx> {
+    enum_value: IrValueRef<'ctx>,
+    enum_type: IrEnumType<'ctx>,
+    variant_index: usize,
+}
+
+impl<'ctx> IsEnumVariant<'ctx> {
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        enum_value: IrValueRef<'ctx>,
+        variant_index: usize,
+        caller: &SourceLocation<'ctx>,
+    ) -> Self {
+        let enum_type = match *enum_value.get_type(ctx.ctx()) {
+            IrValueType::Enum(v) => v,
+            _ => panic!("value type is not a enum\nat {}", caller),
+        };
+        assert!(
+            variant_index < enum_type.variants().len(),
+            "variant_index is out of bounds: variant_index = {}, variants.len() = {}\nat {}",
+            variant_index,
+            enum_type.variants().len(),
+            caller,
+        );
+        Self::new_with_enum_type_unchecked(enum_value, enum_type, variant_index)
+    }
+    pub fn new_with_enum_type_unchecked(
+        enum_value: IrValueRef<'ctx>,
+        enum_type: IrEnumType<'ctx>,
+        variant_index: usize,
+    ) -> Self {
+        assert!(variant_index < enum_type.variants().len());
+        Self {
+            enum_value,
+            enum_type,
+            variant_index,
+        }
+    }
+    pub fn enum_value(self) -> IrValueRef<'ctx> {
+        self.enum_value
+    }
+    pub fn enum_variant_type(self) -> &'ctx IrEnumVariantType<'ctx> {
+        &self.enum_type.variants().get()[self.variant_index]
+    }
+    pub fn value_type(self) -> IrBitVectorType {
+        IrBitVectorType {
+            bit_count: 1,
+            signed: false,
+        }
+    }
+    pub fn variant_name(self) -> Interned<'ctx, str> {
+        self.enum_variant_type().name
+    }
+    pub fn variant_discriminant(self) -> &'ctx LiteralBits {
+        &self.enum_variant_type().discriminant
+    }
+    pub fn enum_type(self) -> IrEnumType<'ctx> {
+        self.enum_type
+    }
+    pub fn variant_index(self) -> usize {
+        self.variant_index
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for IsEnumVariant<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.enum_value.owning_module()
+    }
+}
+
+impl fmt::Debug for IsEnumVariant<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IsEnumVariant")
+            .field("enum_value", &self.enum_value())
+            .field("enum_variant_type", &self.enum_variant_type())
+            .field("variant_index", &self.variant_index())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'ctx> From<IsEnumVariant<'ctx>> for IrValue<'ctx> {
+    fn from(v: IsEnumVariant<'ctx>) -> Self {
+        Self::IsEnumVariant(v)
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub struct MatchArmForEnum<'ctx> {
+    pub variant_index: usize,
+    pub result: IrValueRef<'ctx>,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+pub struct MatchEnum<'ctx> {
+    enum_value: IrValueRef<'ctx>,
+    enum_type: IrEnumType<'ctx>,
+    value_type: IrValueTypeRef<'ctx>,
+    match_arms: Interned<'ctx, [IrValueRef<'ctx>]>,
+    owning_module: Option<IrModuleRef<'ctx>>,
+}
+
+impl<'ctx> MatchEnum<'ctx> {
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        enum_value: IrValueRef<'ctx>,
+        value_type: IrValueTypeRef<'ctx>,
+        match_arms: impl IntoIterator<Item = MatchArmForEnum<'ctx>>,
+        caller: &SourceLocation<'ctx>,
+    ) -> Self {
+        let ctx = ctx.ctx();
+        let enum_type = match *enum_value.get_type(ctx) {
+            IrValueType::Enum(v) => v,
+            _ => panic!("value type is not a enum\nat {}", caller),
+        };
+        let mut owning_module = enum_value.owning_module();
+        let mut match_arms_opt = vec![None; enum_type.variants().len()];
+        for MatchArmForEnum {
+            variant_index,
+            result,
+        } in match_arms
+        {
+            assert!(
+                variant_index < enum_type.variants().len(),
+                "variant_index is out of bounds: variant_index = {}, variants.len() = {}\nat {}",
+                variant_index,
+                enum_type.variants().len(),
+                caller,
+            );
+            assert!(
+                result.get_type(ctx) == value_type,
+                "the match arm's result type doesn't match the expected type:\n\
+                variant index = {}, variant name = {}, variant discriminant = {:?}\nat {}",
+                variant_index,
+                enum_type.variants()[variant_index].name,
+                enum_type.variants()[variant_index].discriminant,
+                caller,
+            );
+            owning_module = combine_owning_modules([owning_module, result.owning_module()], caller);
+            // allow duplicate variants, the first one is the one that's used
+            match_arms_opt[variant_index].get_or_insert(result);
+        }
+        let match_arms: Vec<_> = match_arms_opt
+            .into_iter()
+            .enumerate()
+            .map(|(variant_index, result)| match result {
+                Some(result) => result,
+                None => panic!(
+                    "missing match arm for variant:\n\
+                    variant index = {}, variant name = {}, variant discriminant = {:?}\nat {}",
+                    variant_index,
+                    enum_type.variants()[variant_index].name,
+                    enum_type.variants()[variant_index].discriminant,
+                    caller,
+                ),
+            })
+            .collect();
+        let match_arms = match_arms.intern(ctx);
+        Self {
+            enum_value,
+            enum_type,
+            value_type,
+            match_arms,
+            owning_module,
+        }
+    }
+    pub fn enum_value(self) -> IrValueRef<'ctx> {
+        self.enum_value
+    }
+    pub fn value_type(self) -> IrValueTypeRef<'ctx> {
+        self.value_type
+    }
+    pub fn enum_type(self) -> IrEnumType<'ctx> {
+        self.enum_type
+    }
+    pub fn match_arms(self) -> Interned<'ctx, [IrValueRef<'ctx>]> {
+        self.match_arms
+    }
+}
+
+impl<'ctx> OwningModule<'ctx> for MatchEnum<'ctx> {
+    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+        self.owning_module
+    }
+}
+
+impl fmt::Debug for MatchEnum<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MatchEnum")
+            .field("enum_value", &self.enum_value())
+            .field("enum_type", &self.enum_type())
+            .field("value_type", &self.value_type())
+            .field("match_arms", &self.match_arms())
+            .field("owning_module", &self.owning_module())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'ctx> From<MatchEnum<'ctx>> for IrValue<'ctx> {
+    fn from(v: MatchEnum<'ctx>) -> Self {
+        Self::MatchEnum(v)
     }
 }
 
@@ -1079,6 +1367,9 @@ pub enum IrValue<'ctx> {
     Input(IrModuleInput<'ctx>),
     OutputRead(IrOutputRead<'ctx>),
     ExtractStructField(ExtractStructField<'ctx>),
+    ExtractEnumVariantFields(ExtractEnumVariantFields<'ctx>),
+    IsEnumVariant(IsEnumVariant<'ctx>),
+    MatchEnum(MatchEnum<'ctx>),
     ExtractArrayElement(ExtractArrayElement<'ctx>),
     SliceArray(SliceArray<'ctx>),
     RegOutput(IrRegOutput<'ctx>),
@@ -1113,6 +1404,9 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::Input(v) => v.value_type(),
             IrValue::OutputRead(v) => v.0.value_type(),
             IrValue::ExtractStructField(v) => v.value_type(),
+            IrValue::ExtractEnumVariantFields(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::IsEnumVariant(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::MatchEnum(v) => v.value_type(),
             IrValue::ExtractArrayElement(v) => v.value_type(),
             IrValue::SliceArray(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::RegOutput(v) => v.0.value_type(),
@@ -1139,6 +1433,9 @@ impl<'ctx> OwningModule<'ctx> for IrValue<'ctx> {
             IrValue::Input(v) => v.owning_module(),
             IrValue::OutputRead(v) => v.owning_module(),
             IrValue::ExtractStructField(v) => v.owning_module(),
+            IrValue::ExtractEnumVariantFields(v) => v.owning_module(),
+            IrValue::IsEnumVariant(v) => v.owning_module(),
+            IrValue::MatchEnum(v) => v.owning_module(),
             IrValue::ExtractArrayElement(v) => v.owning_module(),
             IrValue::SliceArray(v) => v.owning_module(),
             IrValue::RegOutput(v) => v.owning_module(),
@@ -1165,6 +1462,9 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::Input(v) => v.fmt(f),
             IrValue::OutputRead(v) => v.fmt(f),
             IrValue::ExtractStructField(v) => v.fmt(f),
+            IrValue::ExtractEnumVariantFields(v) => v.fmt(f),
+            IrValue::IsEnumVariant(v) => v.fmt(f),
+            IrValue::MatchEnum(v) => v.fmt(f),
             IrValue::ExtractArrayElement(v) => v.fmt(f),
             IrValue::SliceArray(v) => v.fmt(f),
             IrValue::RegOutput(v) => v.fmt(f),
