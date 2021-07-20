@@ -7,6 +7,7 @@ use core::{fmt, panic::Location};
 pub mod io;
 pub mod logic;
 pub mod module;
+pub mod scope;
 pub mod symbols;
 pub mod types;
 pub mod values;

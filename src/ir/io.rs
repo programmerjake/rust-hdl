@@ -6,10 +6,8 @@ use crate::{
     fmt_utils::{debug_format_option_as_value_or_invalid, debug_format_option_as_value_or_none},
     ir::{
         logic::{IrWire, IrWireRef},
-        module::{
-            combine_owning_modules, IrModule, IrModuleInputData, IrModuleOutputData, IrModuleRef,
-            OwningModule,
-        },
+        module::{IrModule, IrModuleInputData, IrModuleOutputData, IrModuleRef},
+        scope::{OwningScope, ScopeRef},
         symbols::IrSymbol,
         types::IrValueTypeRef,
         values::{IrValue, IrValueRef},
@@ -30,9 +28,9 @@ pub struct IrModuleInput<'ctx> {
     path: IrSymbol<'ctx>,
 }
 
-impl<'ctx> OwningModule<'ctx> for IrModuleInput<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        Some(self.module)
+impl<'ctx> OwningScope<'ctx> for IrModuleInput<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        Some(self.module.scope())
     }
 }
 
@@ -125,10 +123,9 @@ impl<'ctx> IrInput<'ctx> {
         assert_eq!(self.value_type(module.ctx()), module_input.value_type());
         match (&*self, parent_module) {
             (IrInput::Input { value }, Some(parent_module)) => {
-                combine_owning_modules(
-                    [Some(parent_module), value.owning_module()],
-                    &module.source_location(),
-                );
+                parent_module
+                    .scope()
+                    .assert_ancestor_of(value, &module.source_location());
             }
             (IrInput::Input { .. }, None) => {
                 panic!("input to top module must be an external input")
@@ -270,9 +267,9 @@ impl<'ctx> IrOutputRead<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for IrOutputRead<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.0.module()
+impl<'ctx> OwningScope<'ctx> for IrOutputRead<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.0.module().map(|m| m.scope())
     }
 }
 

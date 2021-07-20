@@ -6,7 +6,7 @@ use crate::{
     ir::{
         io::{IrModuleInput, IrOutputRead},
         logic::{IrRegOutput, IrWireRead},
-        module::{combine_owning_modules, IrModuleRef, OwningModule},
+        scope::{OwningScope, Scope, ScopeRef},
         types::{
             IrArrayType, IrBitVectorType, IrEnumType, IrEnumVariantType, IrStructFieldType,
             IrStructType, IrValueType, IrValueTypeRef,
@@ -23,8 +23,8 @@ pub struct LiteralBits {
     value: Int,
 }
 
-impl<'ctx> OwningModule<'ctx> for LiteralBits {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+impl<'ctx> OwningScope<'ctx> for LiteralBits {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
         None
     }
 }
@@ -108,13 +108,13 @@ impl From<LiteralBits> for IrValue<'_> {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct LiteralArray<'ctx> {
     element_type: IrValueTypeRef<'ctx>,
-    owning_module: Option<IrModuleRef<'ctx>>,
+    scope: Option<ScopeRef<'ctx>>,
     elements: Interned<'ctx, [IrValueRef<'ctx>]>,
 }
 
-impl<'ctx> OwningModule<'ctx> for LiteralArray<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.owning_module
+impl<'ctx> OwningScope<'ctx> for LiteralArray<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.scope
     }
 }
 
@@ -133,7 +133,7 @@ impl<'ctx> LiteralArray<'ctx> {
         let elements: Interned<'_, [_]> = elements.intern(ctx);
         Self {
             element_type,
-            owning_module: combine_owning_modules(elements.iter(), caller),
+            scope: Scope::combine_or_panic(elements.iter(), caller),
             elements,
         }
     }
@@ -172,7 +172,7 @@ pub struct LiteralStructField<'ctx> {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct LiteralStruct<'ctx> {
     value_type: IrStructType<'ctx>,
-    owning_module: Option<IrModuleRef<'ctx>>,
+    scope: Option<ScopeRef<'ctx>>,
     fields: Interned<'ctx, [LiteralStructField<'ctx>]>,
 }
 
@@ -185,20 +185,19 @@ impl<'ctx> LiteralStruct<'ctx> {
         let fields = fields.as_ref();
         let ctx = ctx.ctx();
         let mut field_types = Vec::with_capacity(fields.len());
-        let mut owning_module = None;
+        let mut scope = None;
         for field in fields {
             let field_type = IrStructFieldType {
                 name: field.name,
                 ty: field.value.get_type(ctx),
             };
             field_types.push(field_type);
-            owning_module =
-                combine_owning_modules([owning_module, field.value.owning_module()], caller);
+            scope = Scope::combine_or_panic([scope, field.value.owning_scope()], caller);
         }
         let fields = fields.intern(ctx);
         Self {
             value_type: IrStructType::new(ctx, field_types),
-            owning_module,
+            scope,
             fields,
         }
     }
@@ -210,9 +209,9 @@ impl<'ctx> LiteralStruct<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for LiteralStruct<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.owning_module
+impl<'ctx> OwningScope<'ctx> for LiteralStruct<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.scope
     }
 }
 
@@ -225,7 +224,7 @@ impl<'ctx> From<LiteralStruct<'ctx>> for IrValue<'ctx> {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct LiteralEnumVariant<'ctx> {
     value_type: IrEnumType<'ctx>,
-    owning_module: Option<IrModuleRef<'ctx>>,
+    scope: Option<ScopeRef<'ctx>>,
     variant_index: usize,
     fields_value: IrValueRef<'ctx>,
 }
@@ -249,7 +248,7 @@ impl<'ctx> LiteralEnumVariant<'ctx> {
         );
         Self {
             value_type,
-            owning_module: fields_value.owning_module(),
+            scope: fields_value.owning_scope(),
             variant_index,
             fields_value,
         }
@@ -274,9 +273,9 @@ impl<'ctx> LiteralEnumVariant<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for LiteralEnumVariant<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.owning_module
+impl<'ctx> OwningScope<'ctx> for LiteralEnumVariant<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.scope
     }
 }
 
@@ -357,9 +356,9 @@ impl<'ctx> ExtractStructField<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for ExtractStructField<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.struct_value.owning_module()
+impl<'ctx> OwningScope<'ctx> for ExtractStructField<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.struct_value.owning_scope()
     }
 }
 
@@ -441,9 +440,9 @@ impl<'ctx> ExtractEnumVariantFields<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for ExtractEnumVariantFields<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.enum_value.owning_module()
+impl<'ctx> OwningScope<'ctx> for ExtractEnumVariantFields<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.enum_value.owning_scope()
     }
 }
 
@@ -528,9 +527,9 @@ impl<'ctx> IsEnumVariant<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for IsEnumVariant<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.enum_value.owning_module()
+impl<'ctx> OwningScope<'ctx> for IsEnumVariant<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.enum_value.owning_scope()
     }
 }
 
@@ -562,7 +561,7 @@ pub struct MatchEnum<'ctx> {
     enum_type: IrEnumType<'ctx>,
     value_type: IrValueTypeRef<'ctx>,
     match_arms: Interned<'ctx, [IrValueRef<'ctx>]>,
-    owning_module: Option<IrModuleRef<'ctx>>,
+    scope: Option<ScopeRef<'ctx>>,
 }
 
 impl<'ctx> MatchEnum<'ctx> {
@@ -578,7 +577,7 @@ impl<'ctx> MatchEnum<'ctx> {
             IrValueType::Enum(v) => v,
             _ => panic!("value type is not a enum\nat {}", caller),
         };
-        let mut owning_module = enum_value.owning_module();
+        let mut scope = enum_value.owning_scope();
         let mut match_arms_opt = vec![None; enum_type.variants().len()];
         for MatchArmForEnum {
             variant_index,
@@ -601,7 +600,7 @@ impl<'ctx> MatchEnum<'ctx> {
                 enum_type.variants()[variant_index].discriminant,
                 caller,
             );
-            owning_module = combine_owning_modules([owning_module, result.owning_module()], caller);
+            scope = Scope::combine_or_panic([scope, result.owning_scope()], caller);
             // allow duplicate variants, the first one is the one that's used
             match_arms_opt[variant_index].get_or_insert(result);
         }
@@ -626,7 +625,7 @@ impl<'ctx> MatchEnum<'ctx> {
             enum_type,
             value_type,
             match_arms,
-            owning_module,
+            scope,
         }
     }
     pub fn enum_value(self) -> IrValueRef<'ctx> {
@@ -643,9 +642,9 @@ impl<'ctx> MatchEnum<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for MatchEnum<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.owning_module
+impl<'ctx> OwningScope<'ctx> for MatchEnum<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.scope
     }
 }
 
@@ -656,7 +655,7 @@ impl fmt::Debug for MatchEnum<'_> {
             .field("enum_type", &self.enum_type())
             .field("value_type", &self.value_type())
             .field("match_arms", &self.match_arms())
-            .field("owning_module", &self.owning_module())
+            .field("owning_scope", &self.owning_scope())
             .finish_non_exhaustive()
     }
 }
@@ -720,9 +719,9 @@ impl<'ctx> ExtractArrayElement<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for ExtractArrayElement<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.array_value.owning_module()
+impl<'ctx> OwningScope<'ctx> for ExtractArrayElement<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.array_value.owning_scope()
     }
 }
 
@@ -803,9 +802,9 @@ impl<'ctx> SliceArray<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for SliceArray<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.array_value.owning_module()
+impl<'ctx> OwningScope<'ctx> for SliceArray<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.array_value.owning_scope()
     }
 }
 
@@ -896,9 +895,9 @@ impl<'ctx> SliceBitVector<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for SliceBitVector<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.base_value.owning_module()
+impl<'ctx> OwningScope<'ctx> for SliceBitVector<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.base_value.owning_scope()
     }
 }
 
@@ -922,7 +921,7 @@ impl<'ctx> From<SliceBitVector<'ctx>> for IrValue<'ctx> {
 pub struct Mux<'ctx> {
     condition: IrValueRef<'ctx>,
     value_type: IrValueTypeRef<'ctx>,
-    owning_module: Option<IrModuleRef<'ctx>>,
+    scope: Option<ScopeRef<'ctx>>,
     true_value: IrValueRef<'ctx>,
     false_value: IrValueRef<'ctx>,
 }
@@ -948,11 +947,11 @@ impl<'ctx> Mux<'ctx> {
             "true_value and false_value must have the same type\nat {}",
             caller
         );
-        let owning_module = combine_owning_modules([condition, true_value, false_value], caller);
+        let scope = Scope::combine_or_panic([condition, true_value, false_value], caller);
         Self {
             condition,
             value_type,
-            owning_module,
+            scope,
             true_value,
             false_value,
         }
@@ -971,9 +970,9 @@ impl<'ctx> Mux<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for Mux<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.owning_module
+impl<'ctx> OwningScope<'ctx> for Mux<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.scope
     }
 }
 
@@ -986,7 +985,7 @@ impl<'ctx> From<Mux<'ctx>> for IrValue<'ctx> {
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
 pub struct ConcatBitVectors<'ctx> {
     value_type: IrBitVectorType,
-    owning_module: Option<IrModuleRef<'ctx>>,
+    scope: Option<ScopeRef<'ctx>>,
     bit_vectors: Interned<'ctx, [IrValueRef<'ctx>]>,
 }
 
@@ -1012,10 +1011,10 @@ impl<'ctx> ConcatBitVectors<'ctx> {
                 .checked_add(bit_count)
                 .unwrap_or_else(|| panic!("too many bits in bit vector\nat {}", caller));
         }
-        let owning_module = combine_owning_modules(bit_vectors, caller);
+        let scope = Scope::combine_or_panic(bit_vectors, caller);
         Self {
             value_type,
-            owning_module,
+            scope,
             bit_vectors: bit_vectors.intern(ctx),
         }
     }
@@ -1027,9 +1026,9 @@ impl<'ctx> ConcatBitVectors<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for ConcatBitVectors<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.owning_module
+impl<'ctx> OwningScope<'ctx> for ConcatBitVectors<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.scope
     }
 }
 
@@ -1055,7 +1054,7 @@ pub enum SameSizeBinOpKind {
 pub struct SameSizeBinOp<'ctx> {
     kind: SameSizeBinOpKind,
     value_type: IrBitVectorType,
-    owning_module: Option<IrModuleRef<'ctx>>,
+    scope: Option<ScopeRef<'ctx>>,
     lhs: IrValueRef<'ctx>,
     rhs: IrValueRef<'ctx>,
 }
@@ -1083,11 +1082,11 @@ impl<'ctx> SameSizeBinOp<'ctx> {
             "input types must be the same\nat {}",
             caller
         );
-        let owning_module = combine_owning_modules([lhs, rhs], caller);
+        let scope = Scope::combine_or_panic([lhs, rhs], caller);
         Self {
             kind,
             value_type,
-            owning_module,
+            scope,
             lhs,
             rhs,
         }
@@ -1106,9 +1105,9 @@ impl<'ctx> SameSizeBinOp<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for SameSizeBinOp<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.owning_module
+impl<'ctx> OwningScope<'ctx> for SameSizeBinOp<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.scope
     }
 }
 
@@ -1160,9 +1159,9 @@ impl<'ctx> SameSizeUnOp<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for SameSizeUnOp<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.input.owning_module()
+impl<'ctx> OwningScope<'ctx> for SameSizeUnOp<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.input.owning_scope()
     }
 }
 
@@ -1182,7 +1181,7 @@ pub enum BoolOutBinOpKind {
 pub struct BoolOutBinOp<'ctx> {
     kind: BoolOutBinOpKind,
     input_type: IrBitVectorType,
-    owning_module: Option<IrModuleRef<'ctx>>,
+    scope: Option<ScopeRef<'ctx>>,
     lhs: IrValueRef<'ctx>,
     rhs: IrValueRef<'ctx>,
 }
@@ -1209,11 +1208,11 @@ impl<'ctx> BoolOutBinOp<'ctx> {
             "input types must be the same\nat {}",
             caller
         );
-        let owning_module = combine_owning_modules([lhs, rhs], caller);
+        let scope = Scope::combine_or_panic([lhs, rhs], caller);
         Self {
             kind,
             input_type,
-            owning_module,
+            scope,
             lhs,
             rhs,
         }
@@ -1238,9 +1237,9 @@ impl<'ctx> BoolOutBinOp<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for BoolOutBinOp<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.owning_module
+impl<'ctx> OwningScope<'ctx> for BoolOutBinOp<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.scope
     }
 }
 
@@ -1298,9 +1297,9 @@ impl<'ctx> BoolOutUnOp<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for BoolOutUnOp<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.input.owning_module()
+impl<'ctx> OwningScope<'ctx> for BoolOutUnOp<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.input.owning_scope()
     }
 }
 
@@ -1345,9 +1344,9 @@ impl<'ctx> ConvertIntWrapping<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for ConvertIntWrapping<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.input.owning_module()
+impl<'ctx> OwningScope<'ctx> for ConvertIntWrapping<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        self.input.owning_scope()
     }
 }
 
@@ -1422,31 +1421,31 @@ impl<'ctx> IrValue<'ctx> {
     }
 }
 
-impl<'ctx> OwningModule<'ctx> for IrValue<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
+impl<'ctx> OwningScope<'ctx> for IrValue<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
         match self {
-            IrValue::LiteralBits(v) => v.owning_module(),
-            IrValue::LiteralArray(v) => v.owning_module(),
-            IrValue::LiteralStruct(v) => v.owning_module(),
-            IrValue::LiteralEnumVariant(v) => v.owning_module(),
-            IrValue::WireRead(v) => v.owning_module(),
-            IrValue::Input(v) => v.owning_module(),
-            IrValue::OutputRead(v) => v.owning_module(),
-            IrValue::ExtractStructField(v) => v.owning_module(),
-            IrValue::ExtractEnumVariantFields(v) => v.owning_module(),
-            IrValue::IsEnumVariant(v) => v.owning_module(),
-            IrValue::MatchEnum(v) => v.owning_module(),
-            IrValue::ExtractArrayElement(v) => v.owning_module(),
-            IrValue::SliceArray(v) => v.owning_module(),
-            IrValue::RegOutput(v) => v.owning_module(),
-            IrValue::Mux(v) => v.owning_module(),
-            IrValue::ConcatBitVectors(v) => v.owning_module(),
-            IrValue::SliceBitVector(v) => v.owning_module(),
-            IrValue::SameSizeBinOp(v) => v.owning_module(),
-            IrValue::SameSizeUnOp(v) => v.owning_module(),
-            IrValue::BoolOutBinOp(v) => v.owning_module(),
-            IrValue::BoolOutUnOp(v) => v.owning_module(),
-            IrValue::ConvertIntWrapping(v) => v.owning_module(),
+            IrValue::LiteralBits(v) => v.owning_scope(),
+            IrValue::LiteralArray(v) => v.owning_scope(),
+            IrValue::LiteralStruct(v) => v.owning_scope(),
+            IrValue::LiteralEnumVariant(v) => v.owning_scope(),
+            IrValue::WireRead(v) => v.owning_scope(),
+            IrValue::Input(v) => v.owning_scope(),
+            IrValue::OutputRead(v) => v.owning_scope(),
+            IrValue::ExtractStructField(v) => v.owning_scope(),
+            IrValue::ExtractEnumVariantFields(v) => v.owning_scope(),
+            IrValue::IsEnumVariant(v) => v.owning_scope(),
+            IrValue::MatchEnum(v) => v.owning_scope(),
+            IrValue::ExtractArrayElement(v) => v.owning_scope(),
+            IrValue::SliceArray(v) => v.owning_scope(),
+            IrValue::RegOutput(v) => v.owning_scope(),
+            IrValue::Mux(v) => v.owning_scope(),
+            IrValue::ConcatBitVectors(v) => v.owning_scope(),
+            IrValue::SliceBitVector(v) => v.owning_scope(),
+            IrValue::SameSizeBinOp(v) => v.owning_scope(),
+            IrValue::SameSizeUnOp(v) => v.owning_scope(),
+            IrValue::BoolOutBinOp(v) => v.owning_scope(),
+            IrValue::BoolOutUnOp(v) => v.owning_scope(),
+            IrValue::ConvertIntWrapping(v) => v.owning_scope(),
         }
     }
 }

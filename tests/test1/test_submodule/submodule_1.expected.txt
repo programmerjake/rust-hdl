@@ -81,7 +81,7 @@ IrModule {
                             bit_count: 8,
                             signed: true,
                         },
-                        owning_module: None,
+                        owning_scope: None,
                         elements: [
                             LiteralBits {
                                 value: 0x23_i8,

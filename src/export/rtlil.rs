@@ -11,7 +11,7 @@ use crate::{
     ir::{
         io::InOrOut,
         logic::IrRegReset,
-        module::{combine_owning_modules, IrModuleRef, OwningModule},
+        module::{combine_owning_scopes, IrModuleRef, OwningModule},
         types::{IrArrayType, IrBitVectorType, IrValueType, IrValueTypeRef},
         values::{
             BoolOutBinOpKind, BoolOutUnOpKind, IrValue, IrValueRef, LiteralBits, Mux,
@@ -443,8 +443,8 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
         module: IrModuleRef<'ctx>,
         value: IrValueRef<'ctx>,
     ) -> Result<Rc<[RtlilWire<'ctx>]>, W::Error> {
-        combine_owning_modules(
-            [Some(module), value.owning_module()],
+        Scope::combine_or_panic(
+            [Some(module), value.owning_scope()],
             &module.source_location(),
         );
         let module_data = self.get_module_data(module);

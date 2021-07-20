@@ -2,12 +2,13 @@
 // See Notices.txt for copyright information
 
 use crate::{
-    context::{AsContext, ContextRef, Internable, Interned},
+    context::{AsContext, ContextRef},
     fmt_utils::{debug_format_option_as_value_or_none, NestedDebugTracking},
     io::{IOVisitor, IO},
     ir::{
         io::{InOrOut, IrIOMutRef, IrInput, IrModuleInput, IrOutputRead},
         logic::{IrRegRef, IrWireRef},
+        scope::{Scope, ScopeRef},
         symbols::{IrSymbol, IrSymbolTable},
         types::IrValueTypeRef,
         SourceLocation,
@@ -22,58 +23,6 @@ use core::{
     ops::Deref,
 };
 use once_cell::unsync::OnceCell;
-
-pub trait OwningModule<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>>;
-}
-
-impl<'ctx> OwningModule<'ctx> for IrModuleRef<'ctx> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        Some(*self)
-    }
-}
-
-impl<'ctx, T: OwningModule<'ctx>> OwningModule<'ctx> for Option<T> {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        self.as_ref().and_then(OwningModule::owning_module)
-    }
-}
-
-impl<'ctx, T: ?Sized + OwningModule<'ctx>> OwningModule<'ctx> for &'_ T {
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        (**self).owning_module()
-    }
-}
-
-impl<'ctx, T: ?Sized + OwningModule<'ctx> + Internable<'ctx>> OwningModule<'ctx>
-    for Interned<'ctx, T>
-{
-    fn owning_module(&self) -> Option<IrModuleRef<'ctx>> {
-        (**self).owning_module()
-    }
-}
-
-pub fn combine_owning_modules<'ctx, T: OwningModule<'ctx>, I: IntoIterator<Item = T>>(
-    values: I,
-    caller: &SourceLocation<'ctx>,
-) -> Option<IrModuleRef<'ctx>> {
-    let mut owning_module = None::<IrModuleRef<'ctx>>;
-    for value in values {
-        match (owning_module, value.owning_module()) {
-            (Some(a), Some(b)) if a != b => {
-                panic!(
-                    "owning modules don't match: {} != {}\nat {}",
-                    a.path(),
-                    b.path(),
-                    caller
-                )
-            }
-            (None, Some(v)) => owning_module = Some(v),
-            _ => {}
-        }
-    }
-    owning_module
-}
 
 #[derive(Debug, Clone)]
 pub struct IrModuleInputData<'ctx> {
@@ -116,6 +65,7 @@ impl<'ctx> IrModuleOutputData<'ctx> {
 
 pub struct IrModule<'ctx> {
     ctx: ContextRef<'ctx>,
+    pub(crate) next_scope_id: Cell<u64>,
     source_location: Cell<SourceLocation<'ctx>>,
     parent: Option<IrModuleRef<'ctx>>,
     /// name is registered in parent_symbol_table
@@ -126,6 +76,7 @@ pub struct IrModule<'ctx> {
     pub(crate) wires: RefCell<Vec<IrWireRef<'ctx>>>,
     pub(crate) registers: RefCell<Vec<IrRegRef<'ctx>>>,
     debug_formatting: Cell<bool>,
+    scope: Cell<Option<ScopeRef<'ctx>>>,
 }
 
 impl<'ctx> AsContext<'ctx> for IrModule<'ctx> {
@@ -215,8 +166,11 @@ impl<'ctx> IrModule<'ctx> {
             wires: RefCell::default(),
             registers: RefCell::default(),
             debug_formatting: Cell::new(false),
+            next_scope_id: Cell::new(1),
+            scope: Cell::new(None),
         });
         ctx.modules.borrow_mut().push(module);
+        module.scope.set(Some(Scope::make_module_scope(module)));
         module
     }
     pub fn try_new_top_module<
@@ -367,6 +321,9 @@ impl<'ctx> IrModule<'ctx> {
     }
     pub fn registers(&self) -> Vec<IrRegRef<'ctx>> {
         self.registers.borrow().clone()
+    }
+    pub fn scope(&self) -> ScopeRef<'ctx> {
+        self.scope.get().unwrap()
     }
 }
 

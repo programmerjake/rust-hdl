@@ -113,7 +113,7 @@ IrModule {
                             bit_count: 24,
                             signed: false,
                         },
-                        owning_module: Some(
+                        owning_scope: Some(
                             IrModule {
                                 path: "top",
                                 ..
@@ -166,7 +166,7 @@ IrModule {
                     bit_count: 24,
                     signed: false,
                 },
-                owning_module: Some(
+                owning_scope: Some(
                     IrModule {
                         path: "top",
                         ..

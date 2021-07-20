@@ -5,6 +5,7 @@ use crate::ir::{
     io::IrOutputReadData,
     logic::{IrReg, IrWire},
     module::{IrModule, IrModuleRef},
+    scope::Scope,
     symbols::IrSymbolTable,
     types::{IrEnumVariantType, IrStructFieldType, IrValueType},
     values::{IrValue, IrValueRef, LiteralStructField},
@@ -258,6 +259,7 @@ pub struct Context<'ctx> {
     literal_struct_field_interner: Interner<'ctx, [LiteralStructField<'ctx>]>,
     value_interner: Interner<'ctx, IrValue<'ctx>>,
     value_ref_interner: Interner<'ctx, [IrValueRef<'ctx>]>,
+    scope_interner: Interner<'ctx, Scope<'ctx>>,
     pub(crate) modules_arena: Arena<IrModule<'ctx>>,
     pub(crate) wires_arena: Arena<IrWire<'ctx>>,
     pub(crate) registers_arena: Arena<IrReg<'ctx>>,
@@ -277,6 +279,7 @@ impl<'ctx> Context<'ctx> {
             literal_struct_field_interner: Interner::default(),
             value_interner: Interner::default(),
             value_ref_interner: Interner::default(),
+            scope_interner: Interner::default(),
             modules_arena: Arena::default(),
             wires_arena: Arena::default(),
             registers_arena: Arena::default(),
@@ -329,6 +332,12 @@ impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrEnumVaria
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [LiteralStructField<'ctx>] {
     fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
         ctx.ctx().literal_struct_field_interner.intern_impl(value)
+    }
+}
+
+impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for Scope<'ctx> {
+    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
+        ctx.ctx().scope_interner.intern_impl(value)
     }
 }
 
