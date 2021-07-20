@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
+use alloc::vec::Vec;
+
 use crate::{
     context::{AsContext, Intern},
     ir::{
         values::{
-            BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, IrValue, Mux,
+            BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExtractEnumVariantFields,
+            ExtractStructField, IrValue, LiteralBits, MatchArmForEnum, MatchEnum, Mux,
             SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind,
         },
         SourceLocation,
     },
     prelude::*,
     values::{
-        aggregate::{AggregateValue, AggregateValueMatch},
+        aggregate::{AggregateValue, AggregateValueMatch, EnumValue},
         integer::IntShapeTrait,
         LazyVal, ToVal,
     },
@@ -524,15 +527,99 @@ pub fn match_value_without_scope_check<
     'scope,
     T: Value<'ctx>,
     V: ToVal<'ctx, 'scope, ValueType = T> + 'scope,
-    R,
+    RV: FixedTypeValue<'ctx>,
+    R: ToVal<'ctx, 'scope, ValueType = RV> + 'scope,
     E,
     F: FnMut(T::AggregateOfFieldLazyValues) -> Result<R, E>,
 >(
     value: V,
     f: F,
-) -> Result<R, E>
+) -> Result<LazyVal<'ctx, 'scope, RV>, E>
 where
     T: AggregateValue<'ctx, 'scope> + AggregateValueMatch<'ctx, 'scope>,
 {
     AggregateValueMatch::match_value_without_scope_check(LazyVal::new(value), f)
+}
+
+#[track_caller]
+pub fn get_enum_variant_field_unchecked<
+    'ctx: 'scope,
+    'scope,
+    T: EnumValue<'ctx, 'scope>,
+    F: Value<'ctx>,
+    V: ToVal<'ctx, 'scope, ValueType = T> + 'scope,
+>(
+    enum_value: V,
+    discriminant: i128,
+    field_index: usize,
+) -> LazyVal<'ctx, 'scope, F> {
+    let caller = SourceLocation::caller();
+    LazyVal::from_fn(move |ctx: ContextRef<'ctx>| {
+        let enum_value = enum_value.to_val(ctx).ir();
+        let discriminant =
+            LiteralBits::from(Int::<T::DiscriminantShape>::wrapping_new(discriminant));
+        let variant_index = T::get_ir_type(ctx)
+            .get_variant_index(&discriminant)
+            .unwrap_or_else(|| panic!("invalid discriminant\nat {}", caller));
+        let fields = IrValue::from(ExtractEnumVariantFields::new(
+            ctx,
+            enum_value,
+            variant_index,
+            &caller,
+        ))
+        .intern(ctx);
+        Val::from_ir_unchecked(
+            ctx,
+            IrValue::from(ExtractStructField::new(ctx, fields, field_index, &caller)).intern(ctx),
+        )
+    })
+}
+
+pub struct MatchEnumUncheckedMatchArm<'ctx, 'scope, R: Value<'ctx>> {
+    pub discriminant: i128,
+    pub result: LazyVal<'ctx, 'scope, R>,
+}
+
+#[track_caller]
+pub fn match_enum_unchecked<
+    'ctx: 'scope,
+    'scope,
+    T: EnumValue<'ctx, 'scope>,
+    V: ToVal<'ctx, 'scope, ValueType = T> + 'scope,
+    R: FixedTypeValue<'ctx>,
+    MatchArms: IntoIterator<Item = MatchEnumUncheckedMatchArm<'ctx, 'scope, R>> + 'scope,
+>(
+    enum_value: V,
+    match_arms: MatchArms,
+) -> LazyVal<'ctx, 'scope, R> {
+    let caller = SourceLocation::caller();
+    let match_arms: Vec<_> = match_arms.into_iter().collect();
+    LazyVal::from_fn(move |ctx: ContextRef<'ctx>| {
+        let enum_value = enum_value.to_val(ctx).ir();
+        let result_type = R::static_value_type(ctx).ir();
+        let enum_type = T::get_ir_type(ctx);
+        Val::from_ir_unchecked(
+            ctx,
+            IrValue::from(MatchEnum::new(
+                ctx,
+                enum_value,
+                result_type,
+                match_arms.iter().map(|match_arm| {
+                    let discriminant = LiteralBits::from(
+                        Int::<T::DiscriminantShape>::wrapping_new(match_arm.discriminant),
+                    );
+                    let result = match_arm.result.to_val(ctx).ir();
+                    let variant_index = enum_type
+                        .get_variant_index(&discriminant)
+                        .unwrap_or_else(|| panic!("invalid discriminant\nat {}", caller));
+                    MatchArmForEnum {
+                        variant_index,
+                        result,
+                    }
+                }),
+                &caller,
+            ))
+            .intern(ctx),
+        )
+    })
 }

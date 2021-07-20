@@ -270,6 +270,12 @@ pub trait ToVal<'ctx: 'scope, 'scope> {
     type ValueType: Value<'ctx>;
     #[track_caller]
     fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, Self::ValueType>;
+    fn into_lazy_val(self) -> LazyVal<'ctx, 'scope, Self::ValueType>
+    where
+        Self: Sized + 'scope,
+    {
+        LazyVal::from_fn(move |ctx| self.to_val(ctx))
+    }
 }
 
 impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope> for T {
@@ -298,7 +304,7 @@ pub struct LazyVal<'ctx: 'scope, 'scope, T: Value<'ctx>> {
 
 impl<'ctx: 'scope, 'scope, T: Value<'ctx>> LazyVal<'ctx, 'scope, T> {
     pub fn new<V: ToVal<'ctx, 'scope, ValueType = T> + 'scope>(v: V) -> Self {
-        Self::from_fn(move |ctx| v.to_val(ctx))
+        v.into_lazy_val()
     }
     pub fn from_fn<F: 'scope + Fn(ContextRef<'ctx>) -> Val<'ctx, 'scope, T>>(f: F) -> Self {
         Self {
@@ -347,6 +353,9 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope> for LazyVal<'ctx,
                 retval
             }
         }
+    }
+    fn into_lazy_val(self) -> LazyVal<'ctx, 'scope, Self::ValueType> {
+        self
     }
 }
 
