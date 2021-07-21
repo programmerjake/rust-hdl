@@ -96,7 +96,7 @@ fn export_rtlil() {
         named!(let wire = top.wire());
         let wire = wire.assign(input.get());
         wire_output.assign(wire.read());
-        named!(let reg = top.reg(cd.get(), MyValue::default()));
+        named!(let reg = top.reg(cd.get(), MyValue::default_val(ctx)));
         let reg = reg.assign_data_in(input.get());
         reg_output.assign(reg.output());
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
@@ -118,7 +118,7 @@ fn export_rtlil_submodule() {
         named!(let wire = submodule.wire());
         let wire = wire.assign(input.get());
         wire_output.assign(wire.read());
-        named!(let reg = submodule.reg(cd.get(), MyValue::default()));
+        named!(let reg = submodule.reg(cd.get(), MyValue::default_val(ctx)));
         let reg = reg.assign_data_in(input.get());
         reg_output.assign(reg.output());
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();

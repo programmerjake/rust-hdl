@@ -8,7 +8,7 @@ use crate::ir::{
     scope::Scope,
     symbols::IrSymbolTable,
     types::{IrEnumVariantType, IrStructFieldType, IrValueType},
-    values::{IrValue, IrValueRef, LiteralStructField},
+    values::{IrValue, IrValueRef, LiteralStructField, MatchArmForEnum},
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
@@ -257,6 +257,7 @@ pub struct Context<'ctx> {
     struct_field_type_interner: Interner<'ctx, [IrStructFieldType<'ctx>]>,
     enum_variant_type_interner: Interner<'ctx, [IrEnumVariantType<'ctx>]>,
     literal_struct_field_interner: Interner<'ctx, [LiteralStructField<'ctx>]>,
+    match_arm_for_enum_interner: Interner<'ctx, [MatchArmForEnum<'ctx>]>,
     value_interner: Interner<'ctx, IrValue<'ctx>>,
     value_ref_interner: Interner<'ctx, [IrValueRef<'ctx>]>,
     scope_interner: Interner<'ctx, Scope<'ctx>>,
@@ -277,6 +278,7 @@ impl<'ctx> Context<'ctx> {
             struct_field_type_interner: Interner::default(),
             enum_variant_type_interner: Interner::default(),
             literal_struct_field_interner: Interner::default(),
+            match_arm_for_enum_interner: Interner::default(),
             value_interner: Interner::default(),
             value_ref_interner: Interner::default(),
             scope_interner: Interner::default(),
@@ -332,6 +334,12 @@ impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrEnumVaria
 impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [LiteralStructField<'ctx>] {
     fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
         ctx.ctx().literal_struct_field_interner.intern_impl(value)
+    }
+}
+
+impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [MatchArmForEnum<'ctx>] {
+    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
+        ctx.ctx().match_arm_for_enum_interner.intern_impl(value)
     }
 }
 

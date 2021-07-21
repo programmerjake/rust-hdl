@@ -11,7 +11,7 @@ use crate::{
     ir::{
         io::InOrOut,
         logic::IrRegReset,
-        module::{combine_owning_scopes, IrModuleRef, OwningModule},
+        module::IrModuleRef,
         types::{IrArrayType, IrBitVectorType, IrValueType, IrValueTypeRef},
         values::{
             BoolOutBinOpKind, BoolOutUnOpKind, IrValue, IrValueRef, LiteralBits, Mux,
@@ -443,10 +443,9 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
         module: IrModuleRef<'ctx>,
         value: IrValueRef<'ctx>,
     ) -> Result<Rc<[RtlilWire<'ctx>]>, W::Error> {
-        Scope::combine_or_panic(
-            [Some(module), value.owning_scope()],
-            &module.source_location(),
-        );
+        module
+            .scope()
+            .assert_scope_can_access_value(value, &module.source_location());
         let module_data = self.get_module_data(module);
         if let Some(retval) = module_data.wires_for_values.borrow().get(&value) {
             return Ok(retval.clone());
@@ -612,6 +611,8 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
             IrValue::ExtractEnumVariantFields(_) => todo!(),
             IrValue::IsEnumVariant(_) => todo!(),
             IrValue::MatchEnum(_) => todo!(),
+            IrValue::ExpandScope(v) => self.get_wires_for_value(module, v.value())?,
+            IrValue::ShrinkScope(v) => self.get_wires_for_value(module, v.value())?,
             IrValue::ExtractArrayElement(v) => {
                 let array_wires = self.get_wires_for_value(module, v.array_value())?;
                 let mut array_wires = array_wires.iter();

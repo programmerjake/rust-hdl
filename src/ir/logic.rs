@@ -6,7 +6,7 @@ use crate::{
     fmt_utils::debug_format_option_as_value_or_none,
     ir::{
         module::IrModuleRef,
-        scope::{OwningScope, Scope, ScopeRef},
+        scope::{OwningScope, ScopeRef},
         symbols::IrSymbol,
         types::IrValueTypeRef,
         values::{IrValue, IrValueRef},
@@ -101,10 +101,9 @@ impl<'ctx> IrWire<'ctx> {
     #[track_caller]
     pub fn assign(&self, value: IrValueRef<'ctx>) {
         let value_type = value.get_type(self.module.ctx());
-        Scope::combine_or_panic(
-            [Some(self.module()), value.owning_scope()],
-            &SourceLocation::caller(),
-        );
+        self.module()
+            .scope()
+            .assert_ancestor_of(value, &SourceLocation::caller());
         assert_eq!(self.value_type, value_type);
         if let Err(_) = self.assigned_value.set(value) {
             panic!("Wire already assigned");
@@ -203,7 +202,7 @@ impl<'ctx> IrReg<'ctx> {
         rst: Option<IrRegReset<'ctx>>,
     ) -> IrRegRef<'ctx> {
         assert!(clk.get_type(module.ctx()).is_bool());
-        Scope::combine_or_panic([Some(module), clk.owning_scope()], &source_location);
+        module.scope().assert_ancestor_of(clk, &source_location);
         if let Some(IrRegReset {
             reset_enable,
             reset_value,
@@ -211,14 +210,12 @@ impl<'ctx> IrReg<'ctx> {
         {
             assert!(reset_enable.get_type(module.ctx()).is_bool());
             assert_eq!(reset_value.get_type(module.ctx()), value_type);
-            Scope::combine_or_panic(
-                [
-                    Some(module),
-                    reset_enable.owning_scope(),
-                    reset_value.owning_scope(),
-                ],
-                &source_location,
-            );
+            module
+                .scope()
+                .assert_ancestor_of(reset_enable, &source_location);
+            module
+                .scope()
+                .assert_ancestor_of(reset_value, &source_location);
         }
         let retval = module.ctx().registers_arena.alloc(Self {
             module,
@@ -256,10 +253,9 @@ impl<'ctx> IrReg<'ctx> {
     #[track_caller]
     pub fn assign_data_in(&self, data_in: IrValueRef<'ctx>) {
         let value_type = data_in.get_type(self.module.ctx());
-        Scope::combine_or_panic(
-            [Some(self.module), data_in.owning_scope()],
-            &SourceLocation::caller(),
-        );
+        self.module
+            .scope()
+            .assert_ancestor_of(data_in, &SourceLocation::caller());
         assert_eq!(self.value_type, value_type);
         if let Err(_) = self.data_in.set(data_in) {
             panic!("register's input already assigned");
@@ -337,7 +333,7 @@ pub struct IrRegOutput<'ctx>(pub IrRegRef<'ctx>);
 
 impl<'ctx> OwningScope<'ctx> for IrRegOutput<'ctx> {
     fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
-        Some(self.0.module())
+        Some(self.0.module().scope())
     }
 }
 

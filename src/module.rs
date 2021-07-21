@@ -127,8 +127,8 @@ impl<'ctx> Module<'ctx> {
     pub fn reg<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
         name: N,
-        clock_domain: Val<'ctx, 'ctx, ClockDomain>,
-        reset_value: T,
+        clock_domain: Val<'ctx, ClockDomain>,
+        reset_value: Val<'ctx, T>,
     ) -> Reg<'ctx, T> {
         Reg::new(self, name, clock_domain, reset_value)
     }
@@ -136,7 +136,7 @@ impl<'ctx> Module<'ctx> {
     pub fn reg_without_reset<'a, N: Into<Cow<'a, str>>, T: FixedTypeValue<'ctx>>(
         &self,
         name: N,
-        clk: Val<'ctx, 'ctx, bool>,
+        clk: Val<'ctx, bool>,
     ) -> Reg<'ctx, T> {
         Reg::without_reset(self, name, clk)
     }
@@ -144,7 +144,7 @@ impl<'ctx> Module<'ctx> {
     pub fn reg_with_type_without_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
         name: N,
-        clk: Val<'ctx, 'ctx, bool>,
+        clk: Val<'ctx, bool>,
         value_type: ValueType<'ctx, T>,
     ) -> Reg<'ctx, T> {
         Reg::with_type_without_reset(self, name, clk, value_type)
@@ -153,9 +153,9 @@ impl<'ctx> Module<'ctx> {
     pub fn reg_with_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
         name: N,
-        clk: Val<'ctx, 'ctx, bool>,
-        reset_enable: Val<'ctx, 'ctx, bool>,
-        reset_value: T,
+        clk: Val<'ctx, bool>,
+        reset_enable: Val<'ctx, bool>,
+        reset_value: Val<'ctx, T>,
     ) -> Reg<'ctx, T> {
         Reg::with_reset(self, name, clk, reset_enable, reset_value)
     }

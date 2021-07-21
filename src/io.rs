@@ -378,8 +378,8 @@ impl<'ctx, T: FixedTypeValue<'ctx>> PlainIO<'ctx> for Input<'ctx, T> {
     }
 }
 
-impl<'ctx, T: Value<'ctx>> From<Val<'ctx, 'ctx, T>> for Input<'ctx, T> {
-    fn from(value: Val<'ctx, 'ctx, T>) -> Self {
+impl<'ctx, T: Value<'ctx>> From<Val<'ctx, T>> for Input<'ctx, T> {
+    fn from(value: Val<'ctx, T>) -> Self {
         Self {
             ir: IrInput::from(value.ir()),
             value_type: value.value_type(),
@@ -423,7 +423,7 @@ impl<'ctx, T: Value<'ctx>> Input<'ctx, T> {
         Self::external_with_type(ctx, T::static_value_type(ctx))
     }
     #[track_caller]
-    pub fn get(&self) -> Val<'ctx, 'ctx, T> {
+    pub fn get(&self) -> Val<'ctx, T> {
         Val::from_ir_and_type_unchecked(self.ir.get(), self.value_type)
     }
     pub fn ir(&self) -> &IrInput<'ctx> {
@@ -472,14 +472,14 @@ impl<'ctx, T: Value<'ctx>> Output<'ctx, T> {
         Self::external_with_type(ctx, T::static_value_type(ctx))
     }
     #[track_caller]
-    pub fn assign(self, assigned_value: impl ToVal<'ctx, 'ctx, ValueType = T>) {
+    pub fn assign(self, assigned_value: impl ToVal<'ctx, ValueType = T>) {
         let ctx = self.ir.ctx();
         self.ir.assign(assigned_value.to_val(ctx).ir())
     }
     pub fn ir(&self) -> &IrOutput<'ctx> {
         &self.ir
     }
-    pub fn read(&self) -> Val<'ctx, 'ctx, T> {
+    pub fn read(&self) -> Val<'ctx, T> {
         Val::from_ir_and_type_unchecked(
             self.ir.read(),
             ValueType::from_ir_unchecked(self.ir.ctx(), self.ir.value_type()),

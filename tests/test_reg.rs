@@ -15,7 +15,7 @@ struct TopIO<'ctx> {
 fn test_reg() {
     Context::with(|ctx: ContextRef| {
         named!(let (top, io): (_, TopIO) = ctx.top_module());
-        named!(let reg = top.reg(io.cd.get(), bool::default()));
+        named!(let reg = top.reg(io.cd.get(), bool::default_val(ctx)));
         assert_formats_to!(test_reg, top_0, top);
         assert_formats_to!(test_reg, reg_0, reg);
         io.output.assign(reg.output());

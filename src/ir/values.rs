@@ -383,6 +383,7 @@ pub struct ExtractEnumVariantFields<'ctx> {
     enum_value: IrValueRef<'ctx>,
     enum_type: IrEnumType<'ctx>,
     variant_index: usize,
+    match_arm_scope: ScopeRef<'ctx>,
 }
 
 impl<'ctx> ExtractEnumVariantFields<'ctx> {
@@ -390,6 +391,7 @@ impl<'ctx> ExtractEnumVariantFields<'ctx> {
         ctx: impl AsContext<'ctx>,
         enum_value: IrValueRef<'ctx>,
         variant_index: usize,
+        match_arm_scope: ScopeRef<'ctx>,
         caller: &SourceLocation<'ctx>,
     ) -> Self {
         let enum_type = match *enum_value.get_type(ctx.ctx()) {
@@ -403,18 +405,27 @@ impl<'ctx> ExtractEnumVariantFields<'ctx> {
             enum_type.variants().len(),
             caller,
         );
-        Self::new_with_enum_type_unchecked(enum_value, enum_type, variant_index)
+        match_arm_scope.assert_scope_can_access_value(enum_value, caller);
+        Self {
+            enum_value,
+            enum_type,
+            variant_index,
+            match_arm_scope,
+        }
     }
     pub fn new_with_enum_type_unchecked(
         enum_value: IrValueRef<'ctx>,
         enum_type: IrEnumType<'ctx>,
         variant_index: usize,
+        match_arm_scope: ScopeRef<'ctx>,
     ) -> Self {
         assert!(variant_index < enum_type.variants().len());
+        match_arm_scope.assert_scope_can_access_value(enum_value, &SourceLocation::caller());
         Self {
             enum_value,
             enum_type,
             variant_index,
+            match_arm_scope,
         }
     }
     pub fn enum_value(self) -> IrValueRef<'ctx> {
@@ -438,11 +449,14 @@ impl<'ctx> ExtractEnumVariantFields<'ctx> {
     pub fn variant_index(self) -> usize {
         self.variant_index
     }
+    pub fn match_arm_scope(self) -> ScopeRef<'ctx> {
+        self.match_arm_scope
+    }
 }
 
 impl<'ctx> OwningScope<'ctx> for ExtractEnumVariantFields<'ctx> {
     fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
-        self.enum_value.owning_scope()
+        Some(self.match_arm_scope)
     }
 }
 
@@ -452,6 +466,7 @@ impl fmt::Debug for ExtractEnumVariantFields<'_> {
             .field("enum_value", &self.enum_value())
             .field("enum_variant_type", &self.enum_variant_type())
             .field("variant_index", &self.variant_index())
+            .field("match_arm_scope", &self.match_arm_scope())
             .finish_non_exhaustive()
     }
 }
@@ -459,6 +474,103 @@ impl fmt::Debug for ExtractEnumVariantFields<'_> {
 impl<'ctx> From<ExtractEnumVariantFields<'ctx>> for IrValue<'ctx> {
     fn from(v: ExtractEnumVariantFields<'ctx>) -> Self {
         Self::ExtractEnumVariantFields(v)
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub struct ShrinkScope<'ctx> {
+    value: IrValueRef<'ctx>,
+    value_type: IrValueTypeRef<'ctx>,
+    scope: ScopeRef<'ctx>,
+}
+
+impl<'ctx> ShrinkScope<'ctx> {
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        value: IrValueRef<'ctx>,
+        scope: ScopeRef<'ctx>,
+        caller: &SourceLocation<'ctx>,
+    ) -> Self {
+        let value_type = value.get_type(ctx);
+        scope.assert_scope_can_access_value(value, caller);
+        Self {
+            value,
+            value_type,
+            scope,
+        }
+    }
+    pub fn value(self) -> IrValueRef<'ctx> {
+        self.value
+    }
+    pub fn value_type(self) -> IrValueTypeRef<'ctx> {
+        self.value_type
+    }
+    pub fn scope(self) -> ScopeRef<'ctx> {
+        self.scope
+    }
+}
+
+impl<'ctx> OwningScope<'ctx> for ShrinkScope<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        Some(self.scope)
+    }
+}
+
+impl<'ctx> From<ShrinkScope<'ctx>> for IrValue<'ctx> {
+    fn from(v: ShrinkScope<'ctx>) -> Self {
+        Self::ShrinkScope(v)
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub struct ExpandScope<'ctx> {
+    value: IrValueRef<'ctx>,
+    value_type: IrValueTypeRef<'ctx>,
+    input_scope: ScopeRef<'ctx>,
+    result_scope: ScopeRef<'ctx>,
+}
+
+impl<'ctx> ExpandScope<'ctx> {
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        value: IrValueRef<'ctx>,
+        input_scope: ScopeRef<'ctx>,
+        result_scope: ScopeRef<'ctx>,
+        caller: &SourceLocation<'ctx>,
+    ) -> Self {
+        let value_type = value.get_type(ctx);
+        result_scope.assert_ancestor_of(input_scope, caller);
+        input_scope.assert_scope_can_access_value(value, caller);
+        Self {
+            value,
+            value_type,
+            input_scope,
+            result_scope,
+        }
+    }
+    pub fn value(self) -> IrValueRef<'ctx> {
+        self.value
+    }
+    pub fn value_type(self) -> IrValueTypeRef<'ctx> {
+        self.value_type
+    }
+    pub fn input_scope(self) -> ScopeRef<'ctx> {
+        self.input_scope
+    }
+    pub fn result_scope(self) -> ScopeRef<'ctx> {
+        self.result_scope
+    }
+}
+
+impl<'ctx> OwningScope<'ctx> for ExpandScope<'ctx> {
+    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
+        Some(self.result_scope)
+    }
+}
+
+impl<'ctx> From<ExpandScope<'ctx>> for IrValue<'ctx> {
+    fn from(v: ExpandScope<'ctx>) -> Self {
+        Self::ExpandScope(v)
     }
 }
 
@@ -551,8 +663,8 @@ impl<'ctx> From<IsEnumVariant<'ctx>> for IrValue<'ctx> {
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub struct MatchArmForEnum<'ctx> {
-    pub variant_index: usize,
     pub result: IrValueRef<'ctx>,
+    pub match_arm_scope: ScopeRef<'ctx>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
@@ -560,8 +672,8 @@ pub struct MatchEnum<'ctx> {
     enum_value: IrValueRef<'ctx>,
     enum_type: IrEnumType<'ctx>,
     value_type: IrValueTypeRef<'ctx>,
-    match_arms: Interned<'ctx, [IrValueRef<'ctx>]>,
-    scope: Option<ScopeRef<'ctx>>,
+    match_arms: Interned<'ctx, [MatchArmForEnum<'ctx>]>,
+    result_scope: ScopeRef<'ctx>,
 }
 
 impl<'ctx> MatchEnum<'ctx> {
@@ -569,7 +681,8 @@ impl<'ctx> MatchEnum<'ctx> {
         ctx: impl AsContext<'ctx>,
         enum_value: IrValueRef<'ctx>,
         value_type: IrValueTypeRef<'ctx>,
-        match_arms: impl IntoIterator<Item = MatchArmForEnum<'ctx>>,
+        match_arms: impl IntoIterator<Item = (usize, MatchArmForEnum<'ctx>)>,
+        result_scope: ScopeRef<'ctx>,
         caller: &SourceLocation<'ctx>,
     ) -> Self {
         let ctx = ctx.ctx();
@@ -577,12 +690,15 @@ impl<'ctx> MatchEnum<'ctx> {
             IrValueType::Enum(v) => v,
             _ => panic!("value type is not a enum\nat {}", caller),
         };
-        let mut scope = enum_value.owning_scope();
+        result_scope.assert_scope_can_access_value(enum_value, caller);
         let mut match_arms_opt = vec![None; enum_type.variants().len()];
-        for MatchArmForEnum {
+        for (
             variant_index,
-            result,
-        } in match_arms
+            MatchArmForEnum {
+                result,
+                match_arm_scope,
+            },
+        ) in match_arms
         {
             assert!(
                 variant_index < enum_type.variants().len(),
@@ -600,15 +716,19 @@ impl<'ctx> MatchEnum<'ctx> {
                 enum_type.variants()[variant_index].discriminant,
                 caller,
             );
-            scope = Scope::combine_or_panic([scope, result.owning_scope()], caller);
+            match_arm_scope.assert_scope_can_access_value(result, caller);
+            result_scope.assert_ancestor_of(match_arm_scope, caller);
             // allow duplicate variants, the first one is the one that's used
-            match_arms_opt[variant_index].get_or_insert(result);
+            match_arms_opt[variant_index].get_or_insert(MatchArmForEnum {
+                result,
+                match_arm_scope,
+            });
         }
         let match_arms: Vec<_> = match_arms_opt
             .into_iter()
             .enumerate()
-            .map(|(variant_index, result)| match result {
-                Some(result) => result,
+            .map(|(variant_index, match_arm)| match match_arm {
+                Some(match_arm) => match_arm,
                 None => panic!(
                     "missing match arm for variant:\n\
                     variant index = {}, variant name = {}, variant discriminant = {:?}\nat {}",
@@ -625,7 +745,7 @@ impl<'ctx> MatchEnum<'ctx> {
             enum_type,
             value_type,
             match_arms,
-            scope,
+            result_scope,
         }
     }
     pub fn enum_value(self) -> IrValueRef<'ctx> {
@@ -637,14 +757,17 @@ impl<'ctx> MatchEnum<'ctx> {
     pub fn enum_type(self) -> IrEnumType<'ctx> {
         self.enum_type
     }
-    pub fn match_arms(self) -> Interned<'ctx, [IrValueRef<'ctx>]> {
+    pub fn match_arms(self) -> Interned<'ctx, [MatchArmForEnum<'ctx>]> {
         self.match_arms
+    }
+    pub fn result_scope(self) -> ScopeRef<'ctx> {
+        self.result_scope
     }
 }
 
 impl<'ctx> OwningScope<'ctx> for MatchEnum<'ctx> {
     fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
-        self.scope
+        Some(self.result_scope)
     }
 }
 
@@ -655,7 +778,7 @@ impl fmt::Debug for MatchEnum<'_> {
             .field("enum_type", &self.enum_type())
             .field("value_type", &self.value_type())
             .field("match_arms", &self.match_arms())
-            .field("owning_scope", &self.owning_scope())
+            .field("result_scope", &self.result_scope())
             .finish_non_exhaustive()
     }
 }
@@ -1367,6 +1490,8 @@ pub enum IrValue<'ctx> {
     OutputRead(IrOutputRead<'ctx>),
     ExtractStructField(ExtractStructField<'ctx>),
     ExtractEnumVariantFields(ExtractEnumVariantFields<'ctx>),
+    ShrinkScope(ShrinkScope<'ctx>),
+    ExpandScope(ExpandScope<'ctx>),
     IsEnumVariant(IsEnumVariant<'ctx>),
     MatchEnum(MatchEnum<'ctx>),
     ExtractArrayElement(ExtractArrayElement<'ctx>),
@@ -1404,6 +1529,8 @@ impl<'ctx> IrValue<'ctx> {
             IrValue::OutputRead(v) => v.0.value_type(),
             IrValue::ExtractStructField(v) => v.value_type(),
             IrValue::ExtractEnumVariantFields(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::ShrinkScope(v) => v.value_type(),
+            IrValue::ExpandScope(v) => v.value_type(),
             IrValue::IsEnumVariant(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::MatchEnum(v) => v.value_type(),
             IrValue::ExtractArrayElement(v) => v.value_type(),
@@ -1433,6 +1560,8 @@ impl<'ctx> OwningScope<'ctx> for IrValue<'ctx> {
             IrValue::OutputRead(v) => v.owning_scope(),
             IrValue::ExtractStructField(v) => v.owning_scope(),
             IrValue::ExtractEnumVariantFields(v) => v.owning_scope(),
+            IrValue::ShrinkScope(v) => v.owning_scope(),
+            IrValue::ExpandScope(v) => v.owning_scope(),
             IrValue::IsEnumVariant(v) => v.owning_scope(),
             IrValue::MatchEnum(v) => v.owning_scope(),
             IrValue::ExtractArrayElement(v) => v.owning_scope(),
@@ -1462,6 +1591,8 @@ impl fmt::Debug for IrValue<'_> {
             IrValue::OutputRead(v) => v.fmt(f),
             IrValue::ExtractStructField(v) => v.fmt(f),
             IrValue::ExtractEnumVariantFields(v) => v.fmt(f),
+            IrValue::ShrinkScope(v) => v.fmt(f),
+            IrValue::ExpandScope(v) => v.fmt(f),
             IrValue::IsEnumVariant(v) => v.fmt(f),
             IrValue::MatchEnum(v) => v.fmt(f),
             IrValue::ExtractArrayElement(v) => v.fmt(f),

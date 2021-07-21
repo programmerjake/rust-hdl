@@ -11,14 +11,13 @@ use crate::{
     },
     values::aggregate::StructValue,
 };
-use alloc::{boxed::Box, rc::Rc, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 use core::{
     convert::Infallible,
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
 };
-use once_cell::unsync::OnceCell;
 
 pub mod aggregate;
 mod foreign_derives;
@@ -49,6 +48,12 @@ pub trait ValueFns<'ctx>: Sized + value_fns_sealed::Sealed + 'ctx {
         let ctx = ctx.ctx();
         Self::static_value_type_opt(ctx).unwrap_or_else(|| self.get_value(ctx).value_type())
     }
+    fn default_val<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Val<'ctx, Self>
+    where
+        Self: Value<'ctx> + Default,
+    {
+        Self::default().get_value(ctx.ctx())
+    }
 }
 
 impl<'ctx, T: Value<'ctx>> value_fns_sealed::Sealed for T {}
@@ -56,7 +61,7 @@ impl<'ctx, T: Value<'ctx>> value_fns_sealed::Sealed for T {}
 impl<'ctx, T: Value<'ctx>> ValueFns<'ctx> for T {}
 
 pub trait Value<'ctx>: ValueFns<'ctx> {
-    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self>;
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self>;
     fn static_value_type_opt<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Option<ValueType<'ctx, Self>> {
         let _ = ctx;
         None
@@ -72,7 +77,7 @@ pub trait FixedTypeValue<'ctx>: Value<'ctx> {
 impl<'ctx> FixedTypeValue<'ctx> for bool {}
 
 impl<'ctx> Value<'ctx> for bool {
-    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self> {
         let ctx = ctx.ctx();
         Val::from_ir_unchecked(
             ctx,
@@ -95,7 +100,7 @@ impl<'ctx> Value<'ctx> for bool {
 impl<'ctx, Shape: integer::FixedIntShape> FixedTypeValue<'ctx> for Int<Shape> {}
 
 impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
-    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self> {
         let ctx = ctx.ctx();
         Val::from_ir_unchecked(ctx, IrValue::LiteralBits(self.clone().into()).intern(ctx))
     }
@@ -109,10 +114,10 @@ impl<'ctx, Shape: integer::IntShapeTrait> Value<'ctx> for Int<Shape> {
     }
 }
 
-fn array_get_value<'ctx: 'scope, 'scope, A: AsRef<[T]> + Value<'ctx>, T: Value<'ctx>>(
+fn array_get_value<'ctx, A: AsRef<[T]> + Value<'ctx>, T: Value<'ctx>>(
     this: &A,
     ctx: impl AsContext<'ctx>,
-) -> Val<'ctx, 'scope, A> {
+) -> Val<'ctx, A> {
     let ctx = ctx.ctx();
     let mut element_type = T::static_value_type_opt(ctx);
     let elements: Vec<_> = this
@@ -146,7 +151,7 @@ fn array_get_value<'ctx: 'scope, 'scope, A: AsRef<[T]> + Value<'ctx>, T: Value<'
 impl<'ctx, T: FixedTypeValue<'ctx>, const N: usize> FixedTypeValue<'ctx> for [T; N] {}
 
 impl<'ctx, T: Value<'ctx>, const N: usize> Value<'ctx> for [T; N] {
-    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self> {
         let ctx = ctx.ctx();
         array_get_value(self, ctx)
     }
@@ -164,39 +169,31 @@ impl<'ctx, T: Value<'ctx>, const N: usize> Value<'ctx> for [T; N] {
     }
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>, const N: usize> From<Val<'ctx, 'scope, [T; N]>>
-    for Val<'ctx, 'scope, Box<[T]>>
-{
-    fn from(v: Val<'ctx, 'scope, [T; N]>) -> Self {
+impl<'ctx, T: Value<'ctx>, const N: usize> From<Val<'ctx, [T; N]>> for Val<'ctx, Box<[T]>> {
+    fn from(v: Val<'ctx, [T; N]>) -> Self {
         Val::from_ir_and_type_unchecked(v.ir(), v.value_type().into())
     }
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>, const N: usize> From<Val<'ctx, 'scope, [T; N]>>
-    for Val<'ctx, 'scope, Vec<T>>
-{
-    fn from(v: Val<'ctx, 'scope, [T; N]>) -> Self {
+impl<'ctx, T: Value<'ctx>, const N: usize> From<Val<'ctx, [T; N]>> for Val<'ctx, Vec<T>> {
+    fn from(v: Val<'ctx, [T; N]>) -> Self {
         Val::from_ir_and_type_unchecked(v.ir(), v.value_type().into())
     }
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> From<Val<'ctx, 'scope, Vec<T>>>
-    for Val<'ctx, 'scope, Box<[T]>>
-{
-    fn from(v: Val<'ctx, 'scope, Vec<T>>) -> Self {
+impl<'ctx, T: Value<'ctx>> From<Val<'ctx, Vec<T>>> for Val<'ctx, Box<[T]>> {
+    fn from(v: Val<'ctx, Vec<T>>) -> Self {
         Val::from_ir_and_type_unchecked(v.ir(), v.value_type().into())
     }
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> From<Val<'ctx, 'scope, Box<[T]>>>
-    for Val<'ctx, 'scope, Vec<T>>
-{
-    fn from(v: Val<'ctx, 'scope, Box<[T]>>) -> Self {
+impl<'ctx, T: Value<'ctx>> From<Val<'ctx, Box<[T]>>> for Val<'ctx, Vec<T>> {
+    fn from(v: Val<'ctx, Box<[T]>>) -> Self {
         Val::from_ir_and_type_unchecked(v.ir(), v.value_type().into())
     }
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>, const N: usize> From<ValueType<'ctx, [T; N]>>
+impl<'ctx, T: Value<'ctx>, const N: usize> From<ValueType<'ctx, [T; N]>>
     for ValueType<'ctx, Box<[T]>>
 {
     fn from(v: ValueType<'ctx, [T; N]>) -> Self {
@@ -225,21 +222,21 @@ impl<'ctx, T: Value<'ctx>> From<ValueType<'ctx, Box<[T]>>> for ValueType<'ctx, V
 }
 
 impl<'ctx, T: Value<'ctx>> Value<'ctx> for Box<[T]> {
-    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self> {
         let ctx = ctx.ctx();
         array_get_value(self, ctx)
     }
 }
 
 impl<'ctx, T: Value<'ctx>> Value<'ctx> for Vec<T> {
-    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self> {
         let ctx = ctx.ctx();
         array_get_value(self, ctx)
     }
 }
 
 impl<'ctx, T: ?Sized + 'ctx> Value<'ctx> for PhantomData<T> {
-    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'ctx, Self> {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self> {
         let ctx = ctx.ctx();
         Val::from_ir_and_type_unchecked(
             IrValue::from(LiteralBits::new()).intern(ctx),
@@ -266,112 +263,38 @@ impl<'ctx, T: ?Sized + 'ctx> FixedTypeValue<'ctx> for PhantomData<T> {
     }
 }
 
-pub trait ToVal<'ctx: 'scope, 'scope> {
+pub trait ToVal<'ctx> {
     type ValueType: Value<'ctx>;
     #[track_caller]
-    fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, Self::ValueType>;
-    fn into_lazy_val(self) -> LazyVal<'ctx, 'scope, Self::ValueType>
-    where
-        Self: Sized + 'scope,
-    {
-        LazyVal::from_fn(move |ctx| self.to_val(ctx))
-    }
+    fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self::ValueType>;
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope> for T {
+impl<'ctx, T: Value<'ctx>> ToVal<'ctx> for T {
     type ValueType = T;
-    fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, T> {
+    fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, T> {
         self.get_value(ctx.ctx())
     }
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope> for Val<'ctx, 'scope, T> {
+impl<'ctx, T: Value<'ctx>> ToVal<'ctx> for Val<'ctx, T> {
     type ValueType = T;
-    fn to_val<Ctx: AsContext<'ctx>>(&self, _ctx: Ctx) -> Val<'ctx, 'scope, T> {
+    fn to_val<Ctx: AsContext<'ctx>>(&self, _ctx: Ctx) -> Val<'ctx, T> {
         *self
     }
 }
 
-struct LazyValData<'ctx: 'scope, 'scope, T: Value<'ctx>, F: ?Sized> {
-    val: OnceCell<Val<'ctx, 'scope, T>>,
-    f: F,
-}
-
-pub struct LazyVal<'ctx: 'scope, 'scope, T: Value<'ctx>> {
-    data:
-        Rc<LazyValData<'ctx, 'scope, T, dyn Fn(ContextRef<'ctx>) -> Val<'ctx, 'scope, T> + 'scope>>,
-}
-
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> LazyVal<'ctx, 'scope, T> {
-    pub fn new<V: ToVal<'ctx, 'scope, ValueType = T> + 'scope>(v: V) -> Self {
-        v.into_lazy_val()
-    }
-    pub fn from_fn<F: 'scope + Fn(ContextRef<'ctx>) -> Val<'ctx, 'scope, T>>(f: F) -> Self {
-        Self {
-            data: Rc::new(LazyValData {
-                val: OnceCell::new(),
-                f,
-            }),
-        }
-    }
-    #[track_caller]
-    pub fn extract_field_unchecked<Field: Value<'ctx>>(
-        &self,
-        field_enum: T::FieldEnum,
-    ) -> LazyVal<'ctx, 'scope, Field>
-    where
-        T: StructValue<'ctx, 'scope>,
-    {
-        let caller = SourceLocation::caller();
-        let this = self.clone();
-        LazyVal::from_fn(move |ctx: ContextRef<'ctx>| {
-            let extract_struct_field =
-                ExtractStructField::new(ctx, this.to_val(ctx).ir(), field_enum.into(), &caller);
-            let ir = IrValue::from(extract_struct_field).intern(ctx);
-            let value_type = ValueType::from_ir_unchecked(ctx, extract_struct_field.value_type());
-            Val::from_ir_and_type_unchecked(ir, value_type)
-        })
-    }
-}
-
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Clone for LazyVal<'ctx, 'scope, T> {
-    fn clone(&self) -> Self {
-        Self {
-            data: self.data.clone(),
-        }
-    }
-}
-
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> ToVal<'ctx, 'scope> for LazyVal<'ctx, 'scope, T> {
-    type ValueType = T;
-    fn to_val<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, 'scope, T> {
-        match self.data.val.get() {
-            Some(&retval) => retval,
-            None => {
-                let retval = (self.data.f)(ctx.ctx());
-                let _ = self.data.val.set(retval);
-                retval
-            }
-        }
-    }
-    fn into_lazy_val(self) -> LazyVal<'ctx, 'scope, Self::ValueType> {
-        self
-    }
-}
-
-pub struct Val<'ctx, 'scope, T> {
+pub struct Val<'ctx, T> {
     ir: IrValueRef<'ctx>,
     value_type: ValueType<'ctx, T>,
-    _phantom: PhantomData<&'scope ()>,
 }
 
-impl<'ctx: 'scope, 'scope, T> AsContext<'ctx> for Val<'ctx, 'scope, T> {
+impl<'ctx, T> AsContext<'ctx> for Val<'ctx, T> {
     fn ctx(&self) -> ContextRef<'ctx> {
         self.value_type.ctx()
     }
 }
 
-impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
+impl<'ctx, T: Value<'ctx>> Val<'ctx, T> {
     pub fn from_ir_unchecked(ctx: impl AsContext<'ctx>, ir: IrValueRef<'ctx>) -> Self {
         let ctx = ctx.ctx();
         Self::from_ir_and_type_unchecked(ir, ValueType::from_ir_unchecked(ctx, ir.get_type(ctx)))
@@ -380,11 +303,7 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
         ir: IrValueRef<'ctx>,
         value_type: ValueType<'ctx, T>,
     ) -> Self {
-        Self {
-            ir,
-            value_type,
-            _phantom: PhantomData,
-        }
+        Self { ir, value_type }
     }
     pub fn value_type(self) -> ValueType<'ctx, T> {
         self.value_type
@@ -396,9 +315,9 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
     pub fn extract_field_unchecked<Field: Value<'ctx>>(
         self,
         field_enum: T::FieldEnum,
-    ) -> Val<'ctx, 'scope, Field>
+    ) -> Val<'ctx, Field>
     where
-        T: StructValue<'ctx, 'scope>,
+        T: StructValue<'ctx>,
     {
         let extract_struct_field = ExtractStructField::new(
             self.ctx(),
@@ -422,37 +341,15 @@ impl<'ctx: 'scope, 'scope, T: Value<'ctx>> Val<'ctx, 'scope, T> {
     >(
         self,
         get_field_enum: GetFieldEnum,
-    ) -> Val<'ctx, 'scope, Field>
+    ) -> Val<'ctx, Field>
     where
-        T: StructValue<'ctx, 'scope>,
+        T: StructValue<'ctx>,
     {
         self.extract_field_unchecked(get_field_enum(None, T::STRUCT_OF_FIELD_ENUMS).0)
     }
-    pub fn transmute_scope_unchecked<'scope2>(self) -> Val<'ctx, 'scope2, T> {
-        Val {
-            ir: self.ir,
-            value_type: self.value_type,
-            _phantom: PhantomData,
-        }
-    }
-    pub fn inner_scope<
-        'inner_scope,
-        F: 'scope + FnOnce(Val<'ctx, 'inner_scope, T>) -> Result<Val<'ctx, 'scope, R>, E>,
-        R: Value<'ctx>,
-        E: 'scope,
-    >(
-        self,
-        f: F,
-        _inner_scope: &'inner_scope (),
-    ) -> Result<Val<'ctx, 'scope, R>, E>
-    where
-        'scope: 'inner_scope,
-    {
-        Ok(f(self.transmute_scope_unchecked())?.transmute_scope_unchecked())
-    }
 }
 
-impl<'ctx, 'scope, T> fmt::Debug for Val<'ctx, 'scope, T> {
+impl<'ctx, T> fmt::Debug for Val<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Val")
             .field("ir", &self.ir)
@@ -461,9 +358,9 @@ impl<'ctx, 'scope, T> fmt::Debug for Val<'ctx, 'scope, T> {
     }
 }
 
-impl<'ctx, 'scope, T> Copy for Val<'ctx, 'scope, T> {}
+impl<'ctx, T> Copy for Val<'ctx, T> {}
 
-impl<'ctx, 'scope, T> Clone for Val<'ctx, 'scope, T> {
+impl<'ctx, T> Clone for Val<'ctx, T> {
     fn clone(&self) -> Self {
         *self
     }
@@ -523,16 +420,16 @@ impl<'ctx, T> Hash for ValueType<'ctx, T> {
     }
 }
 
-impl<'ctx: 'scope, 'scope> From<Val<'ctx, 'scope, UInt1>> for Val<'ctx, 'scope, bool> {
+impl<'ctx> From<Val<'ctx, UInt1>> for Val<'ctx, bool> {
     #[must_use]
-    fn from(v: Val<'ctx, 'scope, UInt1>) -> Self {
+    fn from(v: Val<'ctx, UInt1>) -> Self {
         Self::from_ir_unchecked(v.ctx(), v.ir())
     }
 }
 
-impl<'ctx: 'scope, 'scope> From<Val<'ctx, 'scope, bool>> for Val<'ctx, 'scope, UInt1> {
+impl<'ctx> From<Val<'ctx, bool>> for Val<'ctx, UInt1> {
     #[must_use]
-    fn from(v: Val<'ctx, 'scope, bool>) -> Self {
+    fn from(v: Val<'ctx, bool>) -> Self {
         Self::from_ir_unchecked(v.ctx(), v.ir())
     }
 }

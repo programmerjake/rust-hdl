@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use alloc::vec::Vec;
-
 use crate::{
     context::{AsContext, ContextRef, Intern, Internable, Interned},
     ir::{module::IrModuleRef, SourceLocation},
     module::AsIrModule,
 };
+use alloc::vec::Vec;
 use core::{
     fmt,
     hash::{Hash, Hasher},
@@ -154,6 +153,45 @@ impl fmt::Display for SubscopeError<'_> {
     }
 }
 
+#[derive(Debug)]
+pub struct ValueNotAccessibleError<'ctx> {
+    reason: SubscopeErrorReason,
+    value_scope: Scope<'ctx>,
+    accessing_scope: Scope<'ctx>,
+    caller: SourceLocation<'ctx>,
+}
+
+impl fmt::Display for ValueNotAccessibleError<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.reason {
+            SubscopeErrorReason::ModulesNotSame => write!(
+                f,
+                "can't access value from different module:\n\
+                at {caller}\n\
+                value's scope: {value_scope} at {value_scope_src}\n\
+                accessing scope: {accessing_scope} at {accessing_scope_src}",
+                caller = self.caller,
+                value_scope = self.value_scope.path(),
+                value_scope_src = self.value_scope.source_location(),
+                accessing_scope = self.accessing_scope.path(),
+                accessing_scope_src = self.accessing_scope.source_location(),
+            ),
+            SubscopeErrorReason::NoSubscopeRelation => write!(
+                f,
+                "can't access value from outside its scope:\n\
+                at {caller}\n\
+                value's scope: {value_scope} at {value_scope_src}\n\
+                accessing scope: {accessing_scope} at {accessing_scope_src}",
+                caller = self.caller,
+                value_scope = self.value_scope.path(),
+                value_scope_src = self.value_scope.source_location(),
+                accessing_scope = self.accessing_scope.path(),
+                accessing_scope_src = self.accessing_scope.source_location(),
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Scope<'ctx> {
     child_data: Option<ChildScopeData<'ctx>>,
@@ -161,10 +199,7 @@ pub struct Scope<'ctx> {
 }
 
 impl<'ctx> Scope<'ctx> {
-    pub fn new<Ctx: AsContext<'ctx>>(
-        parent: ScopeRef<'ctx>,
-        source_location: SourceLocation<'ctx>,
-    ) -> ScopeRef<'ctx> {
+    pub fn new(parent: ScopeRef<'ctx>, source_location: SourceLocation<'ctx>) -> ScopeRef<'ctx> {
         let depth =
             NonZeroUsize::new(parent.depth().wrapping_add(1)).expect("too many nested scopes");
         let id = parent.module.next_scope_id.get();
@@ -231,7 +266,7 @@ impl<'ctx> Scope<'ctx> {
             Ok(())
         } else {
             Err(SubscopeError {
-                reason: SubscopeErrorReason::ModulesNotSame,
+                reason: SubscopeErrorReason::NoSubscopeRelation,
                 ancestor_scope: expected_ancestor,
                 expected_subscope: self,
                 caller: *caller,
@@ -310,6 +345,39 @@ impl<'ctx> Scope<'ctx> {
         match Self::try_combine(iter, caller) {
             Ok(v) => v,
             Err(e) => panic!("{}", e),
+        }
+    }
+    pub fn try_scope_can_access_value<T: OwningScope<'ctx>>(
+        self,
+        value: T,
+        caller: &SourceLocation<'ctx>,
+    ) -> Result<(), ValueNotAccessibleError<'ctx>> {
+        if let Some(value_scope) = value.owning_scope() {
+            self.try_subscope_of(*value_scope, caller).map_err(
+                |SubscopeError {
+                     reason,
+                     ancestor_scope,
+                     expected_subscope,
+                     caller,
+                 }| ValueNotAccessibleError {
+                    reason,
+                    value_scope: ancestor_scope,
+                    accessing_scope: expected_subscope,
+                    caller,
+                },
+            )
+        } else {
+            Ok(())
+        }
+    }
+    #[track_caller]
+    pub fn assert_scope_can_access_value<T: OwningScope<'ctx>>(
+        self,
+        value: T,
+        caller: &SourceLocation<'ctx>,
+    ) {
+        if let Err(e) = self.try_scope_can_access_value(value, caller) {
+            panic!("{}", e);
         }
     }
 }

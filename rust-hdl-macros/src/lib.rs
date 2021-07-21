@@ -264,7 +264,6 @@ impl RustHdlVariantAttributes {
 struct GenericsWithAddedLifetimes {
     generics: Generics,
     ctx_lifetime: Lifetime,
-    scope_lifetime: Lifetime,
 }
 
 impl GenericsWithAddedLifetimes {
@@ -295,13 +294,10 @@ impl GenericsWithAddedLifetimes {
         (generics, lifetime)
     }
     fn new(generics: Generics) -> Self {
-        let (generics, scope_lifetime) = Self::get_or_add_lifetime(generics, "scope", []);
-        let (generics, ctx_lifetime) =
-            Self::get_or_add_lifetime(generics, "ctx", [scope_lifetime.clone()]);
+        let (generics, ctx_lifetime) = Self::get_or_add_lifetime(generics, "ctx", []);
         Self {
             generics,
             ctx_lifetime,
-            scope_lifetime,
         }
     }
 }
@@ -329,7 +325,7 @@ struct ValueImplStruct {
     visit_fields: Vec<TokenStream>,
     visit_field_types: Vec<TokenStream>,
     visit_field_fixed_types: Vec<TokenStream>,
-    get_field_lazy_values: TokenStream,
+    get_field_values: TokenStream,
     field_count: usize,
     where_clause_with_value: WhereClause,
     where_clause_with_fixed_type_value: WhereClause,
@@ -341,7 +337,6 @@ impl ValueImplStruct {
             crate_path,
             ctx_lifetime,
             generics_with_added_lifetimes,
-            scope_lifetime,
             name: struct_name,
             original_generics,
             top_vis,
@@ -362,16 +357,16 @@ impl ValueImplStruct {
         let mut visit_fields = Vec::new();
         let mut visit_field_types = Vec::new();
         let mut visit_field_fixed_types = Vec::new();
-        let get_field_lazy_values;
+        let get_field_values;
         let field_count;
         match data.fields {
             Fields::Named(fields) => {
                 let mut enum_fields = Vec::new();
                 let mut struct_of_field_enums_fields = Vec::new();
                 let mut struct_of_field_enums_const_fields = Vec::new();
-                let mut struct_of_field_lazy_values_fields = Vec::new();
-                let mut get_field_lazy_values_fields = Vec::new();
-                let mut struct_of_field_lazy_values_clone_fields = Vec::new();
+                let mut struct_of_field_values_fields = Vec::new();
+                let mut get_field_values_fields = Vec::new();
+                let mut struct_of_field_values_clone_fields = Vec::new();
                 for field in &fields.named {
                     let RustHdlFieldAttributes { ignored } =
                         RustHdlFieldAttributes::parse(&field.attrs)?;
@@ -389,13 +384,13 @@ impl ValueImplStruct {
                     struct_of_field_enums_const_fields.push(quote! {
                         #name: __FieldEnum::#name,
                     });
-                    get_field_lazy_values_fields.push(quote! {
+                    get_field_values_fields.push(quote! {
                         #name: value.extract_field_unchecked::<#ty>(__FieldEnum::#name),
                     });
-                    struct_of_field_lazy_values_fields.push(quote! {
-                        #vis #name: #crate_path::values::LazyVal<#ctx_lifetime, #scope_lifetime, #ty>,
+                    struct_of_field_values_fields.push(quote! {
+                        #vis #name: #crate_path::values::Val<#ctx_lifetime, #ty>,
                     });
-                    struct_of_field_lazy_values_clone_fields.push(quote! {
+                    struct_of_field_values_clone_fields.push(quote! {
                         #name: ::core::clone::Clone::clone(&self.#name),
                     });
                     visit_fields.push(quote! {
@@ -418,7 +413,7 @@ impl ValueImplStruct {
                         let __visitor = #crate_path::values::aggregate::StructFieldFixedTypeVisitor::field_with_type_hint(
                             __visitor,
                             #name_str,
-                            <Self as #crate_path::values::aggregate::StructValue<#ctx_lifetime, #scope_lifetime>>::FieldEnum::#name,
+                            <Self as #crate_path::values::aggregate::StructValue<#ctx_lifetime>>::FieldEnum::#name,
                             |v: &Self, _| &v.#name,
                         )?;
                     });
@@ -428,9 +423,9 @@ impl ValueImplStruct {
                         #(#struct_of_field_enums_const_fields)*
                     }
                 };
-                get_field_lazy_values = quote! {
-                    __AggregateOfFieldLazyValues {
-                        #(#get_field_lazy_values_fields)*
+                get_field_values = quote! {
+                    __AggregateOfFieldValues {
+                        #(#get_field_values_fields)*
                         __struct_phantom: ::core::marker::PhantomData,
                     }
                 };
@@ -461,18 +456,17 @@ impl ValueImplStruct {
                     }
 
                     #[allow(non_snake_case)]
-                    #top_vis struct __AggregateOfFieldLazyValues #generics_with_added_lifetimes #where_clause_with_value {
-                        #(#struct_of_field_lazy_values_fields)*
-                        __struct_phantom: ::core::marker::PhantomData<(&#scope_lifetime &#ctx_lifetime (), #struct_name #ty_generics)>,
+                    #top_vis struct __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause_with_value {
+                        #(#struct_of_field_values_fields)*
+                        __struct_phantom: ::core::marker::PhantomData<(&#ctx_lifetime (), #struct_name #ty_generics)>,
                     }
 
                     #[automatically_derived]
-                    impl #impl_generics ::core::clone::Clone for __AggregateOfFieldLazyValues #ty_generics_with_added_lifetimes #where_clause_with_value {
+                    impl #impl_generics ::core::marker::Copy for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause_with_value {}
+                    #[automatically_derived]
+                    impl #impl_generics ::core::clone::Clone for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause_with_value {
                         fn clone(&self) -> Self {
-                            Self {
-                                #(#struct_of_field_lazy_values_clone_fields)*
-                                __struct_phantom: ::core::marker::PhantomData,
-                            }
+                            *self
                         }
                     }
                 };
@@ -480,9 +474,9 @@ impl ValueImplStruct {
             Fields::Unnamed(fields) => {
                 let mut struct_of_field_enums_fields = Vec::new();
                 let mut struct_of_field_enums_const_fields = Vec::new();
-                let mut struct_of_field_lazy_values_fields = Vec::new();
-                let mut get_field_lazy_values_fields = Vec::new();
-                let mut struct_of_field_lazy_values_clone_fields = Vec::new();
+                let mut struct_of_field_values_fields = Vec::new();
+                let mut get_field_values_fields = Vec::new();
+                let mut struct_of_field_values_clone_fields = Vec::new();
                 for (name, field) in fields.unnamed.iter().enumerate() {
                     let RustHdlFieldAttributes { ignored } =
                         RustHdlFieldAttributes::parse(&field.attrs)?;
@@ -496,13 +490,13 @@ impl ValueImplStruct {
                         struct_of_field_enums_const_fields.push(quote! {
                             (),
                         });
-                        get_field_lazy_values_fields.push(quote! {
+                        get_field_values_fields.push(quote! {
                             (),
                         });
-                        struct_of_field_lazy_values_fields.push(quote! {
+                        struct_of_field_values_fields.push(quote! {
                             #vis (),
                         });
-                        struct_of_field_lazy_values_clone_fields.push(quote! {
+                        struct_of_field_values_clone_fields.push(quote! {
                             (),
                         });
                         continue;
@@ -514,13 +508,13 @@ impl ValueImplStruct {
                     struct_of_field_enums_const_fields.push(quote! {
                         #name,
                     });
-                    get_field_lazy_values_fields.push(quote! {
+                    get_field_values_fields.push(quote! {
                         value.extract_field_unchecked::<#ty>(#name),
                     });
-                    struct_of_field_lazy_values_fields.push(quote! {
-                        #vis #crate_path::values::LazyVal<#ctx_lifetime, #scope_lifetime, #ty>,
+                    struct_of_field_values_fields.push(quote! {
+                        #vis #crate_path::values::Val<#ctx_lifetime, #ty>,
                     });
-                    struct_of_field_lazy_values_clone_fields.push(quote! {
+                    struct_of_field_values_clone_fields.push(quote! {
                         ::core::clone::Clone::clone(&self.#name),
                     });
                     visit_fields.push(quote! {
@@ -559,18 +553,17 @@ impl ValueImplStruct {
                     );
 
                     #[allow(non_snake_case)]
-                    #top_vis struct __AggregateOfFieldLazyValues #generics_with_added_lifetimes(
-                        #(#struct_of_field_lazy_values_fields)*
-                        ::core::marker::PhantomData<(&#scope_lifetime &#ctx_lifetime (), #struct_name #ty_generics)>,
+                    #top_vis struct __AggregateOfFieldValues #generics_with_added_lifetimes(
+                        #(#struct_of_field_values_fields)*
+                        ::core::marker::PhantomData<(&#ctx_lifetime (), #struct_name #ty_generics)>,
                     ) #where_clause_with_value;
 
                     #[automatically_derived]
-                    impl #impl_generics ::core::clone::Clone for __AggregateOfFieldLazyValues #ty_generics_with_added_lifetimes #where_clause_with_value {
+                    impl #impl_generics ::core::marker::Copy for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause_with_value {}
+                    #[automatically_derived]
+                    impl #impl_generics ::core::clone::Clone for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause_with_value {
                         fn clone(&self) -> Self {
-                            Self(
-                                #(#struct_of_field_lazy_values_clone_fields)*
-                                ::core::marker::PhantomData,
-                            )
+                            *self
                         }
                     }
                 };
@@ -579,9 +572,9 @@ impl ValueImplStruct {
                         #(#struct_of_field_enums_const_fields)*
                     )
                 };
-                get_field_lazy_values = quote! {
-                    __AggregateOfFieldLazyValues(
-                        #(#get_field_lazy_values_fields)*
+                get_field_values = quote! {
+                    __AggregateOfFieldValues(
+                        #(#get_field_values_fields)*
                         ::core::marker::PhantomData,
                     )
                 };
@@ -604,20 +597,22 @@ impl ValueImplStruct {
                     #top_vis struct __StructOfFieldEnums;
 
                     #[allow(non_camel_case_types)]
-                    #top_vis struct __AggregateOfFieldLazyValues #generics_with_added_lifetimes #where_clause_with_value {
-                        __struct_phantom: ::core::marker::PhantomData<(&#scope_lifetime &#ctx_lifetime (), #struct_name #ty_generics)>,
+                    #top_vis struct __AggregateOfFieldValues #generics_with_added_lifetimes #where_clause_with_value {
+                        __struct_phantom: ::core::marker::PhantomData<(&#ctx_lifetime (), #struct_name #ty_generics)>,
                     }
 
                     #[automatically_derived]
-                    impl #impl_generics ::core::clone::Clone for __AggregateOfFieldLazyValues #ty_generics_with_added_lifetimes #where_clause_with_value {
+                    impl #impl_generics ::core::marker::Copy for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause_with_value {}
+                    #[automatically_derived]
+                    impl #impl_generics ::core::clone::Clone for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause_with_value {
                         fn clone(&self) -> Self {
-                            Self { __struct_phantom: ::core::marker::PhantomData }
+                            *self
                         }
                     }
                 };
                 struct_of_field_enums_const = quote! { __StructOfFieldEnums };
                 field_count = 0;
-                get_field_lazy_values = quote! { __AggregateOfFieldLazyValues { __struct_phantom: ::core::marker::PhantomData } };
+                get_field_values = quote! { __AggregateOfFieldValues { __struct_phantom: ::core::marker::PhantomData } };
             }
         }
         Ok(Self {
@@ -626,7 +621,7 @@ impl ValueImplStruct {
             visit_fields,
             visit_field_types,
             visit_field_fixed_types,
-            get_field_lazy_values,
+            get_field_values,
             field_count,
             where_clause_with_value,
             where_clause_with_fixed_type_value,
@@ -638,7 +633,7 @@ impl ValueImplStruct {
             struct_of_field_enums_const,
             visit_fields,
             visit_field_types,
-            get_field_lazy_values,
+            get_field_values,
             field_count,
             where_clause_with_value,
             ..
@@ -648,7 +643,6 @@ impl ValueImplStruct {
             original_generics,
             generics_with_added_lifetimes,
             ctx_lifetime,
-            scope_lifetime,
             name,
             top_vis: _,
         } = common;
@@ -659,39 +653,36 @@ impl ValueImplStruct {
             const _: () = {
                 #type_defs
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::AggregateOfFieldLazyValues<#ctx_lifetime, #scope_lifetime> for __AggregateOfFieldLazyValues #ty_generics_with_added_lifetimes #where_clause_with_value {
+                impl #impl_generics #crate_path::values::aggregate::AggregateOfFieldValues<#ctx_lifetime> for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #where_clause_with_value {
                     type Aggregate = #name #ty_generics;
                 }
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::AggregateValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause_with_value {
-                    type AggregateValueKind = #crate_path::values::aggregate::StructAggregateValueKind<#ctx_lifetime, #scope_lifetime, Self>;
+                impl #impl_generics #crate_path::values::aggregate::AggregateValue<#ctx_lifetime> for #name #ty_generics #where_clause_with_value {
+                    type AggregateValueKind = #crate_path::values::aggregate::StructAggregateValueKind<#ctx_lifetime, Self>;
                     type DiscriminantShape = #crate_path::values::integer::UIntShape<0>;
-                    type AggregateOfFieldLazyValues = __AggregateOfFieldLazyValues #ty_generics_with_added_lifetimes;
+                    type AggregateOfFieldValues = __AggregateOfFieldValues #ty_generics_with_added_lifetimes;
                 }
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::StructValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause_with_value {
+                impl #impl_generics #crate_path::values::aggregate::StructValue<#ctx_lifetime> for #name #ty_generics #where_clause_with_value {
                     type FieldEnum = __FieldEnum;
                     type StructOfFieldEnums = __StructOfFieldEnums;
                     const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums = #struct_of_field_enums_const;
                     const FIELD_COUNT: usize = #field_count;
-                    fn visit_fields<'__self, __V: #crate_path::values::aggregate::StructFieldVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
-                        &'__self self,
+                    fn visit_fields<__V: #crate_path::values::aggregate::StructFieldVisitor<#ctx_lifetime, Self>>(
+                        &self,
                         __visitor: __V,
-                    ) -> ::core::result::Result<__V, __V::BreakType>
-                    where
-                        #scope_lifetime: '__self,
-                    {
+                    ) -> ::core::result::Result<__V, __V::BreakType> {
                         #(#visit_fields)*
                         ::core::result::Result::Ok(__visitor)
                     }
-                    fn visit_field_types<__V: #crate_path::values::aggregate::StructFieldTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
+                    fn visit_field_types<__V: #crate_path::values::aggregate::StructFieldTypeVisitor<#ctx_lifetime, Self>>(
                         __visitor: __V,
                     ) -> ::core::result::Result<__V, __V::BreakType> {
                         #(#visit_field_types)*
                         ::core::result::Result::Ok(__visitor)
                     }
-                    fn get_field_lazy_values(value: #crate_path::values::LazyVal<#ctx_lifetime, #scope_lifetime, Self>) -> Self::AggregateOfFieldLazyValues {
-                        #get_field_lazy_values
+                    fn get_field_values(value: #crate_path::values::Val<#ctx_lifetime, Self>) -> Self::AggregateOfFieldValues {
+                        #get_field_values
                     }
                 }
             };
@@ -708,7 +699,6 @@ impl ValueImplStruct {
             original_generics,
             generics_with_added_lifetimes,
             ctx_lifetime,
-            scope_lifetime,
             name,
             top_vis: _,
         } = common;
@@ -716,8 +706,8 @@ impl ValueImplStruct {
         let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
         Ok(quote! {
             #[automatically_derived]
-            impl #impl_generics #crate_path::values::aggregate::FixedTypeStructValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #where_clause_with_fixed_type_value {
-                fn visit_field_fixed_types<__V: #crate_path::values::aggregate::StructFieldFixedTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
+            impl #impl_generics #crate_path::values::aggregate::FixedTypeStructValue<#ctx_lifetime> for #name #ty_generics #where_clause_with_fixed_type_value {
+                fn visit_field_fixed_types<__V: #crate_path::values::aggregate::StructFieldFixedTypeVisitor<#ctx_lifetime, Self>>(
                     __visitor: __V,
                 ) -> ::core::result::Result<__V, __V::BreakType> {
                     #(#visit_field_fixed_types)*
@@ -733,9 +723,8 @@ struct ValueImplEnum {
     visit_variant_match_arms: Vec<TokenStream>,
     visit_variant_types: Vec<TokenStream>,
     aggregate_of_field_values_needs_type_arguments: bool,
-    variant_struct_lifetime: Lifetime,
     adjusted_where_clause: WhereClause,
-    match_value_without_scope_check: TokenStream,
+    match_value: TokenStream,
 }
 
 impl ValueImplEnum {
@@ -746,7 +735,6 @@ impl ValueImplEnum {
             original_generics,
             generics_with_added_lifetimes,
             ctx_lifetime,
-            scope_lifetime,
             top_vis,
         } = common;
         let variant_vis = match top_vis {
@@ -800,27 +788,27 @@ impl ValueImplEnum {
             )));
         variant_struct_generics
             .lifetimes_mut()
-            .find(|v| v.lifetime == *scope_lifetime)
+            .find(|v| v.lifetime == *ctx_lifetime)
             .unwrap()
             .bounds
             .push(variant_struct_lifetime.clone());
         let (variant_struct_impl_generics, variant_struct_ty_generics, _) =
             variant_struct_generics.split_for_impl();
-        let mut variant_struct_generics_with_scope_lifetime = variant_struct_generics.clone();
-        variant_struct_generics_with_scope_lifetime
+        let mut variant_struct_generics_with_implicit_lifetime = variant_struct_generics.clone();
+        variant_struct_generics_with_implicit_lifetime
             .lifetimes_mut()
             .find(|v| v.lifetime == variant_struct_lifetime)
             .unwrap()
-            .lifetime = scope_lifetime.clone();
-        let variant_struct_ty_generics_with_scope_lifetime =
-            variant_struct_generics_with_scope_lifetime
+            .lifetime = parse_quote! { '_ };
+        let variant_struct_ty_generics_with_implicit_lifetime =
+            variant_struct_generics_with_implicit_lifetime
                 .split_for_impl()
                 .1;
         let adjusted_where_clause = where_clause_with_bound_on_generics(
             original_generics,
             |ident| parse_quote! { #ident: #crate_path::values::FixedTypeValue<#ctx_lifetime> },
         );
-        let mut match_value_without_scope_check_variants = Vec::new();
+        let mut match_value_variants = Vec::new();
         for (
             index,
             Variant {
@@ -839,7 +827,7 @@ impl ValueImplEnum {
             };
             let variant_name_str = variant_name.to_string();
             let RustHdlVariantAttributes {} = RustHdlVariantAttributes::parse(&variant_attrs)?;
-            let match_value_without_scope_check_variant;
+            let match_value_variant;
             match fields {
                 Fields::Named(named) => {
                     let mut aggregate_of_field_values_fields =
@@ -848,8 +836,7 @@ impl ValueImplEnum {
                         Vec::with_capacity(named.named.len());
                     let mut aggregate_of_field_values_clone_fields =
                         Vec::with_capacity(named.named.len());
-                    let mut match_value_without_scope_check_variant_fields =
-                        Vec::with_capacity(named.named.len());
+                    let mut match_value_variant_fields = Vec::with_capacity(named.named.len());
                     let mut match_fields = Vec::with_capacity(named.named.len());
                     let mut field_names = Vec::with_capacity(named.named.len());
                     let mut variant_struct_fields = Vec::with_capacity(named.named.len());
@@ -890,7 +877,7 @@ impl ValueImplEnum {
                         match_fields.push(quote! { #ident, });
                         aggregate_of_field_values_needs_type_arguments = true;
                         aggregate_of_field_values_fields.push(quote! {
-                            #ident: #crate_path::values::LazyVal<#ctx_lifetime, #scope_lifetime, #ty>,
+                            #ident: #crate_path::values::Val<#ctx_lifetime, #ty>,
                         });
                         aggregate_of_field_values_clone_field_patterns.push(quote! {
                             #ident,
@@ -901,8 +888,8 @@ impl ValueImplEnum {
                         variant_struct_fields.push(quote! {
                             #variant_vis #ident: &#variant_struct_lifetime #ty,
                         });
-                        match_value_without_scope_check_variant_fields.push(quote! {
-                            #ident: #crate_path::values::ops::get_enum_variant_field_unchecked(::core::clone::Clone::clone(&value), #discriminant, #field_index),
+                        match_value_variant_fields.push(quote! {
+                            #ident: #crate_path::values::ops::get_enum_variant_field_unchecked(value, #discriminant, #field_index, match_arm_scope),
                         });
                         field_names.push(ident);
                     }
@@ -924,7 +911,7 @@ impl ValueImplEnum {
                                 __visitor,
                                 #variant_name_str,
                                 #crate_path::values::Int::wrapping_new(#discriminant),
-                                variant_structs::#variant_name::#variant_struct_ty_generics {
+                                variant_structs::#variant_name::#variant_struct_ty_generics_with_implicit_lifetime {
                                     #(#field_names,)*
                                     __enum_phantom: ::core::marker::PhantomData,
                                 },
@@ -932,7 +919,7 @@ impl ValueImplEnum {
                         }
                     });
                     visit_variant_types.push(quote! {
-                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name #variant_struct_ty_generics_with_scope_lifetime>(
+                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name #variant_struct_ty_generics_with_implicit_lifetime>(
                             __visitor,
                             #variant_name_str,
                             #crate_path::values::Int::wrapping_new(#discriminant),
@@ -942,7 +929,7 @@ impl ValueImplEnum {
                         #variant_vis struct #variant_name #variant_struct_generics #adjusted_where_clause {
                             #(#variant_struct_fields)*
                             #variant_vis __enum_phantom: ::core::marker::PhantomData<(
-                                &#scope_lifetime &#ctx_lifetime (),
+                                &#ctx_lifetime (),
                                 &#variant_struct_lifetime super::#name #ty_generics,
                             )>,
                         }
@@ -955,15 +942,15 @@ impl ValueImplEnum {
                             }
                         }
                         #[automatically_derived]
-                        impl #variant_struct_impl_generics #crate_path::values::aggregate::EnumVariantRef<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics> for #variant_name #variant_struct_ty_generics #adjusted_where_clause {
-                            fn visit_fields<__V: #crate_path::values::aggregate::EnumVariantFieldVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                        impl #variant_struct_impl_generics #crate_path::values::aggregate::EnumVariantRef<#ctx_lifetime, super::#name #ty_generics> for #variant_name #variant_struct_ty_generics #adjusted_where_clause {
+                            fn visit_fields<__V: #crate_path::values::aggregate::EnumVariantFieldVisitor<#ctx_lifetime, super::#name #ty_generics, Self>>(
                                 self,
                                 __visitor: __V,
                             ) -> ::core::result::Result<__V, __V::BreakType> {
                                 #(#visit_fields)*
                                 ::core::result::Result::Ok(__visitor)
                             }
-                            fn visit_field_types<__V: #crate_path::values::aggregate::EnumVariantFieldTypeVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                            fn visit_field_types<__V: #crate_path::values::aggregate::EnumVariantFieldTypeVisitor<#ctx_lifetime, super::#name #ty_generics, Self>>(
                                 __visitor: __V,
                             ) -> ::core::result::Result<__V, __V::BreakType> {
                                 #(#visit_field_types)*
@@ -971,9 +958,9 @@ impl ValueImplEnum {
                             }
                         }
                     });
-                    match_value_without_scope_check_variant = quote! {
-                        __AggregateOfFieldLazyValues::#variant_name {
-                            #(#match_value_without_scope_check_variant_fields)*
+                    match_value_variant = quote! {
+                        __AggregateOfFieldValues::#variant_name {
+                            #(#match_value_variant_fields)*
                         }
                     };
                 }
@@ -984,8 +971,7 @@ impl ValueImplEnum {
                         Vec::with_capacity(unnamed.unnamed.len());
                     let mut aggregate_of_field_values_clone_fields =
                         Vec::with_capacity(unnamed.unnamed.len());
-                    let mut match_value_without_scope_check_variant_fields =
-                        Vec::with_capacity(unnamed.unnamed.len());
+                    let mut match_value_variant_fields = Vec::with_capacity(unnamed.unnamed.len());
                     let mut match_fields = Vec::with_capacity(unnamed.unnamed.len());
                     let mut field_values = Vec::with_capacity(unnamed.unnamed.len());
                     let mut variant_struct_fields = Vec::with_capacity(unnamed.unnamed.len());
@@ -1005,7 +991,7 @@ impl ValueImplEnum {
                             variant_struct_fields.push(quote! {
                                 #variant_vis (),
                             });
-                            match_value_without_scope_check_variant_fields.push(quote! { (), });
+                            match_value_variant_fields.push(quote! { (), });
                             continue;
                         }
                         assert_field_visibility_is_inherited(vis)?;
@@ -1031,7 +1017,8 @@ impl ValueImplEnum {
                         field_values.push(quote! { #var, });
                         match_fields.push(quote! { #var, });
                         aggregate_of_field_values_needs_type_arguments = true;
-                        aggregate_of_field_values_fields.push(quote! { #crate_path::values::LazyVal<#ctx_lifetime, #scope_lifetime, #ty>, });
+                        aggregate_of_field_values_fields
+                            .push(quote! { #crate_path::values::Val<#ctx_lifetime, #ty>, });
                         aggregate_of_field_values_clone_field_patterns.push(quote! {
                             #var,
                         });
@@ -1041,8 +1028,8 @@ impl ValueImplEnum {
                         variant_struct_fields.push(quote! {
                             #variant_vis &#variant_struct_lifetime #ty,
                         });
-                        match_value_without_scope_check_variant_fields.push(quote! {
-                            #crate_path::values::ops::get_enum_variant_field_unchecked(::core::clone::Clone::clone(&value), #discriminant, #field_index),
+                        match_value_variant_fields.push(quote! {
+                            #crate_path::values::ops::get_enum_variant_field_unchecked(value, #discriminant, #field_index, match_arm_scope),
                         });
                     }
                     aggregate_of_field_values_variants.push(quote! {
@@ -1063,7 +1050,7 @@ impl ValueImplEnum {
                                 __visitor,
                                 #variant_name_str,
                                 #crate_path::values::Int::wrapping_new(#discriminant),
-                                variant_structs::#variant_name::#variant_struct_ty_generics(
+                                variant_structs::#variant_name::#variant_struct_ty_generics_with_implicit_lifetime(
                                     #(#field_values)*
                                     ::core::marker::PhantomData,
                                 ),
@@ -1071,7 +1058,7 @@ impl ValueImplEnum {
                         }
                     });
                     visit_variant_types.push(quote! {
-                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name #variant_struct_ty_generics_with_scope_lifetime>(
+                        let __visitor = #crate_path::values::aggregate::EnumVariantTypeVisitor::variant::<variant_structs::#variant_name #variant_struct_ty_generics_with_implicit_lifetime>(
                             __visitor,
                             #variant_name_str,
                             #crate_path::values::Int::wrapping_new(#discriminant),
@@ -1081,7 +1068,7 @@ impl ValueImplEnum {
                         #variant_vis struct #variant_name #variant_struct_generics(
                             #(#variant_struct_fields)*
                             #variant_vis ::core::marker::PhantomData<(
-                                &#scope_lifetime &#ctx_lifetime (),
+                                &#ctx_lifetime (),
                                 &#variant_struct_lifetime super::#name #ty_generics,
                             )>,
                         ) #adjusted_where_clause;
@@ -1094,15 +1081,15 @@ impl ValueImplEnum {
                             }
                         }
                         #[automatically_derived]
-                        impl #variant_struct_impl_generics #crate_path::values::aggregate::EnumVariantRef<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics> for #variant_name #variant_struct_ty_generics #adjusted_where_clause {
-                            fn visit_fields<__V: #crate_path::values::aggregate::EnumVariantFieldVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                        impl #variant_struct_impl_generics #crate_path::values::aggregate::EnumVariantRef<#ctx_lifetime, super::#name #ty_generics> for #variant_name #variant_struct_ty_generics #adjusted_where_clause {
+                            fn visit_fields<__V: #crate_path::values::aggregate::EnumVariantFieldVisitor<#ctx_lifetime, super::#name #ty_generics, Self>>(
                                 self,
                                 __visitor: __V,
                             ) -> ::core::result::Result<__V, __V::BreakType> {
                                 #(#visit_fields)*
                                 ::core::result::Result::Ok(__visitor)
                             }
-                            fn visit_field_types<__V: #crate_path::values::aggregate::EnumVariantFieldTypeVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                            fn visit_field_types<__V: #crate_path::values::aggregate::EnumVariantFieldTypeVisitor<#ctx_lifetime, super::#name #ty_generics, Self>>(
                                 __visitor: __V,
                             ) -> ::core::result::Result<__V, __V::BreakType> {
                                 #(#visit_field_types)*
@@ -1110,8 +1097,8 @@ impl ValueImplEnum {
                             }
                         }
                     });
-                    match_value_without_scope_check_variant = quote! {
-                        __AggregateOfFieldLazyValues::#variant_name(#(#match_value_without_scope_check_variant_fields)*)
+                    match_value_variant = quote! {
+                        __AggregateOfFieldValues::#variant_name(#(#match_value_variant_fields)*)
                     };
                 }
                 Fields::Unit => {
@@ -1140,56 +1127,64 @@ impl ValueImplEnum {
                         #[derive(Copy, Clone)]
                         #variant_vis struct #variant_name;
                         #[automatically_derived]
-                        impl #impl_generics #crate_path::values::aggregate::EnumVariantRef<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics> for #variant_name #adjusted_where_clause {
-                            fn visit_fields<__V: #crate_path::values::aggregate::EnumVariantFieldVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                        impl #impl_generics #crate_path::values::aggregate::EnumVariantRef<#ctx_lifetime, super::#name #ty_generics> for #variant_name #adjusted_where_clause {
+                            fn visit_fields<__V: #crate_path::values::aggregate::EnumVariantFieldVisitor<#ctx_lifetime, super::#name #ty_generics, Self>>(
                                 self,
                                 visitor: __V,
                             ) -> ::core::result::Result<__V, __V::BreakType> {
                                 ::core::result::Result::Ok(visitor)
                             }
-                            fn visit_field_types<__V: #crate_path::values::aggregate::EnumVariantFieldTypeVisitor<#ctx_lifetime, #scope_lifetime, super::#name #ty_generics, Self>>(
+                            fn visit_field_types<__V: #crate_path::values::aggregate::EnumVariantFieldTypeVisitor<#ctx_lifetime, super::#name #ty_generics, Self>>(
                                 visitor: __V,
                             ) -> ::core::result::Result<__V, __V::BreakType> {
                                 ::core::result::Result::Ok(visitor)
                             }
                         }
                     });
-                    match_value_without_scope_check_variant =
-                        quote! { __AggregateOfFieldLazyValues::#variant_name };
+                    match_value_variant = quote! { __AggregateOfFieldValues::#variant_name };
                 }
             }
-            match_value_without_scope_check_variants.push(quote_spanned! {variant_name.span()=>
-                #crate_path::values::ops::MatchEnumUncheckedMatchArm {
-                    discriminant: #discriminant,
-                    result: #crate_path::values::LazyVal::new(f(#match_value_without_scope_check_variant)?),
+            match_value_variants.push(quote_spanned! {variant_name.span()=>
+                {
+                    let match_arm_scope = #crate_path::ir::scope::Scope::new(match_result_scope, match_result_scope.source_location());
+                    let input = #crate_path::values::aggregate::AggregateValueMatchArm {
+                        value: #match_value_variant,
+                        match_arm_scope,
+                    };
+                    let result = f(input)?;
+                    #crate_path::values::ops::MatchEnumUncheckedMatchArm {
+                        discriminant: #discriminant,
+                        result: #crate_path::values::ToVal::to_val(&result, value),
+                        match_arm_scope,
+                    }
                 },
             });
             discriminants.push(discriminant);
         }
-        let match_value_without_scope_check = quote! {
+        let match_value = quote! {
             let match_arms = [
-                #(#match_value_without_scope_check_variants)*
+                #(#match_value_variants)*
             ];
-            ::core::result::Result::Ok(#crate_path::values::ops::match_enum_unchecked(value, match_arms))
+            ::core::result::Result::Ok(#crate_path::values::ops::match_enum_unchecked(value, match_arms, match_result_scope))
         };
         let declare_aggregate_of_field_values = if aggregate_of_field_values_needs_type_arguments {
             quote! {
-                #top_vis enum __AggregateOfFieldLazyValues #generics_with_added_lifetimes #adjusted_where_clause {
+                #top_vis enum __AggregateOfFieldValues #generics_with_added_lifetimes #adjusted_where_clause {
                     #(#aggregate_of_field_values_variants)*
                 }
                 #[automatically_derived]
-                impl #impl_generics ::core::clone::Clone for __AggregateOfFieldLazyValues #ty_generics_with_added_lifetimes #adjusted_where_clause {
+                impl #impl_generics ::core::marker::Copy for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #adjusted_where_clause {}
+                #[automatically_derived]
+                impl #impl_generics ::core::clone::Clone for __AggregateOfFieldValues #ty_generics_with_added_lifetimes #adjusted_where_clause {
                     fn clone(&self) -> Self {
-                        match self {
-                            #(#aggregate_of_field_values_clone_variants)*
-                        }
+                        *self
                     }
                 }
             }
         } else {
             quote! {
-                #[derive(Clone)]
-                #top_vis enum __AggregateOfFieldLazyValues {
+                #[derive(Clone, Copy)]
+                #top_vis enum __AggregateOfFieldValues {
                     #(#aggregate_of_field_values_variants)*
                 }
             }
@@ -1216,9 +1211,8 @@ impl ValueImplEnum {
             visit_variant_match_arms,
             visit_variant_types,
             aggregate_of_field_values_needs_type_arguments,
-            variant_struct_lifetime,
             adjusted_where_clause,
-            match_value_without_scope_check,
+            match_value,
         })
     }
     fn derive_value(self, common: ValueImplCommon) -> syn::Result<TokenStream> {
@@ -1227,16 +1221,14 @@ impl ValueImplEnum {
             visit_variant_match_arms,
             visit_variant_types,
             aggregate_of_field_values_needs_type_arguments,
-            variant_struct_lifetime,
             adjusted_where_clause,
-            match_value_without_scope_check,
+            match_value,
         } = self;
         let ValueImplCommon {
             crate_path,
             original_generics,
             generics_with_added_lifetimes,
             ctx_lifetime,
-            scope_lifetime,
             name,
             top_vis: _,
         } = common;
@@ -1249,51 +1241,50 @@ impl ValueImplEnum {
             const _: () = {
                 #type_defs
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::AggregateOfFieldLazyValues<#ctx_lifetime, #scope_lifetime> for __AggregateOfFieldLazyValues #aggregate_of_field_values_ty_generics #adjusted_where_clause {
+                impl #impl_generics #crate_path::values::aggregate::AggregateOfFieldValues<#ctx_lifetime> for __AggregateOfFieldValues #aggregate_of_field_values_ty_generics #adjusted_where_clause {
                     type Aggregate = #name #ty_generics;
                 }
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::AggregateValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #adjusted_where_clause {
-                    type AggregateValueKind = #crate_path::values::aggregate::EnumAggregateValueKind<#ctx_lifetime, #scope_lifetime, Self>;
+                impl #impl_generics #crate_path::values::aggregate::AggregateValue<#ctx_lifetime> for #name #ty_generics #adjusted_where_clause {
+                    type AggregateValueKind = #crate_path::values::aggregate::EnumAggregateValueKind<#ctx_lifetime, Self>;
                     type DiscriminantShape = #crate_path::values::integer::ConstIntShape<
                         { __DISCRIMINANT_SHAPE.bit_count },
                         { __DISCRIMINANT_SHAPE.signed },
                     >;
-                    type AggregateOfFieldLazyValues = __AggregateOfFieldLazyValues #aggregate_of_field_values_ty_generics;
+                    type AggregateOfFieldValues = __AggregateOfFieldValues #aggregate_of_field_values_ty_generics;
                 }
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::AggregateValueMatch<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #adjusted_where_clause {
-                    fn match_value_without_scope_check<
-                        RV: #crate_path::values::FixedTypeValue<#ctx_lifetime>,
-                        R: #crate_path::values::ToVal<#ctx_lifetime, #scope_lifetime, ValueType = RV> + #scope_lifetime,
-                        E,
-                        F: ::core::ops::FnMut(
-                            <Self as #crate_path::values::aggregate::AggregateValue<#ctx_lifetime, #scope_lifetime>>::AggregateOfFieldLazyValues,
-                        ) -> ::core::result::Result<R, E>,
-                    >(
-                        value: #crate_path::values::LazyVal<#ctx_lifetime, #scope_lifetime, Self>,
+                impl #impl_generics #crate_path::values::aggregate::AggregateValueMatch<#ctx_lifetime> for #name #ty_generics #adjusted_where_clause {
+                    fn match_value<RV, R, E, F>(
+                        value: #crate_path::values::Val<#ctx_lifetime, Self>,
+                        match_result_scope: #crate_path::ir::scope::ScopeRef<#ctx_lifetime>,
                         mut f: F,
-                    ) -> ::core::result::Result<#crate_path::values::LazyVal<#ctx_lifetime, #scope_lifetime, RV>, E> {
-                        #match_value_without_scope_check
+                        caller: &#crate_path::ir::SourceLocation<#ctx_lifetime>,
+                    ) -> ::core::result::Result<#crate_path::values::Val<#ctx_lifetime, RV>, E>
+                    where
+                        RV: #crate_path::values::FixedTypeValue<#ctx_lifetime>,
+                        R: #crate_path::values::ToVal<#ctx_lifetime, ValueType = RV>,
+                        F: ::core::ops::FnMut(
+                            #crate_path::values::aggregate::AggregateValueMatchArm<
+                            #ctx_lifetime,
+                                <Self as #crate_path::values::aggregate::AggregateValue<#ctx_lifetime>>::AggregateOfFieldValues,
+                            >,
+                        ) -> ::core::result::Result<R, E>,
+                    {
+                        #match_value
                     }
                 }
                 #[automatically_derived]
-                impl #impl_generics #crate_path::values::aggregate::EnumValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #adjusted_where_clause {
-                    fn visit_variant<
-                        #variant_struct_lifetime,
-                        __V: #crate_path::values::aggregate::EnumVariantVisitor<#ctx_lifetime, #scope_lifetime, Self>
-                    >(
-                        &#variant_struct_lifetime self,
+                impl #impl_generics #crate_path::values::aggregate::EnumValue<#ctx_lifetime> for #name #ty_generics #adjusted_where_clause {
+                    fn visit_variant<__V: #crate_path::values::aggregate::EnumVariantVisitor<#ctx_lifetime, Self>>(
+                        &self,
                         __visitor: __V,
-                    ) -> __V::ResultType
-                    where
-                        #scope_lifetime: #variant_struct_lifetime,
-                    {
+                    ) -> __V::ResultType {
                         match self {
                             #(#visit_variant_match_arms)*
                         }
                     }
-                    fn visit_variant_types<__V: #crate_path::values::aggregate::EnumVariantTypeVisitor<#ctx_lifetime, #scope_lifetime, Self>>(
+                    fn visit_variant_types<__V: #crate_path::values::aggregate::EnumVariantTypeVisitor<#ctx_lifetime, Self>>(
                         __visitor: __V,
                     ) -> ::core::result::Result<__V, __V::BreakType> {
                         #(#visit_variant_types)*
@@ -1309,7 +1300,6 @@ impl ValueImplEnum {
             original_generics,
             generics_with_added_lifetimes,
             ctx_lifetime,
-            scope_lifetime,
             name,
             top_vis: _,
         } = common;
@@ -1318,15 +1308,14 @@ impl ValueImplEnum {
             visit_variant_match_arms: _,
             visit_variant_types: _,
             aggregate_of_field_values_needs_type_arguments: _,
-            variant_struct_lifetime: _,
             adjusted_where_clause,
-            match_value_without_scope_check: _,
+            match_value: _,
         } = self;
         let impl_generics = generics_with_added_lifetimes.split_for_impl().0;
         let (_, ty_generics, _) = original_generics.split_for_impl();
         Ok(quote! {
             #[automatically_derived]
-            impl #impl_generics #crate_path::values::aggregate::FixedTypeEnumValue<#ctx_lifetime, #scope_lifetime> for #name #ty_generics #adjusted_where_clause {}
+            impl #impl_generics #crate_path::values::aggregate::FixedTypeEnumValue<#ctx_lifetime> for #name #ty_generics #adjusted_where_clause {}
         })
     }
 }
@@ -1341,7 +1330,6 @@ struct ValueImplCommon {
     original_generics: Generics,
     generics_with_added_lifetimes: Generics,
     ctx_lifetime: Lifetime,
-    scope_lifetime: Lifetime,
     name: Ident,
     top_vis: Visibility,
 }
@@ -1360,13 +1348,11 @@ impl ValueImpl {
         let GenericsWithAddedLifetimes {
             generics: generics_with_added_lifetimes,
             ctx_lifetime,
-            scope_lifetime,
         } = GenericsWithAddedLifetimes::new(ast.generics.clone());
         let common = ValueImplCommon {
             crate_path,
             generics_with_added_lifetimes,
             ctx_lifetime,
-            scope_lifetime,
             original_generics: ast.generics,
             name: real_type_name.unwrap_or(ast.ident),
             top_vis: ast.vis,
@@ -1414,7 +1400,6 @@ fn derive_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     let GenericsWithAddedLifetimes {
         generics,
         ctx_lifetime,
-        scope_lifetime: _,
     } = GenericsWithAddedLifetimes::new(ast.generics.clone());
     let adjusted_where_clause = where_clause_with_bound_on_generics(
         &ast.generics,
@@ -1452,7 +1437,7 @@ fn derive_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     Ok(quote! {
         #[automatically_derived]
         impl #impl_generics #crate_path::io::IO<#ctx_lifetime> for #name #ty_generics #adjusted_where_clause {
-            fn visit_io(&mut self, visitor: #crate_path::io::IOVisitor<'_, 'ctx>) {
+            fn visit_io(&mut self, visitor: #crate_path::io::IOVisitor<'_, #ctx_lifetime>) {
                 visitor
                     .visit_struct()
                     #(#visit_io_fields)*
@@ -1471,7 +1456,6 @@ fn derive_plain_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     let GenericsWithAddedLifetimes {
         generics,
         ctx_lifetime,
-        scope_lifetime: _,
     } = GenericsWithAddedLifetimes::new(ast.generics.clone());
     let adjusted_where_clause = where_clause_with_bound_on_generics(
         &ast.generics,
@@ -1509,7 +1493,7 @@ fn derive_plain_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
     Ok(quote! {
         #[automatically_derived]
         impl #impl_generics #crate_path::io::PlainIO<#ctx_lifetime> for #name #ty_generics #adjusted_where_clause {
-            fn external<__Ctx: #crate_path::context::AsContext<'ctx>>(ctx: __Ctx) -> Self {
+            fn external<__Ctx: #crate_path::context::AsContext<#ctx_lifetime>>(ctx: __Ctx) -> Self {
                 let ctx = #crate_path::context::AsContext::ctx(&ctx);
                 #external_body
             }
@@ -1527,19 +1511,27 @@ fn assert_no_attrs(attrs: impl AsRef<[Attribute]>) -> syn::Result<()> {
 
 struct ValTranslator {
     crate_path: Path,
+    module: Ident,
+    scope: Ident,
 }
 
 impl ValTranslator {
     fn expr_lit(&self, neg: Option<Token![-]>, lit: ExprLit) -> syn::Result<TokenStream> {
-        let crate_path = &self.crate_path;
+        let Self {
+            crate_path,
+            module,
+            scope: _,
+        } = self;
         let ExprLit { attrs, lit } = lit;
         assert_no_attrs(attrs)?;
         match lit {
             Lit::ByteStr(lit) => todo_err!(lit),
             Lit::Byte(lit) => Ok(quote_spanned! {lit.span()=>
-                <#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#lit)
+                #crate_path::values::Value::get_value(&<#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#lit), #module)
             }),
-            Lit::Bool(lit) => Ok(quote! {#lit}),
+            Lit::Bool(lit) => Ok(quote_spanned! {lit.span()=>
+                #crate_path::values::Value::get_value(&#lit, #module)
+            }),
             Lit::Int(lit) => {
                 let (value, shape) = parse_int_literal(neg.as_ref(), &lit)?;
                 let value = if let Some(value) = value.to_i128() {
@@ -1566,10 +1558,10 @@ impl ValTranslator {
                 };
                 Ok(match shape {
                     None => quote_spanned! {lit.span()=>
-                        #crate_path::values::integer::Int::new(#value).expect("literal out of range")
+                        #crate_path::values::Value::get_value(&#crate_path::values::integer::Int::new(#value).expect("literal out of range"), #module)
                     },
                     Some(IntShape { bit_count, signed }) => quote_spanned! {lit.span()=>
-                        #crate_path::values::integer::Int::<#crate_path::values::integer::ConstIntShape<#bit_count, #signed>>::new(#value).expect("literal out of range")
+                        #crate_path::values::Value::get_value(&#crate_path::values::integer::Int::<#crate_path::values::integer::ConstIntShape<#bit_count, #signed>>::new(#value).expect("literal out of range"), #module)
                     },
                 })
             }
@@ -1616,16 +1608,24 @@ impl ValTranslator {
     }
 
     fn block_uninterpreted(&self, mut block: Block) -> syn::Result<TokenStream> {
-        let crate_path = &self.crate_path;
+        let Self {
+            crate_path,
+            module,
+            scope: _,
+        } = self;
         // add useless let to shut-up #[warn(unused_braces)]
         block.stmts.insert(0, parse_quote! {let () = ();});
         Ok(quote_spanned! {block.brace_token.span=>
-            #crate_path::values::ops::identity(#block)
+            #crate_path::values::ToVal::to_val(&#block, #module)
         })
     }
 
     fn expr_if(&self, expr_if: ExprIf) -> syn::Result<TokenStream> {
-        let crate_path = &self.crate_path;
+        let Self {
+            crate_path,
+            module: _,
+            scope: _,
+        } = self;
         let ExprIf {
             attrs,
             if_token,
@@ -1662,7 +1662,11 @@ impl ValTranslator {
     }
 
     fn expr_match(&self, expr_match: ExprMatch) -> syn::Result<TokenStream> {
-        let crate_path = &self.crate_path;
+        let Self {
+            crate_path,
+            module,
+            scope,
+        } = self;
         let ExprMatch {
             attrs,
             match_token,
@@ -1673,19 +1677,14 @@ impl ValTranslator {
         assert_no_attrs(attrs)?;
         let expr = self.expr(*expr)?;
         todo_err!(match_token);
-        Ok(quote_spanned! {match_token.span=>
-            {
-                let __expr = #expr;
-                #crate_path::values::LazyVal::from_fn(|__ctx: #crate_path::context::ContextRef<'_>| {
-                    let __inner_scope = ();
-                    #crate_path::values::aggregate::AggregateValueMatch::
-                })
-            }
-        })
     }
 
     fn expr(&self, expr: Expr) -> syn::Result<TokenStream> {
-        let crate_path = &self.crate_path;
+        let Self {
+            crate_path,
+            module,
+            scope: _,
+        } = self;
         match expr {
             Expr::Array(ExprArray {
                 attrs,
@@ -1719,10 +1718,10 @@ impl ValTranslator {
                         #crate_path::values::ops::HdlMul::mul(#left, #right)
                     }),
                     BinOp::And(op) => Ok(quote_spanned! {op.spans[0]=>
-                        <bool as #crate_path::values::ops::HdlAnd<'_, '_, bool>>::and(#left, #right)
+                        <bool as #crate_path::values::ops::HdlAnd<'_, bool>>::and(#left, #right)
                     }),
                     BinOp::Or(op) => Ok(quote_spanned! {op.spans[0]=>
-                        <bool as #crate_path::values::ops::HdlOr<'_, '_, bool>>::or(#left, #right)
+                        <bool as #crate_path::values::ops::HdlOr<'_, bool>>::or(#left, #right)
                     }),
                     BinOp::BitXor(op) => Ok(quote_spanned! {op.spans[0]=>
                         #crate_path::values::ops::HdlXor::xor(#left, #right)
@@ -1793,9 +1792,13 @@ impl ValTranslator {
                     self.expr(*expr.expr)
                 }
             }
-            Expr::Path(expr) => Ok(
-                quote! { #crate_path::values::ops::identity(::core::clone::Clone::clone(&#expr)) },
-            ),
+            Expr::Path(expr) => {
+                assert_no_attrs(&expr.attrs)?;
+                let span = expr.path.segments.last().unwrap().ident.span();
+                Ok(quote_spanned! {span=>
+                    #crate_path::values::ToVal::to_val(&#expr, #module)
+                })
+            }
             Expr::Repeat(expr) => todo_err!(expr),
             Expr::Struct(expr) => todo_err!(expr),
             Expr::Tuple(expr) => todo_err!(expr),
@@ -1834,6 +1837,8 @@ impl ValTranslator {
 
 struct ValInput {
     attrs: Vec<Attribute>,
+    module_expr: Expr,
+    comma: Token![,],
     expr: Expr,
 }
 
@@ -1841,42 +1846,82 @@ impl Parse for ValInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Ok(Self {
             attrs: Attribute::parse_inner(input)?,
+            module_expr: input.parse()?,
+            comma: input.parse()?,
             expr: input.parse()?,
         })
     }
 }
 
+impl ToTokens for ValInput {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let Self {
+            attrs,
+            module_expr,
+            comma,
+            expr,
+        } = self;
+        attrs.iter().for_each(|attr| attr.to_tokens(tokens));
+        module_expr.to_tokens(tokens);
+        comma.to_tokens(tokens);
+        expr.to_tokens(tokens);
+    }
+}
+
 fn val_impl(ast: ValInput) -> syn::Result<TokenStream> {
-    let ValInput { attrs, expr } = ast;
+    let ValInput {
+        attrs,
+        module_expr,
+        comma,
+        expr,
+    } = ast;
+    let _ = comma;
     let RustHdlAttributes {
         crate_path,
         real_type_name,
     } = RustHdlAttributes::parse(&attrs, AttributesFor::Val)?;
     assert!(real_type_name.is_none());
-    ValTranslator { crate_path }.expr(expr)
+    let module = parse_quote! { __module };
+    let scope = parse_quote! { __scope };
+    let init = quote! {
+        let #module = #crate_path::module::AsIrModule::as_ir_module(&#module_expr);
+        let #scope = #module.scope();
+    };
+    let expr = ValTranslator {
+        crate_path,
+        module,
+        scope,
+    }
+    .expr(expr)?;
+    Ok(quote! {
+        {
+            #init
+            #expr
+        }
+    })
 }
 
-fn debug_input(input: &impl quote::ToTokens, derive_name: &str) {
+fn debug_input(input: &impl quote::ToTokens, name: &str) {
     #[cfg(feature = "debug-tokens")]
     eprintln!(
         "--------INPUT: {}\n{}\n--------",
-        derive_name,
+        name,
         quote::ToTokens::to_token_stream(&input)
     );
     #[cfg(not(feature = "debug-tokens"))]
     {
         let _ = input;
-        let _ = derive_name;
+        let _ = name;
     }
 }
 
-fn debug_output(output: &TokenStream, derive_name: &str) {
+fn debug_output(output: &TokenStream, name: &str) {
     #[cfg(feature = "debug-tokens")]
-    eprintln!("--------OUTPUT: {}\n{}\n--------", derive_name, output);
+    eprintln!("--------OUTPUT: {}\n{}\n--------", name, output);
     #[cfg(not(feature = "debug-tokens"))]
     {
         let _ = output;
-        let _ = derive_name;
+        let _ = name;
     }
 }
 
@@ -1907,29 +1952,35 @@ pub fn derive_fixed_type_value(input: proc_macro::TokenStream) -> proc_macro::To
 #[proc_macro_derive(IO, attributes(rust_hdl))]
 pub fn derive_io(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
+    debug_input(&ast, "IO");
     let retval = match derive_io_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),
     };
+    debug_output(&retval, "IO");
     retval.into()
 }
 
 #[proc_macro_derive(PlainIO, attributes(rust_hdl))]
 pub fn derive_plain_io(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
+    debug_input(&ast, "PlainIO");
     let retval = match derive_plain_io_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),
     };
+    debug_output(&retval, "PlainIO");
     retval.into()
 }
 
 #[proc_macro]
 pub fn val(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = parse_macro_input!(input as ValInput);
+    debug_input(&ast, "val");
     let retval = match val_impl(ast) {
         Ok(retval) => retval,
         Err(e) => e.into_compile_error(),
     };
+    debug_output(&retval, "val");
     retval.into()
 }

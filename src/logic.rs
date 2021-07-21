@@ -49,7 +49,7 @@ impl<'ctx, T: Value<'ctx>> WireRef<'ctx, T> {
     pub fn ir(self) -> IrWireRef<'ctx> {
         self.ir
     }
-    pub fn read(self) -> Val<'ctx, 'ctx, T> {
+    pub fn read(self) -> Val<'ctx, T> {
         Val::from_ir_and_type_unchecked(
             self.read_value,
             ValueType::from_ir_unchecked(self.ir.ctx(), self.ir.value_type()),
@@ -100,7 +100,7 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
         Self::with_type(module, name.into(), T::static_value_type(module.ctx()))
     }
     #[track_caller]
-    pub fn assign(self, assigned_value: Val<'ctx, 'ctx, T>) -> WireRef<'ctx, T> {
+    pub fn assign(self, assigned_value: Val<'ctx, T>) -> WireRef<'ctx, T> {
         self.0.ir.assign(assigned_value.ir());
         self.0
     }
@@ -140,7 +140,7 @@ impl<'ctx, T: Value<'ctx>> RegRef<'ctx, T> {
     pub fn ir(self) -> IrRegRef<'ctx> {
         self.ir
     }
-    pub fn output(self) -> Val<'ctx, 'ctx, T> {
+    pub fn output(self) -> Val<'ctx, T> {
         Val::from_ir_and_type_unchecked(
             self.output_value,
             ValueType::from_ir_unchecked(self.ir.module().ctx(), self.ir.value_type()),
@@ -159,7 +159,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
     pub fn with_type_without_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
         name: N,
-        clk: Val<'ctx, 'ctx, bool>,
+        clk: Val<'ctx, bool>,
         value_type: ValueType<'ctx, T>,
     ) -> Self {
         let module = module.as_ir_module();
@@ -176,7 +176,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
     pub fn without_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
         name: N,
-        clk: Val<'ctx, 'ctx, bool>,
+        clk: Val<'ctx, bool>,
     ) -> Self
     where
         T: FixedTypeValue<'ctx>,
@@ -188,12 +188,11 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
     pub fn with_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
         name: N,
-        clk: Val<'ctx, 'ctx, bool>,
-        reset_enable: Val<'ctx, 'ctx, bool>,
-        reset_value: T,
+        clk: Val<'ctx, bool>,
+        reset_enable: Val<'ctx, bool>,
+        reset_value: Val<'ctx, T>,
     ) -> Self {
         let module = module.as_ir_module();
-        let reset_value = reset_value.get_value(module.ctx());
         Self::from_ir_unchecked(IrReg::new(
             module,
             SourceLocation::caller(),
@@ -210,8 +209,8 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
     pub fn new<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
         name: N,
-        clock_domain: Val<'ctx, 'ctx, ClockDomain>,
-        reset_value: T,
+        clock_domain: Val<'ctx, ClockDomain>,
+        reset_value: Val<'ctx, T>,
     ) -> Self {
         Self::with_reset(
             module,
@@ -224,7 +223,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
     #[track_caller]
     pub fn assign_data_in(
         self,
-        assigned_value: impl ToVal<'ctx, 'ctx, ValueType = T>,
+        assigned_value: impl ToVal<'ctx, ValueType = T>,
     ) -> RegRef<'ctx, T> {
         self.ir
             .assign_data_in(assigned_value.to_val(self.ir.ctx()).ir());

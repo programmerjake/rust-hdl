@@ -113,8 +113,9 @@ IrModule {
                             bit_count: 24,
                             signed: false,
                         },
-                        owning_scope: Some(
-                            IrModule {
+                        scope: Some(
+                            Scope {
+                                source_location: SourceLocation($FILE, $LINE-13, 9),
                                 path: "top",
                                 ..
                             },
@@ -166,8 +167,9 @@ IrModule {
                     bit_count: 24,
                     signed: false,
                 },
-                owning_scope: Some(
-                    IrModule {
+                scope: Some(
+                    Scope {
+                        source_location: SourceLocation($FILE, $LINE-13, 9),
                         path: "top",
                         ..
                     },

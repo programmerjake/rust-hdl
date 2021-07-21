@@ -19,7 +19,7 @@ IrModule {
                     bit_count: 1,
                     signed: false,
                 },
-                owning_scope: None,
+                scope: None,
                 elements: [
                     LiteralBits {
                         value: 0x1_u1,
