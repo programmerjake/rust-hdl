@@ -1,0 +1,70 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-1, 9),
+    parent: <None>,
+    interface_types: [
+        Input(
+            IrStructType {
+                fields: [
+                    IrStructFieldType {
+                        name: "field1",
+                        ty: IrBitVectorType {
+                            bit_count: 1,
+                            signed: false,
+                        },
+                    },
+                ],
+                flattened: IrBitVectorType {
+                    bit_count: 1,
+                    signed: false,
+                },
+            },
+        ),
+    ],
+    interface: [
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "field1",
+                                ty: IrBitVectorType {
+                                    bit_count: 1,
+                                    signed: false,
+                                },
+                            },
+                        ],
+                        flattened: IrBitVectorType {
+                            bit_count: 1,
+                            signed: false,
+                        },
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io",
+                    value_type: IrStructType {
+                        fields: [
+                            IrStructFieldType {
+                                name: "field1",
+                                ty: IrBitVectorType {
+                                    bit_count: 1,
+                                    signed: false,
+                                },
+                            },
+                        ],
+                        flattened: IrBitVectorType {
+                            bit_count: 1,
+                            signed: false,
+                        },
+                    },
+                },
+            },
+        ),
+    ],
+    wires: {},
+    registers: {},
+    ..
+}
