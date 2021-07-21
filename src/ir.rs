@@ -12,7 +12,7 @@ pub mod symbols;
 pub mod types;
 pub mod values;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceLocation<'ctx> {
     file: &'ctx str,
     line: u32,
