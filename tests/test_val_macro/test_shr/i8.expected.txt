@@ -1,0 +1,167 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-3, 9),
+    parent: <None>,
+    interface_types: [
+        Input(
+            IrBitVectorType {
+                bit_count: 8,
+                signed: true,
+            },
+        ),
+        Input(
+            IrBitVectorType {
+                bit_count: 8,
+                signed: true,
+            },
+        ),
+        Output(
+            IrBitVectorType {
+                bit_count: 8,
+                signed: true,
+            },
+        ),
+    ],
+    interface: [
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                        signed: true,
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io.lhs",
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                        signed: true,
+                    },
+                },
+            },
+        ),
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                        signed: true,
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 1,
+                    path: "io.rhs",
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                        signed: true,
+                    },
+                },
+            },
+        ),
+        Output(
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: <None>,
+                        value_type: IrBitVectorType {
+                            bit_count: 8,
+                            signed: true,
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top",
+                            index: 2,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."io.out",
+                    source_location: SourceLocation($FILE, $LINE-3, 9),
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                        signed: true,
+                    },
+                    assigned_value: SameSizeBinOp {
+                        kind: ShiftRight,
+                        value_type: IrBitVectorType {
+                            bit_count: 8,
+                            signed: true,
+                        },
+                        scope: Some(
+                            Scope {
+                                source_location: SourceLocation($FILE, $LINE-3, 9),
+                                path: "top",
+                                ..
+                            },
+                        ),
+                        lhs: IrModuleInput {
+                            module: "top",
+                            index: 0,
+                            path: "io.lhs",
+                            value_type: IrBitVectorType {
+                                bit_count: 8,
+                                signed: true,
+                            },
+                        },
+                        rhs: IrModuleInput {
+                            module: "top",
+                            index: 1,
+                            path: "io.rhs",
+                            value_type: IrBitVectorType {
+                                bit_count: 8,
+                                signed: true,
+                            },
+                        },
+                    },
+                    ..
+                },
+            },
+        ),
+    ],
+    wires: {
+        "io.out": IrWire {
+            source_location: SourceLocation($FILE, $LINE-3, 9),
+            value_type: IrBitVectorType {
+                bit_count: 8,
+                signed: true,
+            },
+            assigned_value: SameSizeBinOp {
+                kind: ShiftRight,
+                value_type: IrBitVectorType {
+                    bit_count: 8,
+                    signed: true,
+                },
+                scope: Some(
+                    Scope {
+                        source_location: SourceLocation($FILE, $LINE-3, 9),
+                        path: "top",
+                        ..
+                    },
+                ),
+                lhs: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io.lhs",
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                        signed: true,
+                    },
+                },
+                rhs: IrModuleInput {
+                    module: "top",
+                    index: 1,
+                    path: "io.rhs",
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                        signed: true,
+                    },
+                },
+            },
+            ..
+        },
+    },
+    registers: {},
+    ..
+}
