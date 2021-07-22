@@ -464,7 +464,7 @@ pub fn mux<'ctx, T: Value<'ctx>>(
 }
 
 #[track_caller]
-pub fn match_value<
+pub fn match_aggregate_value<
     'ctx,
     Ctx: AsContext<'ctx>,
     T: Value<'ctx>,
