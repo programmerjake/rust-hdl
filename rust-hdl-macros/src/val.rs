@@ -3,15 +3,20 @@
 
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, quote_spanned, ToTokens};
 use rust_hdl_int::{Int, IntShape};
-use std::{convert::TryInto, fmt, panic::Location};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    convert::TryInto,
+    fmt,
+    panic::Location,
+};
 use syn::{
     parse::{Parse, ParseStream},
     parse_quote, Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock,
-    ExprGroup, ExprIf, ExprLit, ExprMatch, Lit, LitInt, Local, Pat, PatIdent, Path, Stmt, Token,
-    UnOp,
+    ExprGroup, ExprIf, ExprLit, ExprMatch, ExprUnary, Lit, LitInt, Local, Member, Pat, PatIdent,
+    PatLit, PatRange, PatRest, PatWild, Path, Stmt, Token, UnOp,
 };
 
 use crate::{AttributesFor, RustHdlAttributes};
@@ -94,6 +99,252 @@ fn assert_no_attrs(attrs: impl AsRef<[Attribute]>) -> syn::Result<()> {
     }
 }
 
+#[derive(Default)]
+struct TempNameMaker {
+    next_index: usize,
+}
+
+impl TempNameMaker {
+    fn new() -> Self {
+        Self::default()
+    }
+    fn make_temp_name(&mut self, span: Span) -> Ident {
+        let index = self.next_index;
+        self.next_index += 1;
+        Ident::new(&format!("__temp{}", index), span)
+    }
+}
+
+#[derive(Clone, Debug)]
+enum MatchCondition {
+    Static(bool),
+    Dynamic(Ident),
+}
+
+struct PatternMatcher<'a> {
+    val_translator: &'a ValTranslator,
+    tokens: TokenStream,
+    temp_name_maker: TempNameMaker,
+}
+
+struct PatternDefinedNames(HashMap<Ident, Ident>);
+
+impl PatternDefinedNames {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+    fn define_name(&mut self, name: Ident, value: Ident) -> syn::Result<&mut Ident> {
+        match self.0.entry(name) {
+            Entry::Occupied(entry) => Err(Error::new_spanned(
+                entry.key(),
+                format_args!(
+                    "identifier `{}` is bound more than once in the same pattern",
+                    entry.key()
+                ),
+            )),
+            Entry::Vacant(entry) => Ok(entry.insert(value)),
+        }
+    }
+}
+
+impl Default for PatternDefinedNames {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+struct PatternMatchResult {
+    condition: MatchCondition,
+    defined_names: PatternDefinedNames,
+    verification_match: Pat,
+    verification_match_needs_if: bool,
+}
+
+enum PatternName {
+    EnumVariant { enum_type: Path, variant_path: Path },
+    Struct { struct_type: Path },
+    Variable { name: Ident },
+}
+
+impl PatternName {
+    fn get(path: &Path) -> Self {
+        if path.is_ident("Some")
+            || path.is_ident("None")
+            || path.is_ident("Ok")
+            || path.is_ident("Err")
+        {
+            todo!("Self::EnumVariant")
+        } else {
+            todo!()
+        }
+    }
+}
+
+struct PatternLiteral {
+    // TODO
+}
+
+impl PatternMatcher<'_> {
+    fn condition_or(
+        &mut self,
+        span: &Span,
+        conditions: impl IntoIterator<Item = MatchCondition>,
+    ) -> MatchCondition {
+        conditions
+            .into_iter()
+            .fold(MatchCondition::Static(false), |lhs, rhs| match (lhs, rhs) {
+                (MatchCondition::Static(true), _) => MatchCondition::Static(true),
+                (_, MatchCondition::Static(true)) => MatchCondition::Static(true),
+                (MatchCondition::Static(false), v) => v,
+                (v, MatchCondition::Static(false)) => v,
+                (MatchCondition::Dynamic(lhs), MatchCondition::Dynamic(rhs)) => {
+                    let temp = self.temp_name_maker.make_temp_name(span.clone());
+                    let crate_path = &self.val_translator.crate_path;
+                    self.tokens.extend(quote_spanned! {span.clone()=>
+                        let #temp = #crate_path::values::ops::HdlOr::or(#lhs, #rhs);
+                    });
+                    MatchCondition::Dynamic(temp)
+                }
+            })
+    }
+    fn condition_and(
+        &mut self,
+        span: &Span,
+        conditions: impl IntoIterator<Item = MatchCondition>,
+    ) -> MatchCondition {
+        conditions
+            .into_iter()
+            .fold(MatchCondition::Static(true), |lhs, rhs| match (lhs, rhs) {
+                (MatchCondition::Static(false), _) => MatchCondition::Static(false),
+                (_, MatchCondition::Static(false)) => MatchCondition::Static(false),
+                (MatchCondition::Static(true), v) => v,
+                (v, MatchCondition::Static(true)) => v,
+                (MatchCondition::Dynamic(lhs), MatchCondition::Dynamic(rhs)) => {
+                    let temp = self.temp_name_maker.make_temp_name(span.clone());
+                    let crate_path = &self.val_translator.crate_path;
+                    self.tokens.extend(quote_spanned! {span.clone()=>
+                        let #temp = #crate_path::values::ops::HdlAnd::and(#lhs, #rhs);
+                    });
+                    MatchCondition::Dynamic(temp)
+                }
+            })
+    }
+    fn pat_lit_expr(
+        &mut self,
+        expr: &Expr,
+        neg: Option<&Token![-]>,
+        value: &Ident,
+    ) -> syn::Result<PatternLiteral> {
+        match (expr, neg) {
+            (Expr::Lit(lit), neg) => todo_err!(lit),
+            (
+                Expr::Group(ExprGroup {
+                    attrs,
+                    group_token,
+                    expr,
+                }),
+                neg,
+            ) => {
+                assert_no_attrs(attrs)?;
+                self.pat_lit_expr(expr, neg, value)
+            }
+            (
+                Expr::Unary(ExprUnary {
+                    attrs,
+                    op: UnOp::Neg(neg),
+                    expr,
+                }),
+                None,
+            ) => {
+                assert_no_attrs(attrs)?;
+                self.pat_lit_expr(expr, Some(neg), value)
+            }
+            _ => Err(Error::new_spanned(
+                neg.map_or_else(|| expr as &dyn ToTokens, |neg| neg),
+                "unsupported match pattern",
+            )),
+        }
+    }
+    fn pat(&mut self, pat: &Pat, value: &Ident) -> syn::Result<PatternMatchResult> {
+        match pat {
+            Pat::Ident(PatIdent {
+                attrs,
+                by_ref,
+                mutability,
+                ident,
+                subpat,
+            }) => {
+                assert_no_attrs(attrs)?;
+                if let Some(by_ref) = by_ref {
+                    return Err(Error::new_spanned(by_ref, "`ref` not supported"));
+                }
+                if let Some(mutability) = mutability {
+                    return Err(Error::new_spanned(mutability, "`mut` not supported"));
+                }
+                if let Some((_, subpat)) = subpat {
+                    let mut retval = self.pat(subpat, value)?;
+                    retval
+                        .defined_names
+                        .define_name(ident.clone(), value.clone())?;
+                    Ok(retval)
+                } else {
+                    let mut defined_names = PatternDefinedNames::new();
+                    defined_names.define_name(ident.clone(), value.clone())?;
+                    Ok(PatternMatchResult {
+                        condition: MatchCondition::Static(true),
+                        defined_names,
+                        verification_match: pat.clone(),
+                        verification_match_needs_if: false,
+                    })
+                }
+            }
+            Pat::Lit(PatLit { attrs, expr }) => {
+                assert_no_attrs(attrs)?;
+                let expr = self.pat_lit_expr(expr, None, value)?;
+                todo_err!(pat)
+            }
+            Pat::Or(pat) => todo_err!(pat),
+            Pat::Path(pat) => todo_err!(pat),
+            Pat::Range(PatRange {
+                attrs,
+                lo,
+                limits,
+                hi,
+            }) => {
+                assert_no_attrs(attrs)?;
+                let lo = self.pat_lit_expr(lo, None, value)?;
+                let hi = self.pat_lit_expr(hi, None, value)?;
+                todo_err!(pat)
+            }
+            Pat::Slice(pat) => todo_err!(pat),
+            Pat::Struct(pat) => todo_err!(pat),
+            Pat::Tuple(pat) => todo_err!(pat),
+            Pat::TupleStruct(pat) => todo_err!(pat),
+            Pat::Wild(PatWild {
+                attrs,
+                underscore_token,
+            }) => {
+                assert_no_attrs(attrs)?;
+                Ok(PatternMatchResult {
+                    condition: MatchCondition::Static(true),
+                    defined_names: PatternDefinedNames::new(),
+                    verification_match: pat.clone(),
+                    verification_match_needs_if: false,
+                })
+            }
+            Pat::Rest(pat) => todo_err!(pat),
+            _ => Err(Error::new_spanned(pat, "unsupported match pattern")),
+        }
+    }
+}
+
+struct MatchArmPatResult {
+    match_cond: MatchCondition,
+    tokens: TokenStream,
+}
+
+struct MatchArmResult {}
+
 struct ValTranslator {
     crate_path: Path,
     module: Ident,
@@ -101,6 +352,73 @@ struct ValTranslator {
 }
 
 impl ValTranslator {
+    fn match_arm(&self, arm: &Arm) -> syn::Result<MatchArmResult> {
+        let Arm {
+            attrs,
+            pat,
+            guard,
+            fat_arrow_token,
+            body,
+            comma,
+        } = arm;
+        assert_no_attrs(attrs)?;
+        let mut pattern_matcher = PatternMatcher {
+            val_translator: self,
+            temp_name_maker: TempNameMaker::new(),
+            tokens: quote! {},
+        };
+        let PatternMatchResult {
+            condition,
+            defined_names,
+            verification_match,
+            verification_match_needs_if,
+        } = pattern_matcher.pat(pat, todo_err!(pat))?;
+        if let Some(guard) = guard {
+            todo_err!(guard.0);
+        }
+        todo_err!(fat_arrow_token)
+    }
+
+    fn expr_match(&self, expr_match: &ExprMatch) -> syn::Result<TokenStream> {
+        let Self {
+            crate_path,
+            module,
+            scope,
+        } = self;
+        let ExprMatch {
+            attrs,
+            match_token,
+            expr,
+            brace_token,
+            arms,
+        } = expr_match;
+        assert_no_attrs(attrs)?;
+        let expr = self.expr(expr)?;
+        let generated_arms = arms
+            .into_iter()
+            .map(|arm| {
+                self.match_arm(arm)?;
+                todo_err!(arm)
+            })
+            .collect::<syn::Result<Vec<i32>>>()?;
+        Ok(quote_spanned! {match_token.span=>
+            #crate_path::values::ops::match_aggregate_value(
+                #module,
+                #expr,
+                #scope,
+                |__arg| {
+                    let #crate_path::values::aggregate::AggregateValueMatchArm {
+                        value: __value,
+                        match_arm_scope: #scope,
+                    } = __arg;
+                    ::core::result::Result::<_, ::core::convert::Infallible>::Ok(match __value {
+                        #(#generated_arms)*
+                    })
+                },
+            ).unwrap()
+        })
+    }
+
     fn expr_lit(&self, neg: Option<&Token![-]>, lit: &ExprLit) -> syn::Result<TokenStream> {
         let Self {
             crate_path,
@@ -245,81 +563,6 @@ impl ValTranslator {
         };
         Ok(quote_spanned! {if_token.span=>
             #crate_path::values::ops::mux(#cond, #then_branch, #else_branch)
-        })
-    }
-
-    fn match_aggregate_arm_pat(&self, pat: &Pat) -> syn::Result<TokenStream> {
-        match pat {
-            Pat::Ident(PatIdent {
-                attrs,
-                by_ref,
-                mutability,
-                ident,
-                subpat,
-            }) => todo_err!(pat),
-            Pat::Lit(pat) => todo_err!(pat),
-            Pat::Or(pat) => todo_err!(pat),
-            Pat::Path(pat) => todo_err!(pat),
-            Pat::Range(pat) => todo_err!(pat),
-            Pat::Slice(pat) => todo_err!(pat),
-            Pat::Struct(pat) => todo_err!(pat),
-            Pat::Tuple(pat) => todo_err!(pat),
-            Pat::TupleStruct(pat) => todo_err!(pat),
-            Pat::Wild(pat) => todo_err!(pat),
-            Pat::Rest(pat) => todo_err!(pat),
-            _ => Err(Error::new_spanned(pat, "unsupported match pattern")),
-        }
-    }
-
-    fn match_aggregate_arm(&self, arm: &Arm) -> syn::Result<TokenStream> {
-        let Arm {
-            attrs,
-            pat,
-            guard,
-            fat_arrow_token,
-            body,
-            comma,
-        } = arm;
-        assert_no_attrs(attrs)?;
-        let pat = self.match_aggregate_arm_pat(pat)?;
-        todo_err!(fat_arrow_token)
-    }
-
-    fn expr_match(&self, expr_match: &ExprMatch) -> syn::Result<TokenStream> {
-        let Self {
-            crate_path,
-            module,
-            scope,
-        } = self;
-        let ExprMatch {
-            attrs,
-            match_token,
-            expr,
-            brace_token,
-            arms,
-        } = expr_match;
-        assert_no_attrs(attrs)?;
-        let expr = self.expr(expr)?;
-        // TODO implement matching more than just aggregates
-        let generated_arms = arms
-            .into_iter()
-            .map(|arm| self.match_aggregate_arm(arm))
-            .collect::<syn::Result<Vec<_>>>()?;
-        Ok(quote_spanned! {match_token.span=>
-            #crate_path::values::ops::match_aggregate_value(
-                #module,
-                #expr,
-                #scope,
-                |__arg| {
-                    let #crate_path::values::aggregate::AggregateValueMatchArm {
-                        value: __value,
-                        match_arm_scope: #scope,
-                    } = __arg;
-                    ::core::result::Result::<_, ::core::convert::Infallible>::Ok(match __value {
-                        #(#generated_arms)*
-                    })
-                },
-            ).unwrap()
         })
     }
 
