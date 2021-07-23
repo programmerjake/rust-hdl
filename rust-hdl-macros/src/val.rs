@@ -15,8 +15,8 @@ use std::{
 use syn::{
     parse::{Parse, ParseStream},
     parse_quote, Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock,
-    ExprGroup, ExprIf, ExprLit, ExprMatch, ExprUnary, Lit, LitInt, Local, Member, Pat, PatIdent,
-    PatLit, PatRange, PatRest, PatWild, Path, Stmt, Token, UnOp,
+    ExprGroup, ExprIf, ExprLit, ExprMatch, ExprUnary, Lit, LitBool, LitByte, LitByteStr, LitInt,
+    Local, Member, Pat, PatIdent, PatLit, PatRange, PatRest, PatWild, Path, Stmt, Token, UnOp,
 };
 
 use crate::{AttributesFor, RustHdlAttributes};
@@ -180,8 +180,11 @@ impl PatternName {
     }
 }
 
-struct PatternLiteral {
-    // TODO
+enum PatternLiteral {
+    Int(BigInt, Option<IntShape>),
+    ByteStr(LitByteStr),
+    Byte(LitByte),
+    Bool(LitBool),
 }
 
 impl PatternMatcher<'_> {
@@ -229,38 +232,67 @@ impl PatternMatcher<'_> {
                 }
             })
     }
+    fn pat_lit_expr_lit(
+        &mut self,
+        expr_lit: &ExprLit,
+        sign: Option<&Token![-]>,
+    ) -> syn::Result<PatternLiteral> {
+        let ExprLit { attrs, lit } = expr_lit;
+        assert_no_attrs(attrs)?;
+        match lit {
+            Lit::Int(lit) => {
+                let (value, shape) = parse_int_literal(sign, lit)?;
+                Ok(PatternLiteral::Int(value, shape))
+            }
+            Lit::Float(lit) => Err(Error::new_spanned(lit, "float literals are not supported")),
+            _ if sign.is_some() => Err(Error::new_spanned(sign, "literal not supported")),
+            Lit::ByteStr(lit) => Ok(PatternLiteral::ByteStr(lit.clone())),
+            Lit::Byte(lit) => Ok(PatternLiteral::Byte(lit.clone())),
+            Lit::Bool(lit) => Ok(PatternLiteral::Bool(lit.clone())),
+            Lit::Str(lit) => Err(Error::new_spanned(
+                lit,
+                "string literals are not supported, \
+                did you mean to use byte strings instead? (`b\"...\"`)",
+            )),
+            Lit::Char(lit) => Err(Error::new_spanned(
+                lit,
+                "char literals are not supported, \
+                did you mean to use byte literals instead? (`b\'...\'`)",
+            )),
+            Lit::Verbatim(lit) => Err(Error::new_spanned(lit, "literal not supported")),
+        }
+    }
     fn pat_lit_expr(
         &mut self,
         expr: &Expr,
-        neg: Option<&Token![-]>,
-        value: &Ident,
+        sign: Option<&Token![-]>,
     ) -> syn::Result<PatternLiteral> {
-        match (expr, neg) {
-            (Expr::Lit(lit), neg) => todo_err!(lit),
+        match (expr, sign) {
+            (Expr::Lit(expr_lit), sign) => self.pat_lit_expr_lit(expr_lit, sign),
             (
                 Expr::Group(ExprGroup {
                     attrs,
-                    group_token,
+                    group_token: _,
                     expr,
                 }),
-                neg,
+                sign,
             ) => {
                 assert_no_attrs(attrs)?;
-                self.pat_lit_expr(expr, neg, value)
+                self.pat_lit_expr(expr, sign)
             }
             (
                 Expr::Unary(ExprUnary {
                     attrs,
-                    op: UnOp::Neg(neg),
+                    op: UnOp::Neg(sign),
                     expr,
                 }),
                 None,
             ) => {
                 assert_no_attrs(attrs)?;
-                self.pat_lit_expr(expr, Some(neg), value)
+                self.pat_lit_expr(expr, Some(sign))
             }
             _ => Err(Error::new_spanned(
-                neg.map_or_else(|| expr as &dyn ToTokens, |neg| neg),
+                sign.map_or_else(|| expr as &dyn ToTokens, |sign| sign),
                 "unsupported match pattern",
             )),
         }
@@ -300,7 +332,7 @@ impl PatternMatcher<'_> {
             }
             Pat::Lit(PatLit { attrs, expr }) => {
                 assert_no_attrs(attrs)?;
-                let expr = self.pat_lit_expr(expr, None, value)?;
+                let lit = self.pat_lit_expr(expr, None)?;
                 todo_err!(pat)
             }
             Pat::Or(pat) => todo_err!(pat),
@@ -312,8 +344,8 @@ impl PatternMatcher<'_> {
                 hi,
             }) => {
                 assert_no_attrs(attrs)?;
-                let lo = self.pat_lit_expr(lo, None, value)?;
-                let hi = self.pat_lit_expr(hi, None, value)?;
+                let lo = self.pat_lit_expr(lo, None)?;
+                let hi = self.pat_lit_expr(hi, None)?;
                 todo_err!(pat)
             }
             Pat::Slice(pat) => todo_err!(pat),
