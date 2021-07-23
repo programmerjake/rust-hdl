@@ -16,7 +16,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_quote, Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock,
     ExprGroup, ExprIf, ExprLit, ExprMatch, ExprUnary, Lit, LitBool, LitByte, LitByteStr, LitInt,
-    Local, Member, Pat, PatIdent, PatLit, PatRange, PatRest, PatWild, Path, Stmt, Token, UnOp,
+    Local, Member, Pat, PatIdent, PatLit, PatPath, PatRange, PatRest, PatWild, Path, QSelf, Stmt,
+    Token, UnOp,
 };
 
 use crate::{AttributesFor, RustHdlAttributes};
@@ -127,6 +128,16 @@ struct PatternMatcher<'a> {
     temp_name_maker: TempNameMaker,
 }
 
+impl<'a> PatternMatcher<'a> {
+    fn new(val_translator: &'a ValTranslator) -> Self {
+        Self {
+            val_translator,
+            tokens: quote! {},
+            temp_name_maker: TempNameMaker::new(),
+        }
+    }
+}
+
 struct PatternDefinedNames(HashMap<Ident, Ident>);
 
 impl PatternDefinedNames {
@@ -160,22 +171,59 @@ struct PatternMatchResult {
     verification_match_needs_if: bool,
 }
 
-enum PatternName {
-    EnumVariant { enum_type: Path, variant_path: Path },
-    Struct { struct_type: Path },
-    Variable { name: Ident },
+enum PatPathKind {
+    EnumVariant {
+        qself: Option<QSelf>,
+        enum_type: Path,
+        variant_path: Path,
+    },
+    Struct {
+        qself: Option<QSelf>,
+        struct_type: Path,
+    },
+    Variable {
+        name: Ident,
+    },
 }
 
-impl PatternName {
-    fn get(path: &Path) -> Self {
-        if path.is_ident("Some")
-            || path.is_ident("None")
-            || path.is_ident("Ok")
-            || path.is_ident("Err")
-        {
-            todo!("Self::EnumVariant")
+impl PatPathKind {
+    fn get(qself: Option<QSelf>, path: Path) -> Self {
+        if path.segments.len() >= 2 {
+            let mut enum_type = path.clone();
+            enum_type.segments.pop();
+            Self::EnumVariant {
+                qself,
+                enum_type,
+                variant_path: path,
+            }
+        } else if qself.is_some() {
+            Self::Struct {
+                qself,
+                struct_type: path,
+            }
+        } else if path.is_ident("None") {
+            Self::EnumVariant {
+                qself: None,
+                enum_type: parse_quote! { ::core::option::Option },
+                variant_path: path,
+            }
+        } else if let Some(ident) = path.get_ident() {
+            let ident_str = ident.to_string();
+            if ident_str.chars().next().map(char::is_uppercase) == Some(true) {
+                Self::Struct {
+                    qself: None,
+                    struct_type: path,
+                }
+            } else {
+                Self::Variable {
+                    name: ident.clone(),
+                }
+            }
         } else {
-            todo!()
+            Self::Struct {
+                qself: None,
+                struct_type: path,
+            }
         }
     }
 }
@@ -297,6 +345,30 @@ impl PatternMatcher<'_> {
             )),
         }
     }
+    fn pat_path(&mut self, pat_path: PatPath, value: &Ident) -> syn::Result<PatternMatchResult> {
+        let PatPath { attrs, qself, path } = pat_path;
+        assert_no_attrs(attrs)?;
+        match PatPathKind::get(qself, path) {
+            PatPathKind::EnumVariant {
+                qself,
+                enum_type,
+                variant_path,
+            } => todo_err!(variant_path, "match unit enum"),
+            PatPathKind::Struct { qself, struct_type } => {
+                todo_err!(struct_type, "match unit struct")
+            }
+            PatPathKind::Variable { name } => {
+                let mut defined_names = PatternDefinedNames::new();
+                defined_names.define_name(name.clone(), value.clone())?;
+                Ok(PatternMatchResult {
+                    condition: MatchCondition::Static(true),
+                    defined_names,
+                    verification_match: parse_quote! {#name},
+                    verification_match_needs_if: false,
+                })
+            }
+        }
+    }
     fn pat(&mut self, pat: &Pat, value: &Ident) -> syn::Result<PatternMatchResult> {
         match pat {
             Pat::Ident(PatIdent {
@@ -320,14 +392,14 @@ impl PatternMatcher<'_> {
                         .define_name(ident.clone(), value.clone())?;
                     Ok(retval)
                 } else {
-                    let mut defined_names = PatternDefinedNames::new();
-                    defined_names.define_name(ident.clone(), value.clone())?;
-                    Ok(PatternMatchResult {
-                        condition: MatchCondition::Static(true),
-                        defined_names,
-                        verification_match: pat.clone(),
-                        verification_match_needs_if: false,
-                    })
+                    self.pat_path(
+                        PatPath {
+                            attrs: Vec::new(),
+                            qself: None,
+                            path: ident.clone().into(),
+                        },
+                        value,
+                    )
                 }
             }
             Pat::Lit(PatLit { attrs, expr }) => {
@@ -336,7 +408,7 @@ impl PatternMatcher<'_> {
                 todo_err!(pat)
             }
             Pat::Or(pat) => todo_err!(pat),
-            Pat::Path(pat) => todo_err!(pat),
+            Pat::Path(pat_path) => self.pat_path(pat_path.clone(), value),
             Pat::Range(PatRange {
                 attrs,
                 lo,
@@ -354,7 +426,7 @@ impl PatternMatcher<'_> {
             Pat::TupleStruct(pat) => todo_err!(pat),
             Pat::Wild(PatWild {
                 attrs,
-                underscore_token,
+                underscore_token: _,
             }) => {
                 assert_no_attrs(attrs)?;
                 Ok(PatternMatchResult {
@@ -370,13 +442,6 @@ impl PatternMatcher<'_> {
     }
 }
 
-struct MatchArmPatResult {
-    match_cond: MatchCondition,
-    tokens: TokenStream,
-}
-
-struct MatchArmResult {}
-
 struct ValTranslator {
     crate_path: Path,
     module: Ident,
@@ -384,33 +449,6 @@ struct ValTranslator {
 }
 
 impl ValTranslator {
-    fn match_arm(&self, arm: &Arm) -> syn::Result<MatchArmResult> {
-        let Arm {
-            attrs,
-            pat,
-            guard,
-            fat_arrow_token,
-            body,
-            comma,
-        } = arm;
-        assert_no_attrs(attrs)?;
-        let mut pattern_matcher = PatternMatcher {
-            val_translator: self,
-            temp_name_maker: TempNameMaker::new(),
-            tokens: quote! {},
-        };
-        let PatternMatchResult {
-            condition,
-            defined_names,
-            verification_match,
-            verification_match_needs_if,
-        } = pattern_matcher.pat(pat, todo_err!(pat))?;
-        if let Some(guard) = guard {
-            todo_err!(guard.0);
-        }
-        todo_err!(fat_arrow_token)
-    }
-
     fn expr_match(&self, expr_match: &ExprMatch) -> syn::Result<TokenStream> {
         let Self {
             crate_path,
@@ -421,33 +459,132 @@ impl ValTranslator {
             attrs,
             match_token,
             expr,
-            brace_token,
+            brace_token: _,
             arms,
         } = expr_match;
         assert_no_attrs(attrs)?;
         let expr = self.expr(expr)?;
-        let generated_arms = arms
-            .into_iter()
-            .map(|arm| {
-                self.match_arm(arm)?;
-                todo_err!(arm)
-            })
-            .collect::<syn::Result<Vec<i32>>>()?;
+        let mut pattern_matcher = PatternMatcher::new(self);
+        let value = pattern_matcher
+            .temp_name_maker
+            .make_temp_name(match_token.span.clone());
+        pattern_matcher
+            .tokens
+            .extend(quote_spanned! {match_token.span=>
+                let #value = #crate_path::values::ops::shrink_scope(#expr, #scope);
+                let __matched = #crate_path::values::Value::get_value(&false, #module);
+            });
+        let mut verification_match_arms = Vec::new();
+        struct MatchArmOutput {
+            value: Ident,
+            matched: Ident,
+        }
+        let mut match_arm_outputs = Vec::new();
+        for Arm {
+            attrs,
+            pat,
+            guard,
+            fat_arrow_token,
+            body,
+            comma: _,
+        } in arms
+        {
+            assert_no_attrs(attrs)?;
+            let PatternMatchResult {
+                condition,
+                defined_names,
+                verification_match,
+                verification_match_needs_if,
+            } = pattern_matcher.pat(pat, &value)?;
+            let verification_match_if = if verification_match_needs_if || guard.is_some() {
+                quote! { if __condition() }
+            } else {
+                quote! {}
+            };
+            verification_match_arms.push(quote_spanned! {fat_arrow_token.spans[0]=>
+                #verification_match #verification_match_if => {}
+            });
+            let condition = if let Some((if_kw, guard_expr)) = guard {
+                let guard_expr = self.expr(guard_expr)?;
+                let guard_expr = quote_spanned! {if_kw.span=>
+                    #crate_path::values::ops::shrink_scope::<'_, bool>(#guard_expr, #scope)
+                };
+                match condition {
+                    MatchCondition::Static(true) => guard_expr,
+                    MatchCondition::Static(false) => quote_spanned! {if_kw.span=>
+                        {
+                            let _ = #guard_expr;
+                            #crate_path::values::Value::get_value(&false, #module)
+                        }
+                    },
+                    MatchCondition::Dynamic(condition) => quote_spanned! {if_kw.span=>
+                        <bool as #crate_path::values::ops::HdlAnd<'_, bool>>::and(#condition, #guard_expr)
+                    },
+                }
+            } else {
+                match condition {
+                    MatchCondition::Static(condition) => quote_spanned! {fat_arrow_token.spans[0]=>
+                        #crate_path::values::Value::get_value(&#condition, #module)
+                    },
+                    MatchCondition::Dynamic(condition) => quote! { #condition },
+                }
+            };
+            let define_names: Vec<_> = defined_names
+                .0
+                .iter()
+                .map(|(name, value)| {
+                    quote_spanned! {name.span()=>
+                        let #name = #crate_path::values::ops::shrink_scope(#value, #scope);
+                    }
+                })
+                .collect();
+            let body = self.expr(body)?;
+            let value = pattern_matcher
+                .temp_name_maker
+                .make_temp_name(fat_arrow_token.spans[0].clone());
+            let matched = pattern_matcher
+                .temp_name_maker
+                .make_temp_name(fat_arrow_token.spans[0].clone());
+            pattern_matcher
+                .tokens
+                .extend(quote_spanned! {fat_arrow_token.spans[0]=>
+                    let #value;
+                    let #matched = {
+                        let __match_scope = #scope;
+                        let #scope = #crate_path::ir::scope::Scope::new(__match_scope, #crate_path::ir::SourceLocation::caller());
+                        #(#define_names)*
+                        #value = #crate_path::values::ops::expand_scope(#body, #scope, __match_scope);
+                        #crate_path::values::ops::expand_scope(#condition, #scope, __match_scope)
+                    };
+                });
+            match_arm_outputs.push(MatchArmOutput { value, matched });
+        }
+        let result = if let Some(MatchArmOutput {
+            value: last_value,
+            matched: last_matched,
+        }) = match_arm_outputs.pop()
+        {
+            let mut muxes = Vec::new();
+            for MatchArmOutput { value, matched } in match_arm_outputs.into_iter().rev() {
+                muxes.push(quote_spanned! {value.span()=>
+                    let __result = #crate_path::values::ops::mux(#matched, #value, __result);
+                });
+            }
+            quote_spanned! {match_token.span=>
+                let _ = #last_matched;
+                let __result = #last_value;
+                #(#muxes)*
+                __result
+            }
+        } else {
+            todo_err!(match_token, "match of uninhabited value")
+        };
+        let tokens = pattern_matcher.tokens;
         Ok(quote_spanned! {match_token.span=>
-            #crate_path::values::ops::match_aggregate_value(
-                #module,
-                #expr,
-                #scope,
-                |__arg| {
-                    let #crate_path::values::aggregate::AggregateValueMatchArm {
-                        value: __value,
-                        match_arm_scope: #scope,
-                    } = __arg;
-                    ::core::result::Result::<_, ::core::convert::Infallible>::Ok(match __value {
-                        #(#generated_arms)*
-                    })
-                },
-            ).unwrap()
+            {
+                #tokens
+                #result
+            }
         })
     }
 

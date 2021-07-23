@@ -6,9 +6,10 @@ use crate::{
     ir::{
         scope::ScopeRef,
         values::{
-            BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExtractEnumVariantFields,
-            ExtractStructField, IrValue, LiteralBits, MatchArmForEnum, MatchEnum, Mux,
-            SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind,
+            BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExpandScope,
+            ExtractEnumVariantFields, ExtractStructField, IrValue, LiteralBits, MatchArmForEnum,
+            MatchEnum, Mux, SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind,
+            ShrinkScope,
         },
         SourceLocation,
     },
@@ -567,5 +568,41 @@ pub fn match_enum_unchecked<
             &caller,
         ))
         .intern(ctx),
+    )
+}
+
+#[track_caller]
+pub fn shrink_scope<'ctx, T: Value<'ctx>>(
+    value: Val<'ctx, T>,
+    scope: ScopeRef<'ctx>,
+) -> Val<'ctx, T> {
+    Val::from_ir_and_type_unchecked(
+        IrValue::from(ShrinkScope::new(
+            value.ctx(),
+            value.ir(),
+            scope,
+            &SourceLocation::caller(),
+        ))
+        .intern(value.ctx()),
+        value.value_type(),
+    )
+}
+
+#[track_caller]
+pub fn expand_scope<'ctx, T: Value<'ctx>>(
+    value: Val<'ctx, T>,
+    input_scope: ScopeRef<'ctx>,
+    result_scope: ScopeRef<'ctx>,
+) -> Val<'ctx, T> {
+    Val::from_ir_and_type_unchecked(
+        IrValue::from(ExpandScope::new(
+            value.ctx(),
+            value.ir(),
+            input_scope,
+            result_scope,
+            &SourceLocation::caller(),
+        ))
+        .intern(value.ctx()),
+        value.value_type(),
     )
 }
