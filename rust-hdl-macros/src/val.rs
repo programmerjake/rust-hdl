@@ -7,17 +7,19 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, quote_spanned, ToTokens};
 use rust_hdl_int::{Int, IntShape};
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    cmp::Ordering,
+    collections::{btree_map::Entry, BTreeMap},
     convert::TryInto,
-    fmt,
+    fmt, iter,
     panic::Location,
 };
 use syn::{
     parse::{Parse, ParseStream},
-    parse_quote, Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock,
-    ExprGroup, ExprIf, ExprLit, ExprMatch, ExprUnary, Lit, LitBool, LitByte, LitByteStr, LitInt,
-    Local, Member, Pat, PatIdent, PatLit, PatPath, PatRange, PatRest, PatWild, Path, QSelf, Stmt,
-    Token, UnOp,
+    parse_quote,
+    punctuated::{Pair, Punctuated},
+    Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprGroup, ExprIf,
+    ExprLit, ExprMatch, ExprUnary, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Member, Pat,
+    PatIdent, PatLit, PatOr, PatPath, PatRange, PatRest, PatWild, Path, QSelf, Stmt, Token, UnOp,
 };
 
 use crate::{AttributesFor, RustHdlAttributes};
@@ -138,11 +140,11 @@ impl<'a> PatternMatcher<'a> {
     }
 }
 
-struct PatternDefinedNames(HashMap<Ident, Ident>);
+struct PatternDefinedNames(BTreeMap<Ident, Ident>);
 
 impl PatternDefinedNames {
     fn new() -> Self {
-        Self(HashMap::new())
+        Self(BTreeMap::new())
     }
     fn define_name(&mut self, name: Ident, value: Ident) -> syn::Result<&mut Ident> {
         match self.0.entry(name) {
@@ -155,6 +157,28 @@ impl PatternDefinedNames {
             )),
             Entry::Vacant(entry) => Ok(entry.insert(value)),
         }
+    }
+    fn check_same_names<'a, E>(
+        &'a self,
+        later_defined_names: &'a Self,
+        handle_earlier_without_later: impl FnOnce(&'a Ident) -> E,
+        handle_later_without_earlier: impl FnOnce(&'a Ident) -> E,
+    ) -> Result<(), E> {
+        let mut earlier_iter = self.0.keys();
+        let mut later_iter = self.0.keys();
+        loop {
+            match (earlier_iter.next(), later_iter.next()) {
+                (None, None) => break,
+                (None, Some(later)) => return Err(handle_later_without_earlier(later)),
+                (Some(earlier), None) => return Err(handle_earlier_without_later(earlier)),
+                (Some(earlier), Some(later)) => match earlier.cmp(later) {
+                    Ordering::Less => return Err(handle_earlier_without_later(earlier)),
+                    Ordering::Equal => {}
+                    Ordering::Greater => return Err(handle_later_without_earlier(later)),
+                },
+            }
+        }
+        Ok(())
     }
 }
 
@@ -201,10 +225,16 @@ impl PatPathKind {
                 qself,
                 struct_type: path,
             }
-        } else if path.is_ident("None") {
+        } else if path.is_ident("None") || path.is_ident("Some") {
             Self::EnumVariant {
                 qself: None,
                 enum_type: parse_quote! { ::core::option::Option },
+                variant_path: path,
+            }
+        } else if path.is_ident("Ok") || path.is_ident("Err") {
+            Self::EnumVariant {
+                qself: None,
+                enum_type: parse_quote! { ::core::result::Result },
                 variant_path: path,
             }
         } else if let Some(ident) = path.get_ident() {
@@ -369,6 +399,117 @@ impl PatternMatcher<'_> {
             }
         }
     }
+    fn pat_or(&mut self, pat_or: &PatOr, value: &Ident) -> syn::Result<PatternMatchResult> {
+        let crate_path = &self.val_translator.crate_path;
+        let PatOr {
+            attrs,
+            leading_vert,
+            cases,
+        } = pat_or;
+        assert_no_attrs(attrs)?;
+        if cases.len() == 1 {
+            return self.pat(&cases[0], value);
+        }
+        let mut verification_match_needs_if = false;
+        let mut verification_match_cases = Punctuated::new();
+        struct ParsedCase {
+            condition: MatchCondition,
+            defined_names: PatternDefinedNames,
+            prev_or: Token![|],
+        }
+        let mut parsed_cases = Vec::<ParsedCase>::new();
+        let mut prev_or = None;
+        for (case, case_or) in cases.pairs().map(Pair::into_tuple) {
+            let PatternMatchResult {
+                condition,
+                defined_names,
+                verification_match,
+                verification_match_needs_if: needs_if,
+            } = self.pat(case, value)?;
+            if let Some(last_case) = parsed_cases.last() {
+                last_case.defined_names.check_same_names(
+                    &defined_names,
+                    |earlier| {
+                        Error::new_spanned(
+                            case,
+                            format_args!(
+                                "variable `{}` is not bound in this pattern even \
+                                though it is bound in previous patterns",
+                                earlier
+                            ),
+                        )
+                    },
+                    |later| {
+                        Error::new_spanned(
+                            case,
+                            format_args!(
+                                "variable `{}` is not bound in this pattern even \
+                                though it is bound in later patterns",
+                                later
+                            ),
+                        )
+                    },
+                )?;
+            }
+            parsed_cases.push(ParsedCase {
+                condition,
+                defined_names,
+                prev_or: prev_or.unwrap_or_default(),
+            });
+            prev_or = case_or.cloned();
+            verification_match_needs_if |= needs_if;
+            verification_match_cases
+                .extend(iter::once(Pair::new(verification_match, case_or.cloned())));
+        }
+        let ParsedCase {
+            mut condition,
+            mut defined_names,
+            prev_or: _,
+        } = parsed_cases
+            .pop()
+            .expect("PatOr always has at least one case");
+        for ParsedCase {
+            condition: case_condition,
+            defined_names: case_defined_names,
+            prev_or,
+        } in parsed_cases.into_iter().rev()
+        {
+            match case_condition {
+                MatchCondition::Static(false) => continue,
+                MatchCondition::Static(true) => {
+                    defined_names = case_defined_names;
+                    condition = case_condition;
+                }
+                MatchCondition::Dynamic(case_condition) => {
+                    for (name, value) in defined_names.0.iter_mut() {
+                        let new_value = self.temp_name_maker.make_temp_name(prev_or.span.clone());
+                        let lhs_value = case_defined_names
+                            .0
+                            .get(name)
+                            .expect("already checked for same names above");
+                        self.tokens.extend(quote_spanned! {prev_or.span=>
+                            let #new_value = #crate_path::values::ops::mux(#case_condition, #lhs_value, #value);
+                        });
+                        *value = new_value;
+                    }
+                    condition = self.condition_or(
+                        &prev_or.span,
+                        [condition, MatchCondition::Dynamic(case_condition)],
+                    );
+                }
+            }
+        }
+        Ok(PatternMatchResult {
+            condition,
+            defined_names,
+            verification_match: Pat::Or(PatOr {
+                attrs: Vec::new(),
+                leading_vert: leading_vert.clone(),
+                cases: verification_match_cases,
+            }),
+            verification_match_needs_if,
+        })
+    }
     fn pat(&mut self, pat: &Pat, value: &Ident) -> syn::Result<PatternMatchResult> {
         match pat {
             Pat::Ident(PatIdent {
@@ -407,7 +548,7 @@ impl PatternMatcher<'_> {
                 let lit = self.pat_lit_expr(expr, None)?;
                 todo_err!(pat)
             }
-            Pat::Or(pat) => todo_err!(pat),
+            Pat::Or(pat_or) => self.pat_or(pat_or, value),
             Pat::Path(pat_path) => self.pat_path(pat_path.clone(), value),
             Pat::Range(PatRange {
                 attrs,
