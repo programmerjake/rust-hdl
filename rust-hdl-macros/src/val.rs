@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
+use crate::{AttributesFor, RustHdlAttributes};
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -17,56 +18,124 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_quote,
     punctuated::{Pair, Punctuated},
+    spanned::Spanned,
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprGroup, ExprIf,
-    ExprLit, ExprMatch, ExprUnary, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Member, Pat,
-    PatIdent, PatLit, PatOr, PatPath, PatRange, PatRest, PatWild, Path, QSelf, Stmt, Token, UnOp,
+    ExprLit, ExprMatch, ExprUnary, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent,
+    PatLit, PatOr, PatPath, PatRange, PatWild, Path, QSelf, Stmt, Token, TypePath, UnOp,
 };
 
-use crate::{AttributesFor, RustHdlAttributes};
+#[derive(Clone)]
+struct IntLiteral {
+    span: Span,
+    value: BigInt,
+    shape: Option<IntShape>,
+}
 
-fn parse_int_literal(
-    sign: Option<&Token![-]>,
-    lit: &LitInt,
-) -> syn::Result<(BigInt, Option<IntShape>)> {
-    let mut value: BigInt = lit.base10_parse()?;
-    if sign.is_some() {
-        value = -value;
-    }
-    if lit.suffix().is_empty() {
-        return Ok((value, None));
-    }
-    let shape: IntShape = lit
-        .suffix()
-        .parse()
-        .map_err(|e| Error::new_spanned(&lit, format!("invalid literal type: {}", e)))?;
-    let mut adjusted_shape = shape;
-    let adjusted_shape = loop {
-        if value == Int::wrapping_with_shape(value.clone(), adjusted_shape).into_value() {
-            break Some(adjusted_shape);
+impl IntLiteral {
+    fn parse(sign: Option<&Token![-]>, lit: &LitInt) -> syn::Result<Self> {
+        let span = lit.span();
+        let mut value: BigInt = lit.base10_parse()?;
+        if sign.is_some() {
+            value = -value;
         }
-        if let Some(bit_count) = adjusted_shape.bit_count.checked_add(1) {
-            // avoid many iterations by using bits() to get a value close to the correct answer
-            if let Ok(bits) = value.bits().try_into() {
-                adjusted_shape.bit_count = bit_count.max(bits);
-                continue;
+        if lit.suffix().is_empty() {
+            return Ok(IntLiteral {
+                span,
+                value,
+                shape: None,
+            });
+        }
+        let shape: IntShape = lit
+            .suffix()
+            .parse()
+            .map_err(|e| Error::new_spanned(&lit, format!("invalid literal type: {}", e)))?;
+        let mut adjusted_shape = shape;
+        let adjusted_shape = loop {
+            if value == Int::wrapping_with_shape(value.clone(), adjusted_shape).into_value() {
+                break Some(adjusted_shape);
             }
+            if let Some(bit_count) = adjusted_shape.bit_count.checked_add(1) {
+                // avoid many iterations by using bits() to get a value close to the correct answer
+                if let Ok(bits) = value.bits().try_into() {
+                    adjusted_shape.bit_count = bit_count.max(bits);
+                    continue;
+                }
+            }
+            break None;
+        };
+        if adjusted_shape != Some(shape) {
+            Err(Error::new_spanned(
+                quote! {#sign #lit},
+                if let Some(adjusted_shape) = adjusted_shape {
+                    format!(
+                        "literal out of range for `{}`, consider using `{}` instead",
+                        shape, adjusted_shape,
+                    )
+                } else {
+                    format!("literal out of range for `{}`", shape)
+                },
+            ))
+        } else {
+            Ok(IntLiteral {
+                span,
+                value,
+                shape: Some(shape),
+            })
         }
-        break None;
-    };
-    if adjusted_shape != Some(shape) {
-        Err(Error::new_spanned(
-            quote! {#sign #lit},
-            if let Some(adjusted_shape) = adjusted_shape {
-                format!(
-                    "literal out of range for `{}`, consider using `{}` instead",
-                    shape, adjusted_shape,
-                )
-            } else {
-                format!("literal out of range for `{}`", shape)
+    }
+    fn to_tokens<'a>(&'a self, crate_path: &'a Path) -> IntLiteralTokens<'a> {
+        IntLiteralTokens {
+            int_literal: self,
+            crate_path,
+        }
+    }
+}
+
+struct IntLiteralTokens<'a> {
+    int_literal: &'a IntLiteral,
+    crate_path: &'a Path,
+}
+
+impl ToTokens for IntLiteralTokens<'_> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.to_token_stream().to_tokens(tokens);
+    }
+    fn to_token_stream(&self) -> TokenStream {
+        let Self {
+            int_literal,
+            crate_path,
+        } = *self;
+        let IntLiteral { span, value, shape } = int_literal.clone();
+        let value = if let Some(value) = value.to_i128() {
+            quote_spanned! {span.clone()=>
+                #value
+            }
+        } else {
+            let (sign, magnitude) = value.into_parts();
+            let sign = match sign {
+                Sign::Minus => quote_spanned! {span=>
+                    #crate_path::bigint::Sign::Minus
+                },
+                Sign::NoSign => quote_spanned! {span=>
+                    #crate_path::bigint::Sign::NoSign
+                },
+                Sign::Plus => quote_spanned! {span=>
+                    #crate_path::bigint::Sign::Plus
+                },
+            };
+            let digits = magnitude.to_u32_digits();
+            quote_spanned! {span=>
+                #crate_path::bigint::BigInt::from_slice(#sign, &[#(#digits,)*])
+            }
+        };
+        match shape {
+            None => quote_spanned! {span=>
+                #crate_path::values::integer::Int::new(#value).expect("literal out of range")
             },
-        ))
-    } else {
-        Ok((value, Some(shape)))
+            Some(IntShape { bit_count, signed }) => quote_spanned! {span=>
+                #crate_path::values::integer::Int::<#crate_path::values::integer::ConstIntShape<#bit_count, #signed>>::new(#value).expect("literal out of range")
+            },
+        }
     }
 }
 
@@ -197,13 +266,13 @@ struct PatternMatchResult {
 
 enum PatPathKind {
     EnumVariant {
-        qself: Option<QSelf>,
-        enum_type: Path,
-        variant_path: Path,
+        span: Span,
+        enum_type: TypePath,
+        variant_path: PatPath,
     },
     Struct {
-        qself: Option<QSelf>,
-        struct_type: Path,
+        span: Span,
+        struct_type: TypePath,
     },
     Variable {
         name: Ident,
@@ -212,37 +281,59 @@ enum PatPathKind {
 
 impl PatPathKind {
     fn get(qself: Option<QSelf>, path: Path) -> Self {
+        let span = path
+            .segments
+            .last()
+            .expect("parser won't return empty path")
+            .span();
         if path.segments.len() >= 2 {
             let mut enum_type = path.clone();
             enum_type.segments.pop();
-            Self::EnumVariant {
+            let variant_path = PatPath {
+                attrs: Vec::new(),
+                qself: qself.clone(),
+                path,
+            };
+            let enum_type = TypePath {
                 qself,
+                path: enum_type,
+            };
+            Self::EnumVariant {
+                span,
                 enum_type,
-                variant_path: path,
+                variant_path,
             }
         } else if qself.is_some() {
             Self::Struct {
-                qself,
-                struct_type: path,
+                span,
+                struct_type: TypePath { qself, path },
             }
         } else if path.is_ident("None") || path.is_ident("Some") {
             Self::EnumVariant {
-                qself: None,
+                span,
                 enum_type: parse_quote! { ::core::option::Option },
-                variant_path: path,
+                variant_path: PatPath {
+                    attrs: Vec::new(),
+                    qself,
+                    path,
+                },
             }
         } else if path.is_ident("Ok") || path.is_ident("Err") {
             Self::EnumVariant {
-                qself: None,
+                span,
                 enum_type: parse_quote! { ::core::result::Result },
-                variant_path: path,
+                variant_path: PatPath {
+                    attrs: Vec::new(),
+                    qself,
+                    path,
+                },
             }
         } else if let Some(ident) = path.get_ident() {
             let ident_str = ident.to_string();
             if ident_str.chars().next().map(char::is_uppercase) == Some(true) {
                 Self::Struct {
-                    qself: None,
-                    struct_type: path,
+                    span,
+                    struct_type: TypePath { qself, path },
                 }
             } else {
                 Self::Variable {
@@ -251,15 +342,15 @@ impl PatPathKind {
             }
         } else {
             Self::Struct {
-                qself: None,
-                struct_type: path,
+                span,
+                struct_type: TypePath { qself, path },
             }
         }
     }
 }
 
 enum PatternLiteral {
-    Int(BigInt, Option<IntShape>),
+    Int(IntLiteral),
     ByteStr(LitByteStr),
     Byte(LitByte),
     Bool(LitBool),
@@ -318,10 +409,7 @@ impl PatternMatcher<'_> {
         let ExprLit { attrs, lit } = expr_lit;
         assert_no_attrs(attrs)?;
         match lit {
-            Lit::Int(lit) => {
-                let (value, shape) = parse_int_literal(sign, lit)?;
-                Ok(PatternLiteral::Int(value, shape))
-            }
+            Lit::Int(lit) => Ok(PatternLiteral::Int(IntLiteral::parse(sign, lit)?)),
             Lit::Float(lit) => Err(Error::new_spanned(lit, "float literals are not supported")),
             _ if sign.is_some() => Err(Error::new_spanned(sign, "literal not supported")),
             Lit::ByteStr(lit) => Ok(PatternLiteral::ByteStr(lit.clone())),
@@ -376,16 +464,47 @@ impl PatternMatcher<'_> {
         }
     }
     fn pat_path(&mut self, pat_path: PatPath, value: &Ident) -> syn::Result<PatternMatchResult> {
+        let ValTranslator {
+            crate_path,
+            module,
+            scope: _,
+        } = self.val_translator;
         let PatPath { attrs, qself, path } = pat_path;
         assert_no_attrs(attrs)?;
         match PatPathKind::get(qself, path) {
             PatPathKind::EnumVariant {
-                qself,
+                span,
                 enum_type,
                 variant_path,
-            } => todo_err!(variant_path, "match unit enum"),
-            PatPathKind::Struct { qself, struct_type } => {
-                todo_err!(struct_type, "match unit struct")
+            } => {
+                let condition = self.temp_name_maker.make_temp_name(span.clone());
+                self.tokens.extend(quote_spanned! {span=>
+                    #crate_path::values::ops::assert_enum_variant_is_empty::<#enum_type>(&#variant_path);
+                    let __variant_index = #crate_path::values::ops::get_enum_variant_index::<_, #enum_type>(#module, &#variant_path);
+                    let #condition = #crate_path::values::ops::is_enum_variant(#value, __variant_index);
+                });
+                Ok(PatternMatchResult {
+                    condition: MatchCondition::Dynamic(condition),
+                    defined_names: PatternDefinedNames::new(),
+                    verification_match: Pat::Path(variant_path),
+                    verification_match_needs_if: false,
+                })
+            }
+            PatPathKind::Struct { span, struct_type } => {
+                self.tokens.extend(quote_spanned! {span=>
+                    #crate_path::values::ops::assert_type_is_empty_struct::<#struct_type>();
+                });
+                let TypePath { qself, path } = struct_type;
+                Ok(PatternMatchResult {
+                    condition: MatchCondition::Static(true),
+                    defined_names: PatternDefinedNames::new(),
+                    verification_match: Pat::Path(PatPath {
+                        attrs: Vec::new(),
+                        qself,
+                        path,
+                    }),
+                    verification_match_needs_if: false,
+                })
             }
             PatPathKind::Variable { name } => {
                 let mut defined_names = PatternDefinedNames::new();
@@ -511,6 +630,7 @@ impl PatternMatcher<'_> {
         })
     }
     fn pat(&mut self, pat: &Pat, value: &Ident) -> syn::Result<PatternMatchResult> {
+        let crate_path = &self.val_translator.crate_path;
         match pat {
             Pat::Ident(PatIdent {
                 attrs,
@@ -545,8 +665,39 @@ impl PatternMatcher<'_> {
             }
             Pat::Lit(PatLit { attrs, expr }) => {
                 assert_no_attrs(attrs)?;
-                let lit = self.pat_lit_expr(expr, None)?;
-                todo_err!(pat)
+                let span;
+                let lit_value = match self.pat_lit_expr(expr, None)? {
+                    PatternLiteral::Int(lit_value) => {
+                        span = lit_value.span.clone();
+                        lit_value.to_tokens(crate_path).into_token_stream()
+                    }
+                    PatternLiteral::ByteStr(_value) => todo_err!(pat),
+                    PatternLiteral::Byte(value) => {
+                        span = value.span();
+                        quote_spanned! {span.clone()=>
+                            <#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#value)
+                        }
+                    }
+                    PatternLiteral::Bool(value) => {
+                        span = value.span();
+                        quote! { #value }
+                    }
+                };
+                let condition = self.temp_name_maker.make_temp_name(span.clone());
+                self.tokens.extend(quote_spanned! {span.clone()=>
+                    let #condition = #crate_path::values::ops::match_eq(#value, &#lit_value);
+                });
+                let mut underscore_token = <Token![_]>::default();
+                underscore_token.span = span.clone();
+                Ok(PatternMatchResult {
+                    condition: MatchCondition::Dynamic(condition),
+                    defined_names: PatternDefinedNames::new(),
+                    verification_match: Pat::Wild(PatWild {
+                        attrs: Vec::new(),
+                        underscore_token,
+                    }),
+                    verification_match_needs_if: true,
+                })
             }
             Pat::Or(pat_or) => self.pat_or(pat_or, value),
             Pat::Path(pat_path) => self.pat_path(pat_path.clone(), value),
@@ -613,7 +764,6 @@ impl ValTranslator {
             .tokens
             .extend(quote_spanned! {match_token.span=>
                 let #value = #crate_path::values::ops::shrink_scope(#expr, #scope);
-                let __matched = #crate_path::values::Value::get_value(&false, #module);
             });
         let mut verification_match_arms = Vec::new();
         struct MatchArmOutput {
@@ -746,40 +896,22 @@ impl ValTranslator {
                 #crate_path::values::Value::get_value(&#lit, #module)
             }),
             Lit::Int(lit) => {
-                let (value, shape) = parse_int_literal(neg, lit)?;
-                let value = if let Some(value) = value.to_i128() {
-                    quote_spanned! {lit.span()=>
-                        #value
-                    }
-                } else {
-                    let (sign, magnitude) = value.into_parts();
-                    let sign = match sign {
-                        Sign::Minus => quote_spanned! {lit.span()=>
-                            #crate_path::bigint::Sign::Minus
-                        },
-                        Sign::NoSign => quote_spanned! {lit.span()=>
-                            #crate_path::bigint::Sign::NoSign
-                        },
-                        Sign::Plus => quote_spanned! {lit.span()=>
-                            #crate_path::bigint::Sign::Plus
-                        },
-                    };
-                    let digits = magnitude.to_u32_digits();
-                    quote_spanned! {lit.span()=>
-                        #crate_path::bigint::BigInt::from_slice(#sign, &[#(#digits,)*])
-                    }
-                };
-                Ok(match shape {
-                    None => quote_spanned! {lit.span()=>
-                        #crate_path::values::Value::get_value(&#crate_path::values::integer::Int::new(#value).expect("literal out of range"), #module)
-                    },
-                    Some(IntShape { bit_count, signed }) => quote_spanned! {lit.span()=>
-                        #crate_path::values::Value::get_value(&#crate_path::values::integer::Int::<#crate_path::values::integer::ConstIntShape<#bit_count, #signed>>::new(#value).expect("literal out of range"), #module)
-                    },
+                let int_literal = IntLiteral::parse(neg, lit)?;
+                let int_literal = int_literal.to_tokens(crate_path);
+                Ok(quote_spanned! {lit.span()=>
+                    #crate_path::values::Value::get_value(&#int_literal, #module)
                 })
             }
-            Lit::Str(lit) => Err(Error::new_spanned(lit, "string literals are not supported, did you mean to use byte strings instead? (`b\"...\"`)")),
-            Lit::Char(lit) => Err(Error::new_spanned(lit, "char literals are not supported, did you mean to use byte literals instead? (`b\'...\'`)")),
+            Lit::Str(lit) => Err(Error::new_spanned(
+                lit,
+                "string literals are not supported, \
+                did you mean to use byte strings instead? (`b\"...\"`)",
+            )),
+            Lit::Char(lit) => Err(Error::new_spanned(
+                lit,
+                "char literals are not supported, \
+                did you mean to use byte literals instead? (`b\'...\'`)",
+            )),
             Lit::Float(lit) => Err(Error::new_spanned(lit, "float literals are not supported")),
             Lit::Verbatim(lit) => Err(Error::new_spanned(lit, "literal not supported")),
         }

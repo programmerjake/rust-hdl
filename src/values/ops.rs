@@ -7,18 +7,25 @@ use crate::{
         scope::ScopeRef,
         values::{
             BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExpandScope,
-            ExtractEnumVariantFields, ExtractStructField, IrValue, LiteralBits, MatchArmForEnum,
-            MatchEnum, Mux, SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind,
-            ShrinkScope,
+            ExtractEnumVariantFields, ExtractStructField, IrValue, IsEnumVariant, LiteralBits,
+            MatchArmForEnum, MatchEnum, Mux, SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp,
+            SameSizeUnOpKind, ShrinkScope,
         },
         SourceLocation,
     },
     prelude::*,
     values::{
-        aggregate::{AggregateValue, AggregateValueMatch, AggregateValueMatchArm, EnumValue},
+        aggregate::{
+            AggregateValue, AggregateValueMatch, AggregateValueMatchArm, EnumValue,
+            EnumVariantFieldVisitor, EnumVariantRef, EnumVariantVisitor, StructValue,
+        },
         integer::IntShapeTrait,
         ToVal,
     },
+};
+use core::{
+    convert::Infallible,
+    ops::{Range, RangeInclusive},
 };
 
 fn same_size_bin_op_unchecked<'ctx, T: Value<'ctx>>(
@@ -604,5 +611,141 @@ pub fn expand_scope<'ctx, T: Value<'ctx>>(
         ))
         .intern(value.ctx()),
         value.value_type(),
+    )
+}
+
+#[track_caller]
+pub fn assert_type_is_empty_struct<'ctx, T: StructValue<'ctx>>() {
+    assert!(T::FIELD_COUNT == 0, "type is not an empty struct");
+}
+
+#[track_caller]
+pub fn assert_enum_variant_is_empty<'ctx, T: EnumValue<'ctx>>(variant: &T) {
+    struct VariantFieldVisitor {
+        caller: SourceLocation<'static>,
+        variant_name: &'static str,
+    }
+    impl<'ctx, Enum: EnumValue<'ctx>, EnumVariant: EnumVariantRef<'ctx, Enum>>
+        EnumVariantFieldVisitor<'ctx, Enum, EnumVariant> for VariantFieldVisitor
+    {
+        type BreakType = Infallible;
+
+        fn field<FieldType: FixedTypeValue<'ctx>>(
+            self,
+            _name: &'static str,
+            _field_index: usize,
+            _field: &FieldType,
+        ) -> Result<Self, Self::BreakType> {
+            panic!(
+                "enum variant `{}` is not empty\nat {}",
+                self.variant_name, self.caller
+            );
+        }
+    }
+    struct VariantVisitor {
+        caller: SourceLocation<'static>,
+    }
+    impl<'ctx, T: EnumValue<'ctx>> EnumVariantVisitor<'ctx, T> for VariantVisitor {
+        type ResultType = ();
+
+        fn variant<VariantType: EnumVariantRef<'ctx, T>>(
+            self,
+            name: &'static str,
+            _discriminant: Int<T::DiscriminantShape>,
+            variant: VariantType,
+        ) -> Self::ResultType {
+            let Self { caller } = self;
+            let _ = variant.visit_fields(VariantFieldVisitor {
+                caller,
+                variant_name: name,
+            });
+        }
+    }
+    variant.visit_variant(VariantVisitor {
+        caller: SourceLocation::caller(),
+    });
+}
+
+#[track_caller]
+pub fn get_enum_variant_index<'ctx, Ctx: AsContext<'ctx>, T: EnumValue<'ctx>>(
+    ctx: Ctx,
+    variant: &T,
+) -> usize {
+    let ctx = ctx.ctx();
+    struct VariantVisitor<'ctx> {
+        caller: SourceLocation<'ctx>,
+        ctx: ContextRef<'ctx>,
+    }
+    impl<'ctx, T: EnumValue<'ctx>> EnumVariantVisitor<'ctx, T> for VariantVisitor<'ctx> {
+        type ResultType = usize;
+
+        fn variant<VariantType: EnumVariantRef<'ctx, T>>(
+            self,
+            name: &'static str,
+            discriminant: Int<T::DiscriminantShape>,
+            _variant: VariantType,
+        ) -> Self::ResultType {
+            let Self { caller, ctx } = self;
+            let discriminant = discriminant.into();
+            T::get_ir_type(ctx)
+                .get_variant_index(&discriminant)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "discriminant not found for enum variant `{}`\ndiscriminant = {:?}\nat {}",
+                        name, discriminant, caller
+                    );
+                })
+        }
+    }
+    variant.visit_variant(VariantVisitor {
+        caller: SourceLocation::caller(),
+        ctx,
+    })
+}
+
+#[track_caller]
+pub fn is_enum_variant<'ctx, Ctx: AsContext<'ctx>, T: EnumValue<'ctx>>(
+    value: Val<'ctx, T>,
+    variant_index: usize,
+) -> Val<'ctx, bool> {
+    Val::from_ir_unchecked(
+        value.ctx(),
+        IrValue::from(IsEnumVariant::new(
+            value.ctx(),
+            value.ir(),
+            variant_index,
+            &SourceLocation::caller(),
+        ))
+        .intern(value.ctx()),
+    )
+}
+
+#[track_caller]
+pub fn match_eq<'ctx, T: HdlCompareEqual<'ctx, T, Output = bool>>(
+    value: Val<'ctx, T>,
+    pattern: &T,
+) -> Val<'ctx, bool> {
+    HdlCompareEqual::compare_equal(value, pattern.get_value(value.ctx()))
+}
+
+#[track_caller]
+pub fn match_range<'ctx, Shape: IntShapeTrait>(
+    value: Val<'ctx, Int<Shape>>,
+    range: Range<&Int<Shape>>,
+) -> Val<'ctx, bool> {
+    HdlAnd::and(
+        HdlCompareGreaterEqual::compare_greater_equal(value, range.start.get_value(value.ctx())),
+        HdlCompareLess::compare_less(value, range.end.get_value(value.ctx())),
+    )
+}
+
+#[track_caller]
+pub fn match_range_inclusive<'ctx, Shape: IntShapeTrait>(
+    value: Val<'ctx, Int<Shape>>,
+    range: RangeInclusive<&Int<Shape>>,
+) -> Val<'ctx, bool> {
+    HdlAnd::and(
+        HdlCompareGreaterEqual::compare_greater_equal(value, range.start().get_value(value.ctx())),
+        HdlCompareLessEqual::compare_less_equal(value, range.end().get_value(value.ctx())),
     )
 }
