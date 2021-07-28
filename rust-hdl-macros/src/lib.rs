@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use proc_macro2::{Ident, Literal, Span, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
     Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Field, Fields, GenericParam,
-    Generics, Lifetime, LifetimeDef, Path, Token, Variant, VisRestricted, Visibility, WhereClause,
-    WherePredicate,
+    Generics, Index, Lifetime, LifetimeDef, Path, Token, Variant, VisRestricted, Visibility,
+    WhereClause, WherePredicate,
 };
 
 mod val;
@@ -408,7 +408,7 @@ impl ValueImplStruct {
                     let RustHdlFieldAttributes { ignored } =
                         RustHdlFieldAttributes::parse(&field.attrs)?;
                     let name_str = name.to_string();
-                    let name = Literal::usize_unsuffixed(name);
+                    let name = Index::from(name);
                     let vis = &field.vis;
                     if ignored {
                         struct_of_field_enums_fields.push(quote! {
@@ -922,8 +922,8 @@ impl ValueImplEnum {
                             continue;
                         }
                         assert_field_visibility_is_inherited(vis)?;
-                        let ident = Literal::usize_unsuffixed(index);
-                        let name_str = ident.to_string();
+                        let ident = Index::from(index);
+                        let name_str = ident.index.to_string();
                         let field_index = visit_fields.len();
                         visit_fields.push(quote! {
                             let __visitor = #crate_path::values::aggregate::EnumVariantFieldVisitor::field(
@@ -1355,7 +1355,7 @@ fn derive_io_impl(ast: DeriveInput) -> syn::Result<TokenStream> {
         Fields::Unnamed(fields) => {
             for (name, _field) in fields.unnamed.iter().enumerate() {
                 let name_str = name.to_string();
-                let name = Literal::usize_unsuffixed(name);
+                let name = Index::from(name);
                 visit_io_fields.push(quote! {.field(#name_str, &mut self.#name)});
             }
         }

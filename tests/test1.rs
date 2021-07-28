@@ -52,7 +52,7 @@ fn test_structs() {
         named!(let (submodule, io) = top.submodule(io));
         assert_formats_to!(test_structs, top_1, top);
         assert_formats_to!(test_structs, submodule_0, submodule);
-        let field = field!((io.d.0.read()).c.1);
+        let field = val!(top, ({ io.d.0.read() }).c.1);
         assert_formats_to!(test_structs, field_0, field);
     });
 }

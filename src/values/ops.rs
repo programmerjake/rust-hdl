@@ -619,6 +619,8 @@ pub fn assert_type_is_empty_struct<'ctx, T: StructValue<'ctx>>() {
     assert!(T::FIELD_COUNT == 0, "type is not an empty struct");
 }
 
+pub fn assert_type_is_struct<'ctx, T: StructValue<'ctx>>() {}
+
 #[track_caller]
 pub fn assert_enum_variant_is_empty<'ctx, T: EnumValue<'ctx>>(variant: &T) {
     struct VariantFieldVisitor {

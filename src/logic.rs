@@ -4,14 +4,13 @@
 use crate::{
     clocking::ClockDomain,
     context::AsContext,
-    field,
     ir::{
         logic::{IrReg, IrRegRef, IrRegReset, IrWire, IrWireRef},
         values::IrValueRef,
         SourceLocation,
     },
     module::AsIrModule,
-    values::{FixedTypeValue, ToVal, Val, Value, ValueType},
+    values::{val, FixedTypeValue, ToVal, Val, Value, ValueType},
 };
 use alloc::borrow::Cow;
 use core::{fmt, marker::PhantomData, ops::Deref};
@@ -212,11 +211,12 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
         clock_domain: Val<'ctx, ClockDomain>,
         reset_value: Val<'ctx, T>,
     ) -> Self {
+        let module = module.as_ir_module();
         Self::with_reset(
             module,
             name,
-            field!((clock_domain).clk),
-            field!((clock_domain).rst),
+            val!(#![rust_hdl(crate = crate)] module, clock_domain.clk),
+            val!(#![rust_hdl(crate = crate)] module, clock_domain.rst),
             reset_value,
         )
     }

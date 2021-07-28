@@ -9,7 +9,10 @@ use quote::{quote, quote_spanned, ToTokens};
 use rust_hdl_int::{Int, IntShape};
 use std::{
     cmp::Ordering,
-    collections::{btree_map::Entry, BTreeMap},
+    collections::{
+        btree_map::{self, Entry},
+        BTreeMap,
+    },
     convert::TryInto,
     fmt, iter,
     panic::Location,
@@ -19,9 +22,10 @@ use syn::{
     parse_quote,
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
-    Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprGroup, ExprIf,
-    ExprLit, ExprMatch, ExprUnary, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent,
-    PatLit, PatOr, PatPath, PatRange, PatWild, Path, QSelf, Stmt, Token, TypePath, UnOp,
+    Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprField,
+    ExprGroup, ExprIf, ExprLit, ExprMatch, ExprUnary, Index, Lit, LitBool, LitByte, LitByteStr,
+    LitInt, Local, Pat, PatIdent, PatLit, PatOr, PatPath, PatRange, PatTuple, PatTupleStruct,
+    PatWild, Path, QSelf, RangeLimits, Stmt, Token, TypePath, UnOp,
 };
 
 #[derive(Clone)]
@@ -107,7 +111,7 @@ impl ToTokens for IntLiteralTokens<'_> {
         } = *self;
         let IntLiteral { span, value, shape } = int_literal.clone();
         let value = if let Some(value) = value.to_i128() {
-            quote_spanned! {span.clone()=>
+            quote_spanned! {span=>
                 #value
             }
         } else {
@@ -211,6 +215,30 @@ impl<'a> PatternMatcher<'a> {
 
 struct PatternDefinedNames(BTreeMap<Ident, Ident>);
 
+impl IntoIterator for PatternDefinedNames {
+    type Item = (Ident, Ident);
+    type IntoIter = btree_map::IntoIter<Ident, Ident>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a PatternDefinedNames {
+    type Item = (&'a Ident, &'a Ident);
+    type IntoIter = btree_map::Iter<'a, Ident, Ident>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut PatternDefinedNames {
+    type Item = (&'a Ident, &'a mut Ident);
+    type IntoIter = btree_map::IterMut<'a, Ident, Ident>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter_mut()
+    }
+}
+
 impl PatternDefinedNames {
     fn new() -> Self {
         Self(BTreeMap::new())
@@ -226,6 +254,12 @@ impl PatternDefinedNames {
             )),
             Entry::Vacant(entry) => Ok(entry.insert(value)),
         }
+    }
+    fn define_names(&mut self, names: impl IntoIterator<Item = (Ident, Ident)>) -> syn::Result<()> {
+        names.into_iter().try_for_each(|(name, value)| {
+            self.define_name(name, value)?;
+            Ok(())
+        })
     }
     fn check_same_names<'a, E>(
         &'a self,
@@ -264,7 +298,7 @@ struct PatternMatchResult {
     verification_match_needs_if: bool,
 }
 
-enum PatPathKind {
+enum TypePathKind {
     EnumVariant {
         span: Span,
         enum_type: TypePath,
@@ -274,13 +308,27 @@ enum PatPathKind {
         span: Span,
         struct_type: TypePath,
     },
-    Variable {
-        name: Ident,
-    },
+}
+
+impl TypePathKind {
+    fn get(qself: Option<QSelf>, path: Path) -> Self {
+        match PatPathKind::get_impl(qself, path, false) {
+            PatPathKind::Type(retval) => retval,
+            PatPathKind::Variable { .. } => unreachable!(),
+        }
+    }
+}
+
+enum PatPathKind {
+    Type(TypePathKind),
+    Variable { name: Ident },
 }
 
 impl PatPathKind {
     fn get(qself: Option<QSelf>, path: Path) -> Self {
+        Self::get_impl(qself, path, true)
+    }
+    fn get_impl(qself: Option<QSelf>, path: Path, can_be_variable: bool) -> Self {
         let span = path
             .segments
             .last()
@@ -298,18 +346,18 @@ impl PatPathKind {
                 qself,
                 path: enum_type,
             };
-            Self::EnumVariant {
+            Self::Type(TypePathKind::EnumVariant {
                 span,
                 enum_type,
                 variant_path,
-            }
+            })
         } else if qself.is_some() {
-            Self::Struct {
+            Self::Type(TypePathKind::Struct {
                 span,
                 struct_type: TypePath { qself, path },
-            }
+            })
         } else if path.is_ident("None") || path.is_ident("Some") {
-            Self::EnumVariant {
+            Self::Type(TypePathKind::EnumVariant {
                 span,
                 enum_type: parse_quote! { ::core::option::Option },
                 variant_path: PatPath {
@@ -317,9 +365,9 @@ impl PatPathKind {
                     qself,
                     path,
                 },
-            }
+            })
         } else if path.is_ident("Ok") || path.is_ident("Err") {
-            Self::EnumVariant {
+            Self::Type(TypePathKind::EnumVariant {
                 span,
                 enum_type: parse_quote! { ::core::result::Result },
                 variant_path: PatPath {
@@ -327,24 +375,25 @@ impl PatPathKind {
                     qself,
                     path,
                 },
-            }
+            })
         } else if let Some(ident) = path.get_ident() {
-            let ident_str = ident.to_string();
-            if ident_str.chars().next().map(char::is_uppercase) == Some(true) {
-                Self::Struct {
-                    span,
-                    struct_type: TypePath { qself, path },
-                }
-            } else {
+            if can_be_variable
+                && ident.to_string().chars().next().map(char::is_uppercase) != Some(true)
+            {
                 Self::Variable {
                     name: ident.clone(),
                 }
+            } else {
+                Self::Type(TypePathKind::Struct {
+                    span,
+                    struct_type: TypePath { qself, path },
+                })
             }
         } else {
-            Self::Struct {
+            Self::Type(TypePathKind::Struct {
                 span,
                 struct_type: TypePath { qself, path },
-            }
+            })
         }
     }
 }
@@ -359,7 +408,7 @@ enum PatternLiteral {
 impl PatternMatcher<'_> {
     fn condition_or(
         &mut self,
-        span: &Span,
+        span: Span,
         conditions: impl IntoIterator<Item = MatchCondition>,
     ) -> MatchCondition {
         conditions
@@ -370,9 +419,9 @@ impl PatternMatcher<'_> {
                 (MatchCondition::Static(false), v) => v,
                 (v, MatchCondition::Static(false)) => v,
                 (MatchCondition::Dynamic(lhs), MatchCondition::Dynamic(rhs)) => {
-                    let temp = self.temp_name_maker.make_temp_name(span.clone());
+                    let temp = self.temp_name_maker.make_temp_name(span);
                     let crate_path = &self.val_translator.crate_path;
-                    self.tokens.extend(quote_spanned! {span.clone()=>
+                    self.tokens.extend(quote_spanned! {span=>
                         let #temp = #crate_path::values::ops::HdlOr::or(#lhs, #rhs);
                     });
                     MatchCondition::Dynamic(temp)
@@ -381,7 +430,7 @@ impl PatternMatcher<'_> {
     }
     fn condition_and(
         &mut self,
-        span: &Span,
+        span: Span,
         conditions: impl IntoIterator<Item = MatchCondition>,
     ) -> MatchCondition {
         conditions
@@ -392,9 +441,9 @@ impl PatternMatcher<'_> {
                 (MatchCondition::Static(true), v) => v,
                 (v, MatchCondition::Static(true)) => v,
                 (MatchCondition::Dynamic(lhs), MatchCondition::Dynamic(rhs)) => {
-                    let temp = self.temp_name_maker.make_temp_name(span.clone());
+                    let temp = self.temp_name_maker.make_temp_name(span);
                     let crate_path = &self.val_translator.crate_path;
-                    self.tokens.extend(quote_spanned! {span.clone()=>
+                    self.tokens.extend(quote_spanned! {span=>
                         let #temp = #crate_path::values::ops::HdlAnd::and(#lhs, #rhs);
                     });
                     MatchCondition::Dynamic(temp)
@@ -472,12 +521,12 @@ impl PatternMatcher<'_> {
         let PatPath { attrs, qself, path } = pat_path;
         assert_no_attrs(attrs)?;
         match PatPathKind::get(qself, path) {
-            PatPathKind::EnumVariant {
+            PatPathKind::Type(TypePathKind::EnumVariant {
                 span,
                 enum_type,
                 variant_path,
-            } => {
-                let condition = self.temp_name_maker.make_temp_name(span.clone());
+            }) => {
+                let condition = self.temp_name_maker.make_temp_name(span);
                 self.tokens.extend(quote_spanned! {span=>
                     #crate_path::values::ops::assert_enum_variant_is_empty::<#enum_type>(&#variant_path);
                     let __variant_index = #crate_path::values::ops::get_enum_variant_index::<_, #enum_type>(#module, &#variant_path);
@@ -490,7 +539,7 @@ impl PatternMatcher<'_> {
                     verification_match_needs_if: false,
                 })
             }
-            PatPathKind::Struct { span, struct_type } => {
+            PatPathKind::Type(TypePathKind::Struct { span, struct_type }) => {
                 self.tokens.extend(quote_spanned! {span=>
                     #crate_path::values::ops::assert_type_is_empty_struct::<#struct_type>();
                 });
@@ -575,10 +624,10 @@ impl PatternMatcher<'_> {
                 defined_names,
                 prev_or: prev_or.unwrap_or_default(),
             });
-            prev_or = case_or.cloned();
+            prev_or = case_or.copied();
             verification_match_needs_if |= needs_if;
             verification_match_cases
-                .extend(iter::once(Pair::new(verification_match, case_or.cloned())));
+                .extend(iter::once(Pair::new(verification_match, case_or.copied())));
         }
         let ParsedCase {
             mut condition,
@@ -601,7 +650,7 @@ impl PatternMatcher<'_> {
                 }
                 MatchCondition::Dynamic(case_condition) => {
                     for (name, value) in defined_names.0.iter_mut() {
-                        let new_value = self.temp_name_maker.make_temp_name(prev_or.span.clone());
+                        let new_value = self.temp_name_maker.make_temp_name(prev_or.span);
                         let lhs_value = case_defined_names
                             .0
                             .get(name)
@@ -612,7 +661,7 @@ impl PatternMatcher<'_> {
                         *value = new_value;
                     }
                     condition = self.condition_or(
-                        &prev_or.span,
+                        prev_or.span,
                         [condition, MatchCondition::Dynamic(case_condition)],
                     );
                 }
@@ -626,6 +675,91 @@ impl PatternMatcher<'_> {
                 leading_vert: leading_vert.clone(),
                 cases: verification_match_cases,
             }),
+            verification_match_needs_if,
+        })
+    }
+    fn pat_tuple(
+        &mut self,
+        type_path_kind: Option<TypePathKind>,
+        pat_tuple: &PatTuple,
+        value: &Ident,
+    ) -> syn::Result<PatternMatchResult> {
+        let crate_path = &self.val_translator.crate_path;
+        let PatTuple {
+            attrs,
+            paren_token,
+            elems,
+        } = pat_tuple;
+        assert_no_attrs(attrs)?;
+        let fields = self.temp_name_maker.make_temp_name(paren_token.span);
+        match type_path_kind {
+            None|Some(TypePathKind::Struct{..})=>
+            self.tokens.extend(quote_spanned! {paren_token.span=>
+                let #fields = #crate_path::values::aggregate::StructValue::get_field_values(#value);
+            }),
+            Some(TypePathKind::EnumVariant{variant_path,..})=>todo_err!(variant_path, "enum variant match"),
+        }
+        let mut verification_match_elems = Punctuated::new();
+        let mut last_separator_span = paren_token.span;
+        let mut defined_names = PatternDefinedNames::new();
+        let mut verification_match_needs_if = false;
+        let mut condition = MatchCondition::Static(true);
+        for (index, field) in elems.pairs().enumerate() {
+            let field_variable = self.temp_name_maker.make_temp_name(last_separator_span);
+            let index = Index::from(index);
+            self.tokens.extend(quote_spanned! {paren_token.span=>
+                let #field_variable = #fields.#index;
+            });
+            let PatternMatchResult {
+                condition: field_condition,
+                defined_names: field_defined_names,
+                verification_match: field_verification_match,
+                verification_match_needs_if: field_verification_match_needs_if,
+            } = self.pat(field.value(), &field_variable)?;
+            condition = self.condition_and(last_separator_span, [condition, field_condition]);
+            defined_names.define_names(field_defined_names)?;
+            verification_match_elems.extend(iter::once(Pair::new(
+                field_verification_match,
+                field.punct().copied().copied(),
+            )));
+            verification_match_needs_if |= field_verification_match_needs_if;
+            last_separator_span = field.punct().map_or(paren_token.span, |v| v.span);
+        }
+        let pat_tuple = PatTuple {
+            attrs: Vec::new(),
+            paren_token: *paren_token,
+            elems: verification_match_elems,
+        };
+        let verification_match = match type_path_kind {
+            None => Pat::Tuple(pat_tuple),
+            Some(TypePathKind::Struct {
+                span,
+                struct_type:
+                    struct_type
+                    @
+                    TypePath {
+                        qself: Some(_),
+                        path: _,
+                    },
+            }) => todo_err!(struct_type, "qualified self"),
+            Some(TypePathKind::Struct {
+                span: _,
+                struct_type: TypePath { qself: None, path },
+            }) => Pat::TupleStruct(PatTupleStruct {
+                attrs: Vec::new(),
+                path,
+                pat: pat_tuple,
+            }),
+            Some(TypePathKind::EnumVariant {
+                span,
+                enum_type,
+                variant_path,
+            }) => todo_err!(variant_path, "enum variant match"),
+        };
+        Ok(PatternMatchResult {
+            condition,
+            defined_names,
+            verification_match,
             verification_match_needs_if,
         })
     }
@@ -668,13 +802,13 @@ impl PatternMatcher<'_> {
                 let span;
                 let lit_value = match self.pat_lit_expr(expr, None)? {
                     PatternLiteral::Int(lit_value) => {
-                        span = lit_value.span.clone();
+                        span = lit_value.span;
                         lit_value.to_tokens(crate_path).into_token_stream()
                     }
                     PatternLiteral::ByteStr(_value) => todo_err!(pat),
                     PatternLiteral::Byte(value) => {
                         span = value.span();
-                        quote_spanned! {span.clone()=>
+                        quote_spanned! {span=>
                             <#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#value)
                         }
                     }
@@ -683,12 +817,12 @@ impl PatternMatcher<'_> {
                         quote! { #value }
                     }
                 };
-                let condition = self.temp_name_maker.make_temp_name(span.clone());
-                self.tokens.extend(quote_spanned! {span.clone()=>
+                let condition = self.temp_name_maker.make_temp_name(span);
+                self.tokens.extend(quote_spanned! {span=>
                     let #condition = #crate_path::values::ops::match_eq(#value, &#lit_value);
                 });
                 let mut underscore_token = <Token![_]>::default();
-                underscore_token.span = span.clone();
+                underscore_token.span = span;
                 Ok(PatternMatchResult {
                     condition: MatchCondition::Dynamic(condition),
                     defined_names: PatternDefinedNames::new(),
@@ -710,12 +844,57 @@ impl PatternMatcher<'_> {
                 assert_no_attrs(attrs)?;
                 let lo = self.pat_lit_expr(lo, None)?;
                 let hi = self.pat_lit_expr(hi, None)?;
-                todo_err!(pat)
+                let get_endpoint_tokens = |endpoint: PatternLiteral| -> syn::Result<TokenStream> {
+                    match endpoint {
+                        PatternLiteral::Int(endpoint) => {
+                            Ok(endpoint.to_tokens(crate_path).into_token_stream())
+                        }
+                        PatternLiteral::ByteStr(endpoint) => todo_err!(endpoint),
+                        PatternLiteral::Byte(endpoint) => Ok(quote_spanned! {endpoint.span()=>
+                            <#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#endpoint)
+                        }),
+                        PatternLiteral::Bool(endpoint) => Ok(quote! { #endpoint }),
+                    }
+                };
+                let lo = get_endpoint_tokens(lo)?;
+                let hi = get_endpoint_tokens(hi)?;
+                let (span, condition_expr) = match limits {
+                    RangeLimits::HalfOpen(range) => (
+                        range.spans[0],
+                        quote_spanned! {range.spans[0]=>
+                            #crate_path::values::ops::match_range(value, &#lo #range &#hi)
+                        },
+                    ),
+                    RangeLimits::Closed(range) => (
+                        range.spans[0],
+                        quote_spanned! {range.spans[0]=>
+                            #crate_path::values::ops::match_range_inclusive(value, &#lo #range &#hi)
+                        },
+                    ),
+                };
+                let condition = self.temp_name_maker.make_temp_name(span);
+                self.tokens.extend(quote_spanned! {span=>
+                    let #condition = #condition_expr;
+                });
+                let mut underscore_token = <Token![_]>::default();
+                underscore_token.span = span;
+                Ok(PatternMatchResult {
+                    condition: MatchCondition::Dynamic(condition),
+                    defined_names: PatternDefinedNames::new(),
+                    verification_match: Pat::Wild(PatWild {
+                        attrs: Vec::new(),
+                        underscore_token,
+                    }),
+                    verification_match_needs_if: true,
+                })
             }
             Pat::Slice(pat) => todo_err!(pat),
             Pat::Struct(pat) => todo_err!(pat),
-            Pat::Tuple(pat) => todo_err!(pat),
-            Pat::TupleStruct(pat) => todo_err!(pat),
+            Pat::Tuple(pat_tuple) => self.pat_tuple(None, pat_tuple, value),
+            Pat::TupleStruct(PatTupleStruct { attrs, path, pat }) => {
+                assert_no_attrs(attrs)?;
+                self.pat_tuple(Some(TypePathKind::get(None, path.clone())), pat, value)
+            }
             Pat::Wild(PatWild {
                 attrs,
                 underscore_token: _,
@@ -759,7 +938,7 @@ impl ValTranslator {
         let mut pattern_matcher = PatternMatcher::new(self);
         let value = pattern_matcher
             .temp_name_maker
-            .make_temp_name(match_token.span.clone());
+            .make_temp_name(match_token.span);
         pattern_matcher
             .tokens
             .extend(quote_spanned! {match_token.span=>
@@ -832,10 +1011,10 @@ impl ValTranslator {
             let body = self.expr(body)?;
             let value = pattern_matcher
                 .temp_name_maker
-                .make_temp_name(fat_arrow_token.spans[0].clone());
+                .make_temp_name(fat_arrow_token.spans[0]);
             let matched = pattern_matcher
                 .temp_name_maker
-                .make_temp_name(fat_arrow_token.spans[0].clone());
+                .make_temp_name(fat_arrow_token.spans[0]);
             pattern_matcher
                 .tokens
                 .extend(quote_spanned! {fat_arrow_token.spans[0]=>
@@ -1086,7 +1265,18 @@ impl ValTranslator {
             }
             Expr::Call(expr) => todo_err!(expr),
             Expr::Cast(expr) => todo_err!(expr),
-            Expr::Field(expr) => todo_err!(expr),
+            Expr::Field(ExprField {
+                attrs,
+                base,
+                dot_token,
+                member,
+            }) => {
+                assert_no_attrs(attrs)?;
+                let base = self.expr(base)?;
+                Ok(quote_spanned! {dot_token.span=>
+                    #crate_path::values::aggregate::StructValue::get_field_values(#base) #dot_token #member
+                })
+            }
             Expr::Group(ExprGroup {
                 attrs,
                 group_token: _,
