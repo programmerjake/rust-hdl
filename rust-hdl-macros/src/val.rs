@@ -143,30 +143,6 @@ impl ToTokens for IntLiteralTokens<'_> {
     }
 }
 
-#[allow(dead_code)]
-#[track_caller]
-fn make_todo_error(tokens: impl ToTokens, arg: Option<fmt::Arguments<'_>>) -> syn::Error {
-    match arg {
-        Some(arg) => Error::new_spanned(
-            tokens,
-            format_args!("not yet implemented: {}\nat {}", arg, Location::caller()),
-        ),
-        None => Error::new_spanned(
-            tokens,
-            format_args!("not yet implemented\nat {}", Location::caller()),
-        ),
-    }
-}
-
-macro_rules! todo_err {
-    ($tokens:expr, $format_string:literal $($args:tt)*) => {
-        return Err(make_todo_error($tokens, Some(format_args!($format_string $($args)*))))
-    };
-    ($tokens:expr) => {
-        return Err(make_todo_error($tokens, None))
-    };
-}
-
 fn assert_no_attrs(attrs: impl AsRef<[Attribute]>) -> syn::Result<()> {
     if let [attr, ..] = attrs.as_ref() {
         Err(Error::new_spanned(attr, "attributes not supported here"))

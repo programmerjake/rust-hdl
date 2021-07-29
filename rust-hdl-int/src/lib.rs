@@ -659,6 +659,30 @@ impl_prim!(i64, I64Shape, to_i64);
 impl_prim!(u128, U128Shape, to_u128);
 impl_prim!(i128, I128Shape, to_i128);
 
+impl From<()> for UInt<0> {
+    fn from(_: ()) -> Self {
+        Int::unchecked_new(0)
+    }
+}
+
+impl From<()> for SInt<0> {
+    fn from(_: ()) -> Self {
+        Int::unchecked_new(0)
+    }
+}
+
+impl From<UInt<0>> for () {
+    fn from(_: UInt<0>) -> Self {
+        ()
+    }
+}
+
+impl From<SInt<0>> for () {
+    fn from(_: SInt<0>) -> Self {
+        ()
+    }
+}
+
 pub type UInt<const BIT_COUNT: u32> = Int<UIntShape<BIT_COUNT>>;
 pub type SInt<const BIT_COUNT: u32> = Int<SIntShape<BIT_COUNT>>;
 pub type UInt1 = Int<U1Shape>;
