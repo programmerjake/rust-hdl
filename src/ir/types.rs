@@ -10,7 +10,7 @@ use crate::{
 use alloc::vec::Vec;
 use core::{cmp::Ordering, convert::TryInto, fmt};
 
-fn flatten_struct_field_types<'ctx, I: IntoIterator<Item = IrValueType<'ctx>>>(
+fn flatten_type_sequence<'ctx, I: IntoIterator<Item = IrValueType<'ctx>>>(
     types: I,
 ) -> IrBitVectorType {
     let mut retval = IrBitVectorType {
@@ -29,12 +29,12 @@ fn flatten_struct_field_types<'ctx, I: IntoIterator<Item = IrValueType<'ctx>>>(
     retval
 }
 
-fn flatten_union_field_types<'ctx, I: IntoIterator<Item = IrValueType<'ctx>>>(
-    types: I,
+fn union_bit_vectors<'ctx, I: IntoIterator<Item = IrBitVectorType>>(
+    bit_vectors: I,
 ) -> IrBitVectorType {
-    let mut types = types.into_iter();
-    let mut retval = match types.next() {
-        Some(v) => v.flattened(),
+    let mut bit_vectors = bit_vectors.into_iter();
+    let mut retval = match bit_vectors.next() {
+        Some(v) => v,
         None => {
             return IrBitVectorType {
                 bit_count: 0,
@@ -42,35 +42,45 @@ fn flatten_union_field_types<'ctx, I: IntoIterator<Item = IrValueType<'ctx>>>(
             }
         }
     };
-    types.for_each(|ty| {
-        let ty = ty.flattened();
-        match ty.bit_count.cmp(&retval.bit_count) {
-            Ordering::Less => {}
-            Ordering::Equal => retval.signed &= ty.signed,
-            Ordering::Greater => retval = ty,
-        }
+    bit_vectors.for_each(|ty| match ty.bit_count.cmp(&retval.bit_count) {
+        Ordering::Less => {}
+        Ordering::Equal => retval.signed &= ty.signed,
+        Ordering::Greater => retval = ty,
     });
     retval
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct IrStructFieldType<'ctx> {
+pub struct IrFieldType<'ctx> {
     pub name: Interned<'ctx, str>,
     pub ty: IrValueTypeRef<'ctx>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct IrStructType<'ctx> {
-    fields: Interned<'ctx, [IrStructFieldType<'ctx>]>,
-    flattened: IrBitVectorType,
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub struct IrVariantType<'ctx, Discriminant = LiteralBits> {
+    name: Interned<'ctx, str>,
+    discriminant: Discriminant,
+    fields: Interned<'ctx, [IrFieldType<'ctx>]>,
+    flattened_fields: IrBitVectorType,
 }
 
-impl<'ctx> IrStructType<'ctx> {
-    pub fn new(ctx: impl AsContext<'ctx>, fields: impl AsRef<[IrStructFieldType<'ctx>]>) -> Self {
+impl<'ctx, Discriminant> IrVariantType<'ctx, Discriminant> {
+    pub fn new(
+        ctx: impl AsContext<'ctx>,
+        name: impl AsRef<str>,
+        discriminant: Discriminant,
+        fields: impl AsRef<[IrFieldType<'ctx>]>,
+    ) -> Self {
         let ctx = ctx.ctx();
+        let name = name.as_ref().intern(ctx);
         let fields: Interned<'ctx, [_]> = fields.as_ref().intern(ctx);
-        let flattened = flatten_struct_field_types(fields.iter().map(|v| *v.ty));
-        Self { fields, flattened }
+        let flattened_fields = flatten_type_sequence(fields.iter().map(|v| *v.ty));
+        Self {
+            name,
+            discriminant,
+            fields,
+            flattened_fields,
+        }
     }
     pub fn flattened_field_offsets(self) -> impl Iterator<Item = u32> + Clone + 'ctx {
         let mut offset = 0;
@@ -80,45 +90,100 @@ impl<'ctx> IrStructType<'ctx> {
             retval
         })
     }
-    pub fn flattened(self) -> IrBitVectorType {
-        self.flattened
+    pub fn name(&self) -> Interned<'ctx, str> {
+        self.name
     }
-    pub fn fields(self) -> Interned<'ctx, [IrStructFieldType<'ctx>]> {
+    pub fn discriminant(&self) -> &Discriminant {
+        &self.discriminant
+    }
+    pub fn discriminant_mut(&mut self) -> &mut Discriminant {
+        &mut self.discriminant
+    }
+    pub fn into_discriminant(self) -> Discriminant {
+        self.discriminant
+    }
+    pub fn map_discriminant<R>(self, f: impl FnOnce(Discriminant) -> R) -> IrVariantType<'ctx, R> {
+        let Self {
+            name,
+            discriminant,
+            fields,
+            flattened_fields,
+        } = self;
+        IrVariantType {
+            name,
+            discriminant: f(discriminant),
+            fields,
+            flattened_fields,
+        }
+    }
+    pub fn try_map_discriminant<R, E>(
+        self,
+        f: impl FnOnce(Discriminant) -> Result<R, E>,
+    ) -> Result<IrVariantType<'ctx, R>, E> {
+        let Self {
+            name,
+            discriminant,
+            fields,
+            flattened_fields,
+        } = self;
+        Ok(IrVariantType {
+            name,
+            discriminant: f(discriminant)?,
+            fields,
+            flattened_fields,
+        })
+    }
+    pub fn flattened_fields(&self) -> IrBitVectorType {
+        self.flattened_fields
+    }
+    pub fn fields(&self) -> Interned<'ctx, [IrFieldType<'ctx>]> {
         self.fields
     }
 }
 
-impl<'ctx> From<IrStructType<'ctx>> for IrValueType<'ctx> {
-    fn from(v: IrStructType<'ctx>) -> Self {
-        Self::Struct(v)
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct IrEnumVariantType<'ctx, Discriminant = LiteralBits> {
-    pub name: Interned<'ctx, str>,
-    pub discriminant: Discriminant,
-    pub fields: IrStructType<'ctx>,
-}
-
 /// the variants are always sorted in ascending order by their discriminant with no duplicate discriminants
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct IrEnumType<'ctx> {
+pub struct IrAggregateType<'ctx> {
     discriminant_type: IrBitVectorType,
-    variants: Interned<'ctx, [IrEnumVariantType<'ctx>]>,
+    variants: Interned<'ctx, [IrVariantType<'ctx>]>,
     flattened_fields: IrBitVectorType,
 }
 
-impl<'ctx> IrEnumType<'ctx> {
+impl<'ctx> IrAggregateType<'ctx> {
+    pub fn new_struct(ctx: impl AsContext<'ctx>, fields: impl AsRef<[IrFieldType<'ctx>]>) -> Self {
+        let ctx = ctx.ctx();
+        Self::new_unchecked(
+            IrBitVectorType {
+                bit_count: 0,
+                signed: false,
+            },
+            [IrVariantType::new(ctx, "", LiteralBits::new(), fields)].intern(ctx),
+        )
+    }
+    pub fn struct_fields(self) -> Option<Interned<'ctx, [IrFieldType<'ctx>]>> {
+        match (self.variants().get(), self.discriminant_type) {
+            (
+                [variant],
+                IrBitVectorType {
+                    bit_count: 0,
+                    signed: false,
+                },
+            ) if variant.name().is_empty() => Some(variant.fields()),
+            _ => None,
+        }
+    }
+    pub fn is_struct(self) -> bool {
+        self.struct_fields().is_some()
+    }
     /// the variants are sorted in ascending order by their discriminant, asserting that there are no duplicate discriminants
-    pub fn new<I: IntoIterator<Item = IrEnumVariantType<'ctx>>, Ctx: AsContext<'ctx>>(
+    pub fn new<I: IntoIterator<Item = IrVariantType<'ctx>>, Ctx: AsContext<'ctx>>(
         ctx: Ctx,
         discriminant_type: IrBitVectorType,
         variants: I,
         caller: &SourceLocation<'ctx>,
     ) -> Self {
         let ctx = ctx.ctx();
-        let mut variants: Vec<IrEnumVariantType<'ctx>> = variants.into_iter().collect();
+        let mut variants: Vec<IrVariantType<'ctx>> = variants.into_iter().collect();
         for i in &variants {
             assert_eq!(
                 i.discriminant.value_type(),
@@ -140,9 +205,9 @@ impl<'ctx> IrEnumType<'ctx> {
     }
     pub fn new_unchecked(
         discriminant_type: IrBitVectorType,
-        variants: Interned<'ctx, [IrEnumVariantType<'ctx>]>,
+        variants: Interned<'ctx, [IrVariantType<'ctx>]>,
     ) -> Self {
-        let flattened_fields = flatten_union_field_types(variants.iter().map(|v| v.fields.into()));
+        let flattened_fields = union_bit_vectors(variants.iter().map(|v| v.flattened_fields()));
         Self {
             discriminant_type,
             variants,
@@ -161,27 +226,17 @@ impl<'ctx> IrEnumType<'ctx> {
             signed: false,
         }
     }
-    pub fn with_generated_discriminant<
-        I: IntoIterator<Item = IrEnumVariantType<'ctx, ()>>,
+    pub fn enum_with_generated_discriminant<
+        I: IntoIterator<Item = IrVariantType<'ctx, ()>>,
         Ctx: AsContext<'ctx>,
     >(
         ctx: Ctx,
         variants: I,
     ) -> Self {
         let ctx = ctx.ctx();
-        let mut variants: Vec<IrEnumVariantType<'ctx>> = variants
+        let mut variants: Vec<IrVariantType<'ctx>> = variants
             .into_iter()
-            .map(
-                |IrEnumVariantType {
-                     name,
-                     discriminant: _,
-                     fields,
-                 }| IrEnumVariantType {
-                    name,
-                    discriminant: LiteralBits::new(),
-                    fields,
-                },
-            )
+            .map(|variant_type| variant_type.map_discriminant(|_| LiteralBits::default()))
             .collect();
         let discriminant_type = Self::generate_discriminant_type(variants.len());
         for (index, variant) in variants.iter_mut().enumerate() {
@@ -204,28 +259,28 @@ impl<'ctx> IrEnumType<'ctx> {
     pub fn get_variant_and_index(
         self,
         discriminant: &LiteralBits,
-    ) -> Option<(usize, &'ctx IrEnumVariantType<'ctx>)> {
+    ) -> Option<(usize, &'ctx IrVariantType<'ctx>)> {
         self.get_variant_index(discriminant)
             .map(|index| (index, &self.variants().get()[index]))
     }
-    pub fn get_variant(self, discriminant: &LiteralBits) -> Option<&'ctx IrEnumVariantType<'ctx>> {
+    pub fn get_variant(self, discriminant: &LiteralBits) -> Option<&'ctx IrVariantType<'ctx>> {
         self.get_variant_and_index(discriminant).map(|v| v.1)
     }
     /// the variants are always sorted in ascending order by their discriminant with no duplicate discriminants
-    pub fn variants(self) -> Interned<'ctx, [IrEnumVariantType<'ctx>]> {
+    pub fn variants(self) -> Interned<'ctx, [IrVariantType<'ctx>]> {
         self.variants
     }
     pub fn flattened(self) -> IrBitVectorType {
-        flatten_struct_field_types([self.discriminant_type.into(), self.flattened_fields.into()])
+        flatten_type_sequence([self.discriminant_type.into(), self.flattened_fields.into()])
     }
     pub fn flattened_fields(self) -> IrBitVectorType {
         self.flattened_fields
     }
 }
 
-impl<'ctx> From<IrEnumType<'ctx>> for IrValueType<'ctx> {
-    fn from(v: IrEnumType<'ctx>) -> Self {
-        Self::Enum(v)
+impl<'ctx> From<IrAggregateType<'ctx>> for IrValueType<'ctx> {
+    fn from(v: IrAggregateType<'ctx>) -> Self {
+        Self::Aggregate(v)
     }
 }
 
@@ -286,8 +341,7 @@ impl From<IntShape> for IrBitVectorType {
 pub enum IrValueType<'ctx> {
     BitVector(IrBitVectorType),
     Array(IrArrayType<'ctx>),
-    Struct(IrStructType<'ctx>),
-    Enum(IrEnumType<'ctx>),
+    Aggregate(IrAggregateType<'ctx>),
 }
 
 impl<'ctx> IrValueType<'ctx> {
@@ -312,15 +366,9 @@ impl<'ctx> IrValueType<'ctx> {
             _ => None,
         }
     }
-    pub fn struct_(self) -> Option<IrStructType<'ctx>> {
+    pub fn aggregate(self) -> Option<IrAggregateType<'ctx>> {
         match self {
-            IrValueType::Struct(v) => Some(v),
-            _ => None,
-        }
-    }
-    pub fn enum_(self) -> Option<IrEnumType<'ctx>> {
-        match self {
-            IrValueType::Enum(v) => Some(v),
+            IrValueType::Aggregate(v) => Some(v),
             _ => None,
         }
     }
@@ -328,8 +376,7 @@ impl<'ctx> IrValueType<'ctx> {
         match self {
             IrValueType::BitVector(v) => v,
             IrValueType::Array(v) => v.flattened(),
-            IrValueType::Struct(v) => v.flattened(),
-            IrValueType::Enum(v) => v.flattened(),
+            IrValueType::Aggregate(v) => v.flattened(),
         }
     }
 }
@@ -339,8 +386,7 @@ impl fmt::Debug for IrValueType<'_> {
         match self {
             IrValueType::BitVector(v) => v.fmt(f),
             IrValueType::Array(v) => v.fmt(f),
-            IrValueType::Struct(v) => v.fmt(f),
-            IrValueType::Enum(v) => v.fmt(f),
+            IrValueType::Aggregate(v) => v.fmt(f),
         }
     }
 }
@@ -358,49 +404,49 @@ mod tests {
     #[test]
     fn test_generate_discriminant_type() {
         assert_eq!(
-            IrEnumType::generate_discriminant_type(0),
+            IrAggregateType::generate_discriminant_type(0),
             IrBitVectorType {
                 bit_count: 0,
                 signed: false
             }
         );
         assert_eq!(
-            IrEnumType::generate_discriminant_type(1),
+            IrAggregateType::generate_discriminant_type(1),
             IrBitVectorType {
                 bit_count: 0,
                 signed: false
             }
         );
         assert_eq!(
-            IrEnumType::generate_discriminant_type(2),
+            IrAggregateType::generate_discriminant_type(2),
             IrBitVectorType {
                 bit_count: 1,
                 signed: false
             }
         );
         assert_eq!(
-            IrEnumType::generate_discriminant_type(3),
+            IrAggregateType::generate_discriminant_type(3),
             IrBitVectorType {
                 bit_count: 2,
                 signed: false
             }
         );
         assert_eq!(
-            IrEnumType::generate_discriminant_type(4),
+            IrAggregateType::generate_discriminant_type(4),
             IrBitVectorType {
                 bit_count: 2,
                 signed: false
             }
         );
         assert_eq!(
-            IrEnumType::generate_discriminant_type(5),
+            IrAggregateType::generate_discriminant_type(5),
             IrBitVectorType {
                 bit_count: 3,
                 signed: false
             }
         );
         assert_eq!(
-            IrEnumType::generate_discriminant_type(usize::MAX),
+            IrAggregateType::generate_discriminant_type(usize::MAX),
             IrBitVectorType {
                 bit_count: usize::BITS,
                 signed: false
@@ -411,49 +457,25 @@ mod tests {
     #[test]
     fn test_generate_discriminant() {
         Context::with(|ctx: ContextRef<'_>| {
-            let type1 = IrEnumType::new(
+            let type1 = IrAggregateType::new(
                 ctx,
                 IrBitVectorType {
                     bit_count: 2,
                     signed: false,
                 },
                 [
-                    IrEnumVariantType {
-                        name: "B".intern(ctx),
-                        discriminant: UInt::<2>::wrapping_new(1).into(),
-                        fields: IrStructType::new(ctx, []),
-                    },
-                    IrEnumVariantType {
-                        name: "A".intern(ctx),
-                        discriminant: UInt::<2>::wrapping_new(0).into(),
-                        fields: IrStructType::new(ctx, []),
-                    },
-                    IrEnumVariantType {
-                        name: "C".intern(ctx),
-                        discriminant: UInt::<2>::wrapping_new(2).into(),
-                        fields: IrStructType::new(ctx, []),
-                    },
+                    IrVariantType::new(ctx, "B", UInt::<2>::wrapping_new(1).into(), []),
+                    IrVariantType::new(ctx, "A", UInt::<2>::wrapping_new(0).into(), []),
+                    IrVariantType::new(ctx, "C", UInt::<2>::wrapping_new(2).into(), []),
                 ],
                 &SourceLocation::caller(),
             );
-            let type2 = IrEnumType::with_generated_discriminant(
+            let type2 = IrAggregateType::enum_with_generated_discriminant(
                 ctx,
                 [
-                    IrEnumVariantType {
-                        name: "A".intern(ctx),
-                        discriminant: (),
-                        fields: IrStructType::new(ctx, []),
-                    },
-                    IrEnumVariantType {
-                        name: "B".intern(ctx),
-                        discriminant: (),
-                        fields: IrStructType::new(ctx, []),
-                    },
-                    IrEnumVariantType {
-                        name: "C".intern(ctx),
-                        discriminant: (),
-                        fields: IrStructType::new(ctx, []),
-                    },
+                    IrVariantType::new(ctx, "A", (), []),
+                    IrVariantType::new(ctx, "B", (), []),
+                    IrVariantType::new(ctx, "C", (), []),
                 ],
             );
             assert_eq!(type1, type2);

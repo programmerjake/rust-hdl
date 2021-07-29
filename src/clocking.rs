@@ -3,6 +3,7 @@
 
 use crate::prelude::{FixedTypeValue, Value};
 
+#[cfg(todo)]
 #[derive(Debug, Clone, Copy, FixedTypeValue, Value)]
 #[rust_hdl(crate = crate)]
 pub struct ClockDomain {
@@ -11,3 +12,6 @@ pub struct ClockDomain {
     /// active-high reset
     pub rst: bool,
 }
+
+#[cfg(not(todo))]
+pub struct ClockDomain;

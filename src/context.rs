@@ -7,8 +7,8 @@ use crate::ir::{
     module::{IrModule, IrModuleRef},
     scope::Scope,
     symbols::IrSymbolTable,
-    types::{IrEnumVariantType, IrStructFieldType, IrValueType},
-    values::{IrValue, IrValueRef, LiteralStructField, MatchArmForEnum},
+    types::{IrFieldType, IrValueType, IrVariantType},
+    values::{IrValue, IrValueRef},
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
@@ -254,10 +254,8 @@ pub struct Context<'ctx> {
     pub(crate) root_symbol_table: IrSymbolTable<'ctx>,
     string_interner: Interner<'ctx, str>,
     value_type_interner: Interner<'ctx, IrValueType<'ctx>>,
-    struct_field_type_interner: Interner<'ctx, [IrStructFieldType<'ctx>]>,
-    enum_variant_type_interner: Interner<'ctx, [IrEnumVariantType<'ctx>]>,
-    literal_struct_field_interner: Interner<'ctx, [LiteralStructField<'ctx>]>,
-    match_arm_for_enum_interner: Interner<'ctx, [MatchArmForEnum<'ctx>]>,
+    field_type_interner: Interner<'ctx, [IrFieldType<'ctx>]>,
+    variant_type_interner: Interner<'ctx, [IrVariantType<'ctx>]>,
     value_interner: Interner<'ctx, IrValue<'ctx>>,
     value_ref_interner: Interner<'ctx, [IrValueRef<'ctx>]>,
     scope_interner: Interner<'ctx, Scope<'ctx>>,
@@ -275,10 +273,8 @@ impl<'ctx> Context<'ctx> {
             root_symbol_table: IrSymbolTable::default(),
             string_interner: Interner::default(),
             value_type_interner: Interner::default(),
-            struct_field_type_interner: Interner::default(),
-            enum_variant_type_interner: Interner::default(),
-            literal_struct_field_interner: Interner::default(),
-            match_arm_for_enum_interner: Interner::default(),
+            field_type_interner: Interner::default(),
+            variant_type_interner: Interner::default(),
             value_interner: Interner::default(),
             value_ref_interner: Interner::default(),
             scope_interner: Interner::default(),
@@ -319,27 +315,15 @@ impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrValueRef<
     }
 }
 
-impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrStructFieldType<'ctx>] {
+impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrFieldType<'ctx>] {
     fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
-        ctx.ctx().struct_field_type_interner.intern_impl(value)
+        ctx.ctx().field_type_interner.intern_impl(value)
     }
 }
 
-impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrEnumVariantType<'ctx>] {
+impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [IrVariantType<'ctx>] {
     fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
-        ctx.ctx().enum_variant_type_interner.intern_impl(value)
-    }
-}
-
-impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [LiteralStructField<'ctx>] {
-    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
-        ctx.ctx().literal_struct_field_interner.intern_impl(value)
-    }
-}
-
-impl<'ctx, T: ArenaAllocatable<'ctx, Self>> InternImpl<'ctx, T> for [MatchArmForEnum<'ctx>] {
-    fn intern<Ctx: AsContext<'ctx>>(value: T, ctx: Ctx) -> Interned<'ctx, Self> {
-        ctx.ctx().match_arm_for_enum_interner.intern_impl(value)
+        ctx.ctx().variant_type_interner.intern_impl(value)
     }
 }
 

@@ -6,14 +6,12 @@ use crate::{
     io::Input,
     ir::{
         types::{IrArrayType, IrBitVectorType, IrValueType, IrValueTypeRef},
-        values::{ExtractStructField, IrValue, IrValueRef, LiteralArray, LiteralBits},
+        values::{IrValue, IrValueRef, LiteralArray, LiteralBits},
         SourceLocation,
     },
-    values::aggregate::StructValue,
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
-    convert::Infallible,
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -310,42 +308,6 @@ impl<'ctx, T: Value<'ctx>> Val<'ctx, T> {
     }
     pub fn ir(self) -> IrValueRef<'ctx> {
         self.ir
-    }
-    #[track_caller]
-    pub fn extract_field_unchecked<Field: Value<'ctx>>(
-        self,
-        field_enum: T::FieldEnum,
-    ) -> Val<'ctx, Field>
-    where
-        T: StructValue<'ctx>,
-    {
-        let extract_struct_field = ExtractStructField::new(
-            self.ctx(),
-            self.ir,
-            field_enum.into(),
-            &SourceLocation::caller(),
-        );
-        let ir = IrValue::from(extract_struct_field).intern(self.ctx());
-        let value_type =
-            ValueType::from_ir_unchecked(self.ctx(), extract_struct_field.value_type());
-        Val::from_ir_and_type_unchecked(ir, value_type)
-    }
-    #[doc(hidden)]
-    #[track_caller]
-    pub fn extract_field_unchecked_macro_helper<
-        Field: Value<'ctx>,
-        GetFieldEnum: FnOnce(
-            Option<(&T, Infallible)>,
-            T::StructOfFieldEnums,
-        ) -> (T::FieldEnum, Option<(&Field, Infallible)>),
-    >(
-        self,
-        get_field_enum: GetFieldEnum,
-    ) -> Val<'ctx, Field>
-    where
-        T: StructValue<'ctx>,
-    {
-        self.extract_field_unchecked(get_field_enum(None, T::STRUCT_OF_FIELD_ENUMS).0)
     }
 }
 

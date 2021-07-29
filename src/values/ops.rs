@@ -6,9 +6,8 @@ use crate::{
     ir::{
         scope::ScopeRef,
         values::{
-            BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExpandScope,
-            ExtractEnumVariantFields, ExtractStructField, IrValue, IsEnumVariant, LiteralBits,
-            MatchArmForEnum, MatchEnum, Mux, SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp,
+            BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExpandScope, IrValue,
+            IsAggregateVariant, LiteralBits, Mux, SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp,
             SameSizeUnOpKind, ShrinkScope,
         },
         SourceLocation,
@@ -16,8 +15,8 @@ use crate::{
     prelude::*,
     values::{
         aggregate::{
-            AggregateValue, AggregateValueMatch, AggregateValueMatchArm, EnumValue,
-            EnumVariantFieldVisitor, EnumVariantRef, EnumVariantVisitor, StructValue,
+            ActiveFieldVisitor, ActiveVariantRef, AggregateValue, InactiveVariantRef, Variant,
+            VariantVisitor,
         },
         integer::IntShapeTrait,
         ToVal,
@@ -472,113 +471,6 @@ pub fn mux<'ctx, T: Value<'ctx>>(
 }
 
 #[track_caller]
-pub fn match_aggregate_value<
-    'ctx,
-    Ctx: AsContext<'ctx>,
-    T: Value<'ctx>,
-    V: ToVal<'ctx, ValueType = T>,
-    RV: FixedTypeValue<'ctx>,
-    R: ToVal<'ctx, ValueType = RV>,
-    E,
-    F: FnMut(AggregateValueMatchArm<'ctx, T::AggregateOfFieldValues>) -> Result<R, E>,
->(
-    ctx: Ctx,
-    value: V,
-    match_result_scope: ScopeRef<'ctx>,
-    f: F,
-) -> Result<Val<'ctx, RV>, E>
-where
-    T: AggregateValue<'ctx> + AggregateValueMatch<'ctx>,
-{
-    let ctx = ctx.ctx();
-    let value = value.to_val(ctx);
-    AggregateValueMatch::match_value(value, match_result_scope, f, &SourceLocation::caller())
-}
-
-#[track_caller]
-pub fn get_enum_variant_field_unchecked<'ctx, T: EnumValue<'ctx>, F: Value<'ctx>>(
-    enum_value: Val<'ctx, T>,
-    discriminant: i128,
-    field_index: usize,
-    match_arm_scope: ScopeRef<'ctx>,
-) -> Val<'ctx, F> {
-    let caller = SourceLocation::caller();
-    let ctx = enum_value.ctx();
-    let enum_value = enum_value.ir();
-    let discriminant = LiteralBits::from(Int::<T::DiscriminantShape>::wrapping_new(discriminant));
-    let variant_index = T::get_ir_type(ctx)
-        .get_variant_index(&discriminant)
-        .unwrap_or_else(|| panic!("invalid discriminant\nat {}", caller));
-    let fields = IrValue::from(ExtractEnumVariantFields::new(
-        ctx,
-        enum_value,
-        variant_index,
-        match_arm_scope,
-        &caller,
-    ))
-    .intern(ctx);
-    Val::from_ir_unchecked(
-        ctx,
-        IrValue::from(ExtractStructField::new(ctx, fields, field_index, &caller)).intern(ctx),
-    )
-}
-
-pub struct MatchEnumUncheckedMatchArm<'ctx, R: Value<'ctx>> {
-    pub discriminant: i128,
-    pub result: Val<'ctx, R>,
-    pub match_arm_scope: ScopeRef<'ctx>,
-}
-
-#[track_caller]
-pub fn match_enum_unchecked<
-    'ctx,
-    T: EnumValue<'ctx>,
-    R: FixedTypeValue<'ctx>,
-    MatchArms: IntoIterator<Item = MatchEnumUncheckedMatchArm<'ctx, R>>,
->(
-    enum_value: Val<'ctx, T>,
-    match_arms: MatchArms,
-    result_scope: ScopeRef<'ctx>,
-) -> Val<'ctx, R> {
-    let ctx = enum_value.ctx();
-    let caller = SourceLocation::caller();
-    let enum_value = enum_value.ir();
-    let result_type = R::static_value_type(ctx).ir();
-    let enum_type = T::get_ir_type(ctx);
-    Val::from_ir_unchecked(
-        ctx,
-        IrValue::from(MatchEnum::new(
-            ctx,
-            enum_value,
-            result_type,
-            match_arms.into_iter().map(|match_arm| {
-                let MatchEnumUncheckedMatchArm {
-                    discriminant,
-                    result,
-                    match_arm_scope,
-                } = match_arm;
-                let discriminant =
-                    LiteralBits::from(Int::<T::DiscriminantShape>::wrapping_new(discriminant));
-                let result = result.to_val(ctx).ir();
-                let variant_index = enum_type
-                    .get_variant_index(&discriminant)
-                    .unwrap_or_else(|| panic!("invalid discriminant\nat {}", caller));
-                (
-                    variant_index,
-                    MatchArmForEnum {
-                        result,
-                        match_arm_scope,
-                    },
-                )
-            }),
-            result_scope,
-            &caller,
-        ))
-        .intern(ctx),
-    )
-}
-
-#[track_caller]
 pub fn shrink_scope<'ctx, T: Value<'ctx>>(
     value: Val<'ctx, T>,
     scope: ScopeRef<'ctx>,
@@ -614,29 +506,20 @@ pub fn expand_scope<'ctx, T: Value<'ctx>>(
     )
 }
 
-#[track_caller]
-pub fn assert_type_is_empty_struct<'ctx, T: StructValue<'ctx>>() {
-    assert!(T::FIELD_COUNT == 0, "type is not an empty struct");
-}
-
-pub fn assert_type_is_struct<'ctx, T: StructValue<'ctx>>() {}
+pub fn assert_type_is_aggregate<'ctx, T: AggregateValue<'ctx>>() {}
 
 #[track_caller]
-pub fn assert_enum_variant_is_empty<'ctx, T: EnumValue<'ctx>>(variant: &T) {
-    struct VariantFieldVisitor {
+pub fn assert_variant_is_empty<'ctx, T: AggregateValue<'ctx>>(variant: &T) {
+    struct MyFieldVisitor {
         caller: SourceLocation<'static>,
         variant_name: &'static str,
     }
-    impl<'ctx, Enum: EnumValue<'ctx>, EnumVariant: EnumVariantRef<'ctx, Enum>>
-        EnumVariantFieldVisitor<'ctx, Enum, EnumVariant> for VariantFieldVisitor
-    {
+    impl<'ctx, VR: ActiveVariantRef<'ctx>> ActiveFieldVisitor<'ctx, VR> for MyFieldVisitor {
         type BreakType = Infallible;
-
-        fn field<FieldType: FixedTypeValue<'ctx>>(
+        fn visit<FieldType: Value<'ctx>>(
             self,
             _name: &'static str,
-            _field_index: usize,
-            _field: &FieldType,
+            _value: Val<'ctx, FieldType>,
         ) -> Result<Self, Self::BreakType> {
             panic!(
                 "enum variant `{}` is not empty\nat {}",
@@ -644,75 +527,107 @@ pub fn assert_enum_variant_is_empty<'ctx, T: EnumValue<'ctx>>(variant: &T) {
             );
         }
     }
-    struct VariantVisitor {
+    struct MyVariantVisitor {
         caller: SourceLocation<'static>,
     }
-    impl<'ctx, T: EnumValue<'ctx>> EnumVariantVisitor<'ctx, T> for VariantVisitor {
-        type ResultType = ();
-
-        fn variant<VariantType: EnumVariantRef<'ctx, T>>(
+    impl<'ctx, A: AggregateValue<'ctx>> VariantVisitor<'ctx, A> for MyVariantVisitor {
+        type BreakType = Infallible;
+        type AfterActiveVariant = ();
+        fn visit_before_active_variant<VR: InactiveVariantRef<'ctx, Aggregate = A>>(
             self,
-            name: &'static str,
-            _discriminant: Int<T::DiscriminantShape>,
-            variant: VariantType,
-        ) -> Self::ResultType {
+            _variant: Variant<VR>,
+        ) -> Result<Self, Self::BreakType> {
+            Ok(self)
+        }
+        fn visit_active_variant<VR: ActiveVariantRef<'ctx, Aggregate = A>>(
+            self,
+            variant: Variant<VR>,
+        ) -> Result<Self::AfterActiveVariant, Self::BreakType> {
             let Self { caller } = self;
-            let _ = variant.visit_fields(VariantFieldVisitor {
+            variant.value.visit_fields(MyFieldVisitor {
                 caller,
-                variant_name: name,
-            });
+                variant_name: variant.name,
+            })?;
+            Ok(())
+        }
+        fn visit_after_active_variant<VR: InactiveVariantRef<'ctx, Aggregate = A>>(
+            visitor: Self::AfterActiveVariant,
+            _variant: Variant<VR>,
+        ) -> Result<Self::AfterActiveVariant, Self::BreakType> {
+            Ok(visitor)
         }
     }
-    variant.visit_variant(VariantVisitor {
-        caller: SourceLocation::caller(),
-    });
+    variant
+        .visit_variants(MyVariantVisitor {
+            caller: SourceLocation::caller(),
+        })
+        .unwrap();
 }
 
 #[track_caller]
-pub fn get_enum_variant_index<'ctx, Ctx: AsContext<'ctx>, T: EnumValue<'ctx>>(
+pub fn get_aggregate_variant_index<'ctx, Ctx: AsContext<'ctx>, T: AggregateValue<'ctx>>(
     ctx: Ctx,
     variant: &T,
 ) -> usize {
     let ctx = ctx.ctx();
-    struct VariantVisitor<'ctx> {
+    struct Visitor<'ctx, 'a, T: AggregateValue<'ctx>> {
         caller: SourceLocation<'ctx>,
         ctx: ContextRef<'ctx>,
+        variant: &'a T,
     }
-    impl<'ctx, T: EnumValue<'ctx>> EnumVariantVisitor<'ctx, T> for VariantVisitor<'ctx> {
-        type ResultType = usize;
-
-        fn variant<VariantType: EnumVariantRef<'ctx, T>>(
+    impl<'ctx, 'a, A: AggregateValue<'ctx>> VariantVisitor<'ctx, A> for Visitor<'ctx, 'a, A> {
+        type BreakType = Infallible;
+        type AfterActiveVariant = usize;
+        fn visit_before_active_variant<VR: InactiveVariantRef<'ctx, Aggregate = A>>(
             self,
-            name: &'static str,
-            discriminant: Int<T::DiscriminantShape>,
-            _variant: VariantType,
-        ) -> Self::ResultType {
-            let Self { caller, ctx } = self;
-            let discriminant = discriminant.into();
-            T::get_ir_type(ctx)
+            _variant: Variant<VR>,
+        ) -> Result<Self, Self::BreakType> {
+            Ok(self)
+        }
+        fn visit_active_variant<VR: ActiveVariantRef<'ctx, Aggregate = A>>(
+            self,
+            variant: Variant<VR>,
+        ) -> Result<Self::AfterActiveVariant, Self::BreakType> {
+            let aggregate_type = self
+                .variant
+                .get_value_type(self.ctx)
+                .ir()
+                .aggregate()
+                .unwrap();
+            let discriminant = VR::discriminant().into();
+            aggregate_type
                 .get_variant_index(&discriminant)
-                .unwrap_or_else(|| {
+                .ok_or_else(|| {
                     panic!(
-                        "discriminant not found for enum variant `{}`\ndiscriminant = {:?}\nat {}",
-                        name, discriminant, caller
-                    );
+                        "variant not found for discriminant {:?}\nvariant name {:?}\nat {}",
+                        discriminant, variant.name, self.caller
+                    )
                 })
         }
+        fn visit_after_active_variant<VR: InactiveVariantRef<'ctx, Aggregate = A>>(
+            visitor: Self::AfterActiveVariant,
+            _variant: Variant<VR>,
+        ) -> Result<Self::AfterActiveVariant, Self::BreakType> {
+            Ok(visitor)
+        }
     }
-    variant.visit_variant(VariantVisitor {
-        caller: SourceLocation::caller(),
-        ctx,
-    })
+    variant
+        .visit_variants(Visitor {
+            caller: SourceLocation::caller(),
+            ctx,
+            variant,
+        })
+        .unwrap()
 }
 
 #[track_caller]
-pub fn is_enum_variant<'ctx, Ctx: AsContext<'ctx>, T: EnumValue<'ctx>>(
+pub fn is_aggregate_variant<'ctx, Ctx: AsContext<'ctx>, T: AggregateValue<'ctx>>(
     value: Val<'ctx, T>,
     variant_index: usize,
 ) -> Val<'ctx, bool> {
     Val::from_ir_unchecked(
         value.ctx(),
-        IrValue::from(IsEnumVariant::new(
+        IrValue::from(IsAggregateVariant::new(
             value.ctx(),
             value.ir(),
             variant_index,

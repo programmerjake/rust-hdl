@@ -1,621 +1,543 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
+use core::{convert::Infallible, marker::PhantomData};
+
+use alloc::vec::Vec;
+
 use crate::{
     context::{AsContext, ContextRef, Intern},
     ir::{
-        scope::{Scope, ScopeRef},
-        types::{IrEnumType, IrEnumVariantType, IrStructFieldType, IrStructType, IrValueType},
-        values::{
-            ExpandScope, IrValue, LiteralBits, LiteralEnumVariant, LiteralStruct,
-            LiteralStructField, ShrinkScope,
-        },
+        types::{IrAggregateType, IrFieldType, IrValueType, IrVariantType},
+        values::{IrValue, IrValueRef, LiteralAggregateVariant, LiteralBits},
         SourceLocation,
     },
-    prelude::{FixedTypeValue, Int, ToVal, Val, Value, ValueType},
-    values::integer::{IntShape, IntShapeTrait, UIntShape},
+    prelude::{FixedTypeValue, Int, Val, Value, ValueType},
+    values::integer::{IntShape, IntShapeTrait},
 };
-use alloc::vec::Vec;
-use core::{convert::Infallible, hash::Hash, marker::PhantomData};
 
-mod aggregate_value_kind_sealed {
-    pub trait Sealed {}
+pub trait FieldValuesVisitor<'ctx, VV: VariantValue<'ctx>>: Sized {
+    type BreakType;
+    fn visit<FieldType: Value<'ctx>>(
+        self,
+        name: &'static str,
+        value: Val<'ctx, FieldType>,
+    ) -> Result<Self, Self::BreakType>;
 }
 
-pub trait AggregateValueKind<'ctx>: aggregate_value_kind_sealed::Sealed {
-    type AggregateValue: AggregateValue<'ctx, AggregateValueKind = Self>;
-    fn get_value<Ctx: AsContext<'ctx>>(
-        value: &Self::AggregateValue,
-        ctx: Ctx,
-    ) -> Val<'ctx, Self::AggregateValue>;
-    fn static_value_type_opt<Ctx: AsContext<'ctx>>(
-        ctx: Ctx,
-    ) -> Option<ValueType<'ctx, Self::AggregateValue>>;
+pub trait FieldValueTypesVisitor<'ctx, VV: VariantValue<'ctx>>: Sized {
+    type BreakType;
+    fn visit<FieldType: Value<'ctx>>(self, name: &'static str) -> Result<Self, Self::BreakType>;
 }
 
-pub trait FixedTypeAggregateValueKind<'ctx>: AggregateValueKind<'ctx>
-where
-    Self::AggregateValue: FixedTypeValue<'ctx>,
-{
-    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self::AggregateValue>;
+pub trait FieldValueFixedTypesVisitor<'ctx, VV: VariantFixedTypeValue<'ctx>>: Sized {
+    type BreakType;
+    fn visit<FieldType: FixedTypeValue<'ctx>>(
+        self,
+        name: &'static str,
+    ) -> Result<Self, Self::BreakType>;
 }
 
-pub trait AggregateOfFieldValues<'ctx>: 'ctx + Copy {
-    type Aggregate: AggregateValue<'ctx, AggregateOfFieldValues = Self>;
-}
-
-pub struct AggregateValueMatchArm<'ctx, V> {
-    pub value: V,
-    pub match_arm_scope: ScopeRef<'ctx>,
-}
-
-pub trait AggregateValueMatch<'ctx>: Value<'ctx> {
-    fn match_value<RV: FixedTypeValue<'ctx>, R: ToVal<'ctx, ValueType = RV>, E, F>(
-        value: Val<'ctx, Self>,
-        match_result_scope: ScopeRef<'ctx>,
-        f: F,
-        caller: &SourceLocation<'ctx>,
-    ) -> Result<Val<'ctx, RV>, E>
-    where
-        Self: AggregateValue<'ctx>,
-        F: FnMut(AggregateValueMatchArm<'ctx, Self::AggregateOfFieldValues>) -> Result<R, E>;
-}
-
-impl<'ctx, This> AggregateValueMatch<'ctx> for This
-where
-    Self: StructValue<'ctx>,
-{
-    fn match_value<RV: FixedTypeValue<'ctx>, R: ToVal<'ctx, ValueType = RV>, E, F>(
-        value: Val<'ctx, Self>,
-        match_result_scope: ScopeRef<'ctx>,
-        mut f: F,
-        caller: &SourceLocation<'ctx>,
-    ) -> Result<Val<'ctx, RV>, E>
-    where
-        F: FnMut(
-            AggregateValueMatchArm<'ctx, <Self as AggregateValue<'ctx>>::AggregateOfFieldValues>,
-        ) -> Result<R, E>,
-    {
-        match_result_scope.assert_scope_can_access_value(value.ir(), caller);
-        let match_arm_scope = Scope::new(match_result_scope, *caller);
-        let shrunk_value = Val::from_ir_and_type_unchecked(
-            IrValue::from(ShrinkScope::new(
-                value.ctx(),
-                value.ir(),
-                match_arm_scope,
-                caller,
-            ))
-            .intern(value.ctx()),
-            value.value_type(),
-        );
-        let fields = This::get_field_values(shrunk_value);
-        let result = f(AggregateValueMatchArm {
-            match_arm_scope,
-            value: fields,
-        })?
-        .to_val(value.ctx());
-        Ok(Val::from_ir_and_type_unchecked(
-            IrValue::from(ExpandScope::new(
-                value.ctx(),
-                result.ir(),
-                match_arm_scope,
-                match_result_scope,
-                caller,
-            ))
-            .intern(value.ctx()),
-            result.value_type(),
-        ))
-    }
-}
-
-pub trait AggregateValue<'ctx>: Value<'ctx> + AggregateValueMatch<'ctx> {
-    type AggregateValueKind: AggregateValueKind<'ctx>;
+pub trait VariantValue<'ctx>: 'ctx + Copy {
+    type Aggregate: AggregateValue<'ctx, DiscriminantShape = Self::DiscriminantShape>;
     type DiscriminantShape: IntShapeTrait + Default;
-    type AggregateOfFieldValues: AggregateOfFieldValues<'ctx, Aggregate = Self>;
+    fn discriminant() -> Int<Self::DiscriminantShape>;
+    fn visit_fields<Visitor: FieldValuesVisitor<'ctx, Self>>(
+        self,
+        visitor: Visitor,
+    ) -> Result<Visitor, Visitor::BreakType>;
+    fn visit_field_types<Visitor: FieldValueTypesVisitor<'ctx, Self>>(
+        visitor: Visitor,
+    ) -> Result<Visitor, Visitor::BreakType>;
+    fn visit_variants_with_self_as_active_variant<Visitor: VariantVisitor<'ctx, Self::Aggregate>>(
+        self,
+        visitor: Visitor,
+    ) -> Result<Visitor::AfterActiveVariant, Visitor::BreakType>;
 }
 
-impl<'ctx, T: AggregateValue<'ctx>> Value<'ctx> for T
-where
-    T::AggregateValueKind: AggregateValueKind<'ctx, AggregateValue = T>,
+pub fn get_variant_value<'ctx, Ctx: AsContext<'ctx>, VV: VariantValue<'ctx>>(
+    ctx: Ctx,
+    variant: VV,
+) -> Val<'ctx, VV::Aggregate> {
+    get_aggregate_value(ctx.ctx(), |visitor| {
+        variant.visit_variants_with_self_as_active_variant(visitor)
+    })
+}
+
+pub trait VariantFixedTypeValue<'ctx>:
+    VariantValue<'ctx, Aggregate = <Self as VariantFixedTypeValue<'ctx>>::Aggregate>
 {
-    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self> {
-        T::AggregateValueKind::get_value(self, ctx.ctx())
-    }
-    fn static_value_type_opt<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Option<ValueType<'ctx, Self>> {
-        T::AggregateValueKind::static_value_type_opt(ctx.ctx())
-    }
+    type Aggregate: FixedTypeAggregateValue<'ctx>;
+    fn visit_field_fixed_types<Visitor: FieldValueFixedTypesVisitor<'ctx, Self>>(
+        visitor: Visitor,
+    ) -> Result<Visitor, Visitor::BreakType>;
 }
 
-impl<'ctx, T: AggregateValue<'ctx>> FixedTypeValue<'ctx> for T
-where
-    T::AggregateValueKind:
-        AggregateValueKind<'ctx, AggregateValue = T> + FixedTypeAggregateValueKind<'ctx>,
+#[derive(Debug, Clone, Copy)]
+pub struct Variant<V> {
+    pub name: &'static str,
+    pub value: V,
+}
+
+pub trait VariantValuesVisitor<'ctx, T: StructOfVariantValues<'ctx>>: Sized {
+    type BreakType;
+    fn visit<VV: VariantValue<'ctx, Aggregate = T::Aggregate>>(
+        self,
+        variant: Variant<VV>,
+    ) -> Result<Self, Self::BreakType>;
+}
+
+pub trait VariantValueTypesVisitor<'ctx, T: StructOfVariantValues<'ctx>>: Sized {
+    type BreakType;
+    fn visit<VV: VariantValue<'ctx, Aggregate = T::Aggregate>>(
+        self,
+        variant: Variant<()>,
+    ) -> Result<Self, Self::BreakType>;
+}
+
+pub trait VariantValueFixedTypesVisitor<'ctx, T: StructOfVariantFixedTypeValues<'ctx>>:
+    Sized
 {
-    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self> {
-        T::AggregateValueKind::static_value_type(ctx.ctx())
+    type BreakType;
+    fn visit<
+        VV: VariantFixedTypeValue<
+            'ctx,
+            Aggregate = <T as StructOfVariantFixedTypeValues<'ctx>>::Aggregate,
+        >,
+    >(
+        self,
+        variant: Variant<()>,
+    ) -> Result<Self, Self::BreakType>;
+}
+
+pub trait InactiveFieldVisitor<'ctx, VR: InactiveVariantRef<'ctx>>: Sized {
+    type BreakType;
+    fn visit<FieldType: Value<'ctx>>(
+        self,
+        name: &'static str,
+        value_type: ValueType<'ctx, FieldType>,
+    ) -> Result<Self, Self::BreakType>;
+}
+
+pub trait InactiveVariantRef<'ctx>: Copy {
+    type Aggregate: AggregateValue<'ctx, DiscriminantShape = Self::DiscriminantShape>;
+    type DiscriminantShape: IntShapeTrait + Default;
+    fn discriminant() -> Int<Self::DiscriminantShape>;
+    fn visit_fields<Visitor: InactiveFieldVisitor<'ctx, Self>>(
+        self,
+        visitor: Visitor,
+    ) -> Result<Visitor, Visitor::BreakType>;
+}
+
+pub trait ActiveFieldVisitor<'ctx, VR: ActiveVariantRef<'ctx>>: Sized {
+    type BreakType;
+    fn visit<FieldType: Value<'ctx>>(
+        self,
+        name: &'static str,
+        value: Val<'ctx, FieldType>,
+    ) -> Result<Self, Self::BreakType>;
+}
+
+pub trait ActiveVariantRef<'ctx>: Copy {
+    type Aggregate: AggregateValue<'ctx, DiscriminantShape = Self::DiscriminantShape>;
+    type DiscriminantShape: IntShapeTrait + Default;
+    fn discriminant() -> Int<Self::DiscriminantShape>;
+    fn visit_fields<Visitor: ActiveFieldVisitor<'ctx, Self>>(
+        self,
+        visitor: Visitor,
+    ) -> Result<Visitor, Visitor::BreakType>;
+}
+
+pub trait VariantVisitor<'ctx, A: AggregateValue<'ctx>>: Sized {
+    type BreakType;
+    type AfterActiveVariant;
+    fn visit_before_active_variant<VR: InactiveVariantRef<'ctx, Aggregate = A>>(
+        self,
+        variant: Variant<VR>,
+    ) -> Result<Self, Self::BreakType>;
+    fn visit_active_variant<VR: ActiveVariantRef<'ctx, Aggregate = A>>(
+        self,
+        variant: Variant<VR>,
+    ) -> Result<Self::AfterActiveVariant, Self::BreakType>;
+    fn visit_after_active_variant<VR: InactiveVariantRef<'ctx, Aggregate = A>>(
+        visitor: Self::AfterActiveVariant,
+        variant: Variant<VR>,
+    ) -> Result<Self::AfterActiveVariant, Self::BreakType>;
+}
+
+struct GetAggregateValueInactiveFieldVisitor<'ctx> {
+    ctx: ContextRef<'ctx>,
+    field_types: Vec<IrFieldType<'ctx>>,
+}
+
+impl<'ctx, VR: InactiveVariantRef<'ctx>> InactiveFieldVisitor<'ctx, VR>
+    for GetAggregateValueInactiveFieldVisitor<'ctx>
+{
+    type BreakType = Infallible;
+    fn visit<FieldType: Value<'ctx>>(
+        mut self,
+        name: &'static str,
+        value_type: ValueType<'ctx, FieldType>,
+    ) -> Result<Self, Self::BreakType> {
+        self.field_types.push(IrFieldType {
+            name: name.intern(self.ctx),
+            ty: value_type.ir(),
+        });
+        Ok(self)
     }
 }
 
-pub struct StructAggregateValueKind<'ctx, T>(PhantomData<Val<'ctx, T>>)
-where
-    T: StructValue<'ctx> + AggregateValue<'ctx, AggregateValueKind = Self>;
-
-impl<'ctx, T: StructValue<'ctx>> aggregate_value_kind_sealed::Sealed
-    for StructAggregateValueKind<'ctx, T>
-{
+struct GetAggregateValueActiveFieldVisitor<'ctx> {
+    field_types: Vec<IrFieldType<'ctx>>,
+    field_values: Vec<IrValueRef<'ctx>>,
 }
 
-impl<'ctx, T: StructValue<'ctx>> AggregateValueKind<'ctx> for StructAggregateValueKind<'ctx, T> {
-    type AggregateValue = T;
-    fn get_value<Ctx: AsContext<'ctx>>(
-        value: &Self::AggregateValue,
-        ctx: Ctx,
-    ) -> Val<'ctx, Self::AggregateValue> {
-        let ctx = ctx.ctx();
-        struct ValueGetter<'ctx> {
-            fields: Vec<LiteralStructField<'ctx>>,
-            ctx: ContextRef<'ctx>,
-        }
-        impl<'ctx, T: StructValue<'ctx>> StructFieldVisitor<'ctx, T> for ValueGetter<'ctx> {
-            type BreakType = Infallible;
+impl<'ctx, VR: ActiveVariantRef<'ctx>> ActiveFieldVisitor<'ctx, VR>
+    for GetAggregateValueActiveFieldVisitor<'ctx>
+{
+    type BreakType = Infallible;
+    fn visit<FieldType: Value<'ctx>>(
+        mut self,
+        name: &'static str,
+        value: Val<'ctx, FieldType>,
+    ) -> Result<Self, Self::BreakType> {
+        self.field_types.push(IrFieldType {
+            name: name.intern(value.ctx()),
+            ty: value.value_type().ir(),
+        });
+        self.field_values.push(value.ir());
+        Ok(self)
+    }
+}
 
-            fn field<FieldType: Value<'ctx>>(
-                mut self,
-                name: &'static str,
-                field_enum: T::FieldEnum,
-                field: &FieldType,
-            ) -> Result<Self, Self::BreakType> {
-                let field_index: usize = field_enum.into();
-                assert_eq!(self.fields.len(), field_index);
-                self.fields.push(LiteralStructField {
-                    name: name.intern(self.ctx),
-                    value: field.get_value(self.ctx).ir(),
-                });
-                Ok(self)
-            }
-        }
-        let fields = value
-            .visit_fields(ValueGetter {
-                fields: Vec::new(),
-                ctx,
+pub struct GetAggregateValueVisitor<'ctx, A: AggregateValue<'ctx>> {
+    ctx: ContextRef<'ctx>,
+    variant_types: Vec<IrVariantType<'ctx>>,
+    _phantom: PhantomData<A>,
+}
+
+pub struct GetAggregateValueVisitorAfter<'ctx, A: AggregateValue<'ctx>> {
+    base: GetAggregateValueVisitor<'ctx, A>,
+    active_discriminant: LiteralBits,
+    active_field_values: Vec<IrValueRef<'ctx>>,
+}
+
+impl<'ctx, A: AggregateValue<'ctx>> VariantVisitor<'ctx, A> for GetAggregateValueVisitor<'ctx, A> {
+    type BreakType = Infallible;
+    type AfterActiveVariant = GetAggregateValueVisitorAfter<'ctx, A>;
+    fn visit_before_active_variant<VR: InactiveVariantRef<'ctx, Aggregate = A>>(
+        mut self,
+        variant: Variant<VR>,
+    ) -> Result<Self, Self::BreakType> {
+        let field_types = variant
+            .value
+            .visit_fields(GetAggregateValueInactiveFieldVisitor {
+                ctx: self.ctx,
+                field_types: Vec::new(),
             })
             .unwrap()
-            .fields;
-        assert_eq!(fields.len(), T::FIELD_COUNT);
-        Val::from_ir_unchecked(
-            ctx,
-            IrValue::from(LiteralStruct::new(ctx, fields, &SourceLocation::caller())).intern(ctx),
-        )
+            .field_types;
+        self.variant_types.push(IrVariantType::new(
+            self.ctx,
+            variant.name,
+            VR::discriminant().into(),
+            field_types,
+        ));
+        Ok(self)
     }
-    fn static_value_type_opt<Ctx: AsContext<'ctx>>(
-        ctx: Ctx,
-    ) -> Option<ValueType<'ctx, Self::AggregateValue>> {
-        let ctx = ctx.ctx();
-        struct ValueTypeOptGetter<'ctx> {
-            fields: Vec<IrStructFieldType<'ctx>>,
+    fn visit_active_variant<VR: ActiveVariantRef<'ctx, Aggregate = A>>(
+        mut self,
+        variant: Variant<VR>,
+    ) -> Result<Self::AfterActiveVariant, Self::BreakType> {
+        let GetAggregateValueActiveFieldVisitor {
+            field_types,
+            field_values,
+        } = variant
+            .value
+            .visit_fields(GetAggregateValueActiveFieldVisitor {
+                field_types: Vec::new(),
+                field_values: Vec::new(),
+            })?;
+        let active_discriminant = LiteralBits::from(VR::discriminant());
+        self.variant_types.push(IrVariantType::new(
+            self.ctx,
+            variant.name,
+            active_discriminant.clone(),
+            field_types,
+        ));
+        Ok(GetAggregateValueVisitorAfter {
+            base: self,
+            active_discriminant,
+            active_field_values: field_values,
+        })
+    }
+    fn visit_after_active_variant<VR: InactiveVariantRef<'ctx, Aggregate = A>>(
+        visitor: Self::AfterActiveVariant,
+        variant: Variant<VR>,
+    ) -> Result<Self::AfterActiveVariant, Self::BreakType> {
+        let GetAggregateValueVisitorAfter {
+            base,
+            active_discriminant,
+            active_field_values,
+        } = visitor;
+        let base = base.visit_before_active_variant(variant)?;
+        Ok(GetAggregateValueVisitorAfter {
+            base,
+            active_discriminant,
+            active_field_values,
+        })
+    }
+}
+
+pub fn get_aggregate_value<
+    'ctx,
+    Ctx: AsContext<'ctx>,
+    A: AggregateValue<'ctx>,
+    F: FnOnce(
+        GetAggregateValueVisitor<'ctx, A>,
+    ) -> Result<GetAggregateValueVisitorAfter<'ctx, A>, Infallible>,
+>(
+    ctx: Ctx,
+    visit_variants: F,
+) -> Val<'ctx, A> {
+    let GetAggregateValueVisitorAfter {
+        base:
+            GetAggregateValueVisitor {
+                ctx,
+                variant_types,
+                _phantom: _,
+            },
+        active_discriminant,
+        active_field_values,
+    } = visit_variants(GetAggregateValueVisitor {
+        ctx: ctx.ctx(),
+        variant_types: Vec::new(),
+        _phantom: PhantomData,
+    })
+    .unwrap();
+    let source_location = A::source_location();
+    let value_type = IrAggregateType::new(
+        ctx,
+        active_discriminant.value_type(),
+        variant_types,
+        &source_location,
+    );
+    let variant_index = value_type
+        .get_variant_index(&active_discriminant)
+        .unwrap_or_else(|| {
+            panic!(
+                "discriminant for active variant not found\nat {}",
+                source_location
+            )
+        });
+    Val::from_ir_unchecked(
+        ctx,
+        IrValue::from(LiteralAggregateVariant::new(
+            ctx,
+            value_type,
+            variant_index,
+            active_field_values,
+            &source_location,
+        ))
+        .intern(ctx),
+    )
+}
+
+pub trait StructOfVariantValues<'ctx>: 'ctx + Copy {
+    type Aggregate: AggregateValue<'ctx, StructOfVariantValues = Self>;
+    fn visit_variant_values<Visitor: VariantValuesVisitor<'ctx, Self>>(
+        self,
+        visitor: Visitor,
+    ) -> Result<Visitor, Visitor::BreakType>;
+    fn visit_variant_types<Visitor: VariantValueTypesVisitor<'ctx, Self>>(
+        visitor: Visitor,
+    ) -> Result<Visitor, Visitor::BreakType>;
+}
+
+pub trait StructOfVariantFixedTypeValues<'ctx>:
+    StructOfVariantValues<'ctx, Aggregate = <Self as StructOfVariantFixedTypeValues<'ctx>>::Aggregate>
+{
+    type Aggregate: FixedTypeAggregateValue<'ctx>;
+    fn visit_variant_fixed_types<Visitor: VariantValueFixedTypesVisitor<'ctx, Self>>(
+        visitor: Visitor,
+    ) -> Result<Visitor, Visitor::BreakType>;
+}
+
+pub trait AggregateValue<'ctx>: Value<'ctx> {
+    type DiscriminantShape: IntShapeTrait + Default;
+    type StructOfVariantValues: StructOfVariantValues<'ctx, Aggregate = Self>;
+    fn source_location() -> SourceLocation<'static>;
+    fn struct_of_variant_values(aggregate: Val<'ctx, Self>) -> Self::StructOfVariantValues;
+    fn visit_variants<Visitor: VariantVisitor<'ctx, Self>>(
+        &self,
+        visitor: Visitor,
+    ) -> Result<Visitor::AfterActiveVariant, Visitor::BreakType>;
+}
+
+impl<'ctx, T: AggregateValue<'ctx>> Value<'ctx> for T {
+    fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self> {
+        get_aggregate_value(ctx.ctx(), |visitor| self.visit_variants(visitor))
+    }
+    fn static_value_type_opt<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Option<ValueType<'ctx, Self>> {
+        struct MyFieldVisitor<'ctx> {
             ctx: ContextRef<'ctx>,
+            fields: Vec<IrFieldType<'ctx>>,
         }
-        impl<'ctx, T: StructValue<'ctx>> StructFieldTypeVisitor<'ctx, T> for ValueTypeOptGetter<'ctx> {
+        impl<'ctx, T: VariantValue<'ctx>> FieldValueTypesVisitor<'ctx, T> for MyFieldVisitor<'ctx> {
             type BreakType = ();
 
-            fn field<FieldType: Value<'ctx>>(
+            fn visit<FieldType: Value<'ctx>>(
                 mut self,
                 name: &'static str,
-                field_enum: T::FieldEnum,
             ) -> Result<Self, Self::BreakType> {
-                let field_index: usize = field_enum.into();
-                assert_eq!(self.fields.len(), field_index);
-                self.fields.push(IrStructFieldType {
+                self.fields.push(IrFieldType {
                     name: name.intern(self.ctx),
                     ty: FieldType::static_value_type_opt(self.ctx).ok_or(())?.ir(),
                 });
                 Ok(self)
             }
         }
-        let fields = T::visit_field_types(ValueTypeOptGetter {
-            fields: Vec::new(),
-            ctx,
-        })
-        .ok()?
-        .fields;
-        assert_eq!(fields.len(), T::FIELD_COUNT);
-        Some(ValueType::from_ir_unchecked(
-            ctx,
-            IrValueType::from(IrStructType::new(ctx, fields)).intern(ctx),
-        ))
-    }
-}
-
-impl<'ctx, T: FixedTypeStructValue<'ctx>> FixedTypeAggregateValueKind<'ctx>
-    for StructAggregateValueKind<'ctx, T>
-{
-    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self::AggregateValue> {
-        let ctx = ctx.ctx();
-        ValueType::from_ir_unchecked(
-            ctx,
-            IrValueType::from(fixed_type_struct_ir_type::<T, _>(ctx)).intern(ctx),
-        )
-    }
-}
-
-pub trait StructValue<'ctx>:
-    AggregateValue<
-    'ctx,
-    AggregateValueKind = StructAggregateValueKind<'ctx, Self>,
-    DiscriminantShape = UIntShape<0>,
->
-{
-    type FieldEnum: 'static + Copy + Send + Sync + Ord + Hash + Into<usize>;
-    type StructOfFieldEnums: 'static + Copy + Send + Sync;
-    const STRUCT_OF_FIELD_ENUMS: Self::StructOfFieldEnums;
-    const FIELD_COUNT: usize;
-    fn visit_fields<V: StructFieldVisitor<'ctx, Self>>(
-        &self,
-        visitor: V,
-    ) -> Result<V, V::BreakType>;
-    fn visit_field_types<V: StructFieldTypeVisitor<'ctx, Self>>(
-        visitor: V,
-    ) -> Result<V, V::BreakType>;
-    fn get_field_values(value: Val<'ctx, Self>) -> Self::AggregateOfFieldValues;
-}
-
-pub trait StructFieldVisitor<'ctx, Struct: StructValue<'ctx>>: Sized {
-    type BreakType;
-    fn field<FieldType: Value<'ctx>>(
-        self,
-        name: &'static str,
-        field_enum: Struct::FieldEnum,
-        field: &FieldType,
-    ) -> Result<Self, Self::BreakType>;
-}
-
-pub trait StructFieldTypeVisitor<'ctx, Struct: StructValue<'ctx>>: Sized {
-    type BreakType;
-    fn field<FieldType: Value<'ctx>>(
-        self,
-        name: &'static str,
-        field_enum: Struct::FieldEnum,
-    ) -> Result<Self, Self::BreakType>;
-    fn field_with_type_hint<
-        FieldType: Value<'ctx>,
-        TypeHint: FnOnce(&Struct, Infallible) -> &FieldType,
-    >(
-        self,
-        name: &'static str,
-        field_enum: Struct::FieldEnum,
-        _: TypeHint,
-    ) -> Result<Self, Self::BreakType> {
-        self.field::<FieldType>(name, field_enum)
-    }
-}
-
-pub trait StructFieldFixedTypeVisitor<'ctx, Struct: FixedTypeStructValue<'ctx>>: Sized {
-    type BreakType;
-    fn field<FieldType: FixedTypeValue<'ctx>>(
-        self,
-        name: &'static str,
-        field_enum: Struct::FieldEnum,
-    ) -> Result<Self, Self::BreakType>;
-    fn field_with_type_hint<
-        FieldType: FixedTypeValue<'ctx>,
-        TypeHint: FnOnce(&Struct, Infallible) -> &FieldType,
-    >(
-        self,
-        name: &'static str,
-        field_enum: Struct::FieldEnum,
-        _: TypeHint,
-    ) -> Result<Self, Self::BreakType> {
-        self.field::<FieldType>(name, field_enum)
-    }
-}
-
-pub trait FixedTypeStructValue<'ctx>: FixedTypeValue<'ctx> + StructValue<'ctx> {
-    fn visit_field_fixed_types<V: StructFieldFixedTypeVisitor<'ctx, Self>>(
-        visitor: V,
-    ) -> Result<V, V::BreakType>;
-}
-
-pub trait EnumVariantFieldVisitor<
-    'ctx,
-    Enum: EnumValue<'ctx>,
-    EnumVariant: EnumVariantRef<'ctx, Enum>,
->: Sized
-{
-    type BreakType;
-    fn field<FieldType: FixedTypeValue<'ctx>>(
-        self,
-        name: &'static str,
-        field_index: usize,
-        field: &FieldType,
-    ) -> Result<Self, Self::BreakType>;
-}
-
-pub trait EnumVariantFieldTypeVisitor<
-    'ctx,
-    Enum: EnumValue<'ctx>,
-    EnumVariant: EnumVariantRef<'ctx, Enum>,
->: Sized
-{
-    type BreakType;
-    fn field<FieldType: FixedTypeValue<'ctx>>(
-        self,
-        name: &'static str,
-        field_index: usize,
-    ) -> Result<Self, Self::BreakType>;
-}
-
-pub trait EnumVariantRef<'ctx, Enum: EnumValue<'ctx>>: Copy {
-    fn visit_fields<V: EnumVariantFieldVisitor<'ctx, Enum, Self>>(
-        self,
-        visitor: V,
-    ) -> Result<V, V::BreakType>;
-    fn visit_field_types<V: EnumVariantFieldTypeVisitor<'ctx, Enum, Self>>(
-        visitor: V,
-    ) -> Result<V, V::BreakType>;
-}
-
-pub trait EnumVariantVisitor<'ctx, Enum: EnumValue<'ctx>>: Sized {
-    type ResultType;
-    fn variant<VariantType: EnumVariantRef<'ctx, Enum>>(
-        self,
-        name: &'static str,
-        discriminant: Int<Enum::DiscriminantShape>,
-        variant: VariantType,
-    ) -> Self::ResultType;
-}
-
-pub trait EnumVariantTypeVisitor<'ctx, Enum: EnumValue<'ctx>>: Sized {
-    type BreakType;
-    fn variant<VariantType: EnumVariantRef<'ctx, Enum>>(
-        self,
-        name: &'static str,
-        discriminant: Int<Enum::DiscriminantShape>,
-    ) -> Result<Self, Self::BreakType>;
-    fn variant_with_type_hint<
-        VariantType: EnumVariantRef<'ctx, Enum>,
-        TypeHint: FnOnce(&Enum, Infallible) -> &VariantType,
-    >(
-        self,
-        name: &'static str,
-        discriminant: Int<Enum::DiscriminantShape>,
-        _: TypeHint,
-    ) -> Result<Self, Self::BreakType> {
-        self.variant::<VariantType>(name, discriminant)
-    }
-}
-
-pub trait EnumGetIrType<'ctx>: AggregateValue<'ctx> {
-    fn get_ir_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> IrEnumType<'ctx>
-    where
-        Self: EnumValue<'ctx>,
-    {
-        let ctx = ctx.ctx();
-        struct VariantValueTypeGetter<'ctx> {
-            fields: Vec<IrStructFieldType<'ctx>>,
+        struct MyVariantVisitor<'ctx> {
             ctx: ContextRef<'ctx>,
+            variants: Vec<IrVariantType<'ctx>>,
         }
-        impl<'ctx, Enum: EnumValue<'ctx>, EnumVariant: EnumVariantRef<'ctx, Enum>>
-            EnumVariantFieldTypeVisitor<'ctx, Enum, EnumVariant> for VariantValueTypeGetter<'ctx>
+        impl<'ctx, T: StructOfVariantValues<'ctx>> VariantValueTypesVisitor<'ctx, T>
+            for MyVariantVisitor<'ctx>
+        {
+            type BreakType = ();
+            fn visit<VV: VariantValue<'ctx, Aggregate = T::Aggregate>>(
+                mut self,
+                variant: Variant<()>,
+            ) -> Result<Self, Self::BreakType> {
+                let fields = VV::visit_field_types(MyFieldVisitor {
+                    ctx: self.ctx,
+                    fields: Vec::new(),
+                })?
+                .fields;
+                self.variants.push(IrVariantType::new(
+                    self.ctx,
+                    variant.name,
+                    VV::discriminant().into(),
+                    fields,
+                ));
+                Ok(self)
+            }
+        }
+        match <T::StructOfVariantValues as StructOfVariantValues<'ctx>>::visit_variant_types(
+            MyVariantVisitor {
+                ctx: ctx.ctx(),
+                variants: Vec::new(),
+            },
+        ) {
+            Ok(MyVariantVisitor { ctx, variants }) => Some(ValueType::from_ir_unchecked(
+                ctx,
+                IrValueType::from(IrAggregateType::new(
+                    ctx,
+                    T::DiscriminantShape::default().shape().into(),
+                    variants,
+                    &Self::source_location(),
+                ))
+                .intern(ctx),
+            )),
+            Err(()) => None,
+        }
+    }
+}
+
+pub trait FixedTypeAggregateValue<'ctx>:
+    AggregateValue<
+        'ctx,
+        StructOfVariantValues = <Self as FixedTypeAggregateValue<'ctx>>::StructOfVariantValues,
+    > + FixedTypeValue<'ctx>
+{
+    type StructOfVariantValues: StructOfVariantFixedTypeValues<'ctx>;
+}
+
+impl<'ctx, T: FixedTypeAggregateValue<'ctx>> FixedTypeValue<'ctx> for T {
+    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self> {
+        struct MyFieldVisitor<'ctx> {
+            ctx: ContextRef<'ctx>,
+            fields: Vec<IrFieldType<'ctx>>,
+        }
+        impl<'ctx, T: VariantFixedTypeValue<'ctx>> FieldValueFixedTypesVisitor<'ctx, T>
+            for MyFieldVisitor<'ctx>
         {
             type BreakType = Infallible;
 
-            fn field<FieldType: FixedTypeValue<'ctx>>(
+            fn visit<FieldType: FixedTypeValue<'ctx>>(
                 mut self,
                 name: &'static str,
-                field_index: usize,
             ) -> Result<Self, Self::BreakType> {
-                assert_eq!(field_index, self.fields.len());
-                self.fields.push(IrStructFieldType {
+                self.fields.push(IrFieldType {
                     name: name.intern(self.ctx),
                     ty: FieldType::static_value_type(self.ctx).ir(),
                 });
                 Ok(self)
             }
         }
-        struct ValueTypeGetter<'ctx> {
-            variants: Vec<IrEnumVariantType<'ctx>>,
+        struct MyVariantVisitor<'ctx> {
             ctx: ContextRef<'ctx>,
+            variants: Vec<IrVariantType<'ctx>>,
         }
-        impl<'ctx, Enum: EnumValue<'ctx>> EnumVariantTypeVisitor<'ctx, Enum> for ValueTypeGetter<'ctx> {
+        impl<'ctx, T: StructOfVariantFixedTypeValues<'ctx>> VariantValueFixedTypesVisitor<'ctx, T>
+            for MyVariantVisitor<'ctx>
+        {
             type BreakType = Infallible;
-
-            fn variant<VariantType: EnumVariantRef<'ctx, Enum>>(
+            fn visit<
+                VV: VariantFixedTypeValue<
+                    'ctx,
+                    Aggregate = <T as StructOfVariantFixedTypeValues<'ctx>>::Aggregate,
+                >,
+            >(
                 mut self,
-                name: &'static str,
-                discriminant: Int<Enum::DiscriminantShape>,
+                variant: Variant<()>,
             ) -> Result<Self, Self::BreakType> {
-                let fields = VariantType::visit_field_types(VariantValueTypeGetter {
+                let fields = VV::visit_field_fixed_types(MyFieldVisitor {
                     ctx: self.ctx,
                     fields: Vec::new(),
                 })
                 .unwrap()
                 .fields;
-                self.variants.push(IrEnumVariantType {
-                    name: name.intern(self.ctx),
-                    discriminant: LiteralBits::from(discriminant),
-                    fields: IrStructType::new(self.ctx, fields),
-                });
-                Ok(self)
-            }
-        }
-        let variants = Self::visit_variant_types(ValueTypeGetter {
-            variants: Vec::new(),
-            ctx,
-        })
-        .unwrap()
-        .variants;
-        IrEnumType::new(
-            ctx,
-            Self::DiscriminantShape::default().shape().into(),
-            variants,
-            &SourceLocation::caller(),
-        )
-    }
-}
-
-impl<'ctx, This> EnumGetIrType<'ctx> for This where This: AggregateValue<'ctx> {}
-
-pub trait EnumValue<'ctx>:
-    AggregateValue<'ctx, AggregateValueKind = EnumAggregateValueKind<'ctx, Self>> + EnumGetIrType<'ctx>
-{
-    fn visit_variant<V: EnumVariantVisitor<'ctx, Self>>(&self, visitor: V) -> V::ResultType;
-    fn visit_variant_types<V: EnumVariantTypeVisitor<'ctx, Self>>(
-        visitor: V,
-    ) -> Result<V, V::BreakType>;
-}
-
-pub trait FixedTypeEnumValue<'ctx>: EnumValue<'ctx> + FixedTypeValue<'ctx> {}
-
-pub struct EnumAggregateValueKind<'ctx, T: EnumValue<'ctx>>(PhantomData<Val<'ctx, T>>);
-
-impl<'ctx, T: EnumValue<'ctx>> aggregate_value_kind_sealed::Sealed
-    for EnumAggregateValueKind<'ctx, T>
-{
-}
-
-fn fixed_type_struct_ir_type<'ctx, T: FixedTypeStructValue<'ctx>, Ctx: AsContext<'ctx>>(
-    ctx: Ctx,
-) -> IrStructType<'ctx> {
-    let ctx = ctx.ctx();
-    struct ValueTypeGetter<'ctx> {
-        fields: Vec<IrStructFieldType<'ctx>>,
-        ctx: ContextRef<'ctx>,
-    }
-    impl<'ctx, T: FixedTypeStructValue<'ctx>> StructFieldFixedTypeVisitor<'ctx, T>
-        for ValueTypeGetter<'ctx>
-    {
-        type BreakType = Infallible;
-
-        fn field<FieldType: FixedTypeValue<'ctx>>(
-            mut self,
-            name: &'static str,
-            field_enum: T::FieldEnum,
-        ) -> Result<Self, Self::BreakType> {
-            let field_index: usize = field_enum.into();
-            assert_eq!(self.fields.len(), field_index);
-            self.fields.push(IrStructFieldType {
-                name: name.intern(self.ctx),
-                ty: FieldType::static_value_type(self.ctx).ir(),
-            });
-            Ok(self)
-        }
-    }
-    let fields = T::visit_field_fixed_types(ValueTypeGetter {
-        fields: Vec::new(),
-        ctx,
-    })
-    .unwrap()
-    .fields;
-    assert_eq!(fields.len(), T::FIELD_COUNT);
-    IrStructType::new(ctx, fields)
-}
-
-impl<'ctx, T: EnumValue<'ctx>> AggregateValueKind<'ctx> for EnumAggregateValueKind<'ctx, T> {
-    type AggregateValue = T;
-    fn get_value<Ctx: AsContext<'ctx>>(
-        value: &Self::AggregateValue,
-        ctx: Ctx,
-    ) -> Val<'ctx, Self::AggregateValue> {
-        let ctx = ctx.ctx();
-        struct VariantFieldsValueGetter<'ctx> {
-            ctx: ContextRef<'ctx>,
-            fields: Vec<LiteralStructField<'ctx>>,
-        }
-        impl<'ctx, Enum: EnumValue<'ctx>, EnumVariant: EnumVariantRef<'ctx, Enum>>
-            EnumVariantFieldVisitor<'ctx, Enum, EnumVariant> for VariantFieldsValueGetter<'ctx>
-        {
-            type BreakType = Infallible;
-            fn field<FieldType: FixedTypeValue<'ctx>>(
-                mut self,
-                name: &'static str,
-                field_index: usize,
-                field: &FieldType,
-            ) -> Result<Self, Self::BreakType> {
-                assert_eq!(field_index, self.fields.len());
-                self.fields.push(LiteralStructField {
-                    name: name.intern(self.ctx),
-                    value: field.get_value(self.ctx).ir(),
-                });
-                Ok(self)
-            }
-        }
-        struct ValueGetter<'ctx> {
-            ctx: ContextRef<'ctx>,
-        }
-        impl<'ctx, Enum: EnumValue<'ctx>> EnumVariantVisitor<'ctx, Enum> for ValueGetter<'ctx> {
-            type ResultType = Val<'ctx, Enum>;
-
-            fn variant<VariantType: EnumVariantRef<'ctx, Enum>>(
-                self,
-                name: &'static str,
-                discriminant: Int<Enum::DiscriminantShape>,
-                variant: VariantType,
-            ) -> Self::ResultType {
-                let enum_type = Enum::get_ir_type(self.ctx);
-                let variant_index = enum_type
-                    .get_variant_index(&discriminant.into())
-                    .expect("variant not found");
-                let value_type = ValueType::from_ir_unchecked(
+                self.variants.push(IrVariantType::new(
                     self.ctx,
-                    IrValueType::from(enum_type).intern(self.ctx),
-                );
-                let fields = variant
-                    .visit_fields(VariantFieldsValueGetter {
-                        ctx: self.ctx,
-                        fields: Vec::new(),
-                    })
-                    .unwrap()
-                    .fields;
-                let fields_value = IrValue::from(LiteralStruct::new(
-                    self.ctx,
+                    variant.name,
+                    VV::discriminant().into(),
                     fields,
-                    &SourceLocation::caller(),
-                ))
-                .intern(self.ctx);
-                let literal_enum_variant = LiteralEnumVariant::new(
-                    self.ctx,
-                    enum_type,
-                    variant_index,
-                    fields_value,
-                    &SourceLocation::caller(),
-                );
-                assert_eq!(*name, *literal_enum_variant.variant().name);
-                Val::from_ir_and_type_unchecked(
-                    IrValue::from(literal_enum_variant).intern(self.ctx),
-                    value_type,
-                )
+                ));
+                Ok(self)
             }
         }
-        value.visit_variant(ValueGetter { ctx })
-    }
-    fn static_value_type_opt<Ctx: AsContext<'ctx>>(
-        ctx: Ctx,
-    ) -> Option<ValueType<'ctx, Self::AggregateValue>> {
         let ctx = ctx.ctx();
-        Some(ValueType::from_ir_unchecked(
+        let variants =
+            <T as FixedTypeAggregateValue<'ctx>>::StructOfVariantValues::visit_variant_fixed_types(
+                MyVariantVisitor {
+                    ctx: ctx.ctx(),
+                    variants: Vec::new(),
+                },
+            )
+            .unwrap()
+            .variants;
+        ValueType::from_ir_unchecked(
             ctx,
-            IrValueType::from(T::get_ir_type(ctx)).intern(ctx),
-        ))
-    }
-}
-
-impl<'ctx, T: FixedTypeEnumValue<'ctx>> FixedTypeAggregateValueKind<'ctx>
-    for EnumAggregateValueKind<'ctx, T>
-{
-    fn static_value_type<Ctx: AsContext<'ctx>>(ctx: Ctx) -> ValueType<'ctx, Self::AggregateValue> {
-        let ctx = ctx.ctx();
-        ValueType::from_ir_unchecked(ctx, IrValueType::from(T::get_ir_type(ctx)).intern(ctx))
+            IrValueType::from(IrAggregateType::new(
+                ctx,
+                T::DiscriminantShape::default().shape().into(),
+                variants,
+                &Self::source_location(),
+            ))
+            .intern(ctx),
+        )
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 #[must_use]
-pub struct EnumDiscriminantShapeCalculator {
+pub struct AggregateDiscriminantShapeCalculator {
     min_discriminant: i128,
     max_discriminant: i128,
 }
 
-impl EnumDiscriminantShapeCalculator {
+impl AggregateDiscriminantShapeCalculator {
     pub const fn new() -> Self {
         Self {
             min_discriminant: i128::MAX,
@@ -663,31 +585,31 @@ mod tests {
 
     #[test]
     fn test_enum_discriminant_shape_calculator() {
-        assert!(EnumDiscriminantShapeCalculator::new().is_empty());
-        assert!(!EnumDiscriminantShapeCalculator::new()
+        assert!(AggregateDiscriminantShapeCalculator::new().is_empty());
+        assert!(!AggregateDiscriminantShapeCalculator::new()
             .add_discriminant(0)
             .is_empty());
-        assert!(!EnumDiscriminantShapeCalculator::new()
+        assert!(!AggregateDiscriminantShapeCalculator::new()
             .add_discriminant(1)
             .is_empty());
-        assert!(!EnumDiscriminantShapeCalculator::new()
+        assert!(!AggregateDiscriminantShapeCalculator::new()
             .add_discriminant(-1)
             .is_empty());
-        assert!(!EnumDiscriminantShapeCalculator::new()
+        assert!(!AggregateDiscriminantShapeCalculator::new()
             .add_discriminant(i128::MAX)
             .is_empty());
-        assert!(!EnumDiscriminantShapeCalculator::new()
+        assert!(!AggregateDiscriminantShapeCalculator::new()
             .add_discriminant(i128::MIN)
             .is_empty());
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new().get_shape(),
+            AggregateDiscriminantShapeCalculator::new().get_shape(),
             IntShape {
                 bit_count: 0,
                 signed: false
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(0)
                 .get_shape(),
             IntShape {
@@ -696,7 +618,7 @@ mod tests {
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(1)
                 .get_shape(),
             IntShape {
@@ -705,7 +627,7 @@ mod tests {
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(-1)
                 .get_shape(),
             IntShape {
@@ -714,7 +636,7 @@ mod tests {
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(-1)
                 .add_discriminant(0)
                 .get_shape(),
@@ -724,7 +646,7 @@ mod tests {
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(-1)
                 .add_discriminant(1)
                 .get_shape(),
@@ -734,7 +656,7 @@ mod tests {
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(0)
                 .add_discriminant(1)
                 .get_shape(),
@@ -744,7 +666,7 @@ mod tests {
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(i128::MIN)
                 .get_shape(),
             IntShape {
@@ -753,7 +675,7 @@ mod tests {
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(i128::MAX)
                 .get_shape(),
             IntShape {
@@ -762,7 +684,7 @@ mod tests {
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(u64::MAX as _)
                 .get_shape(),
             IntShape {
@@ -771,7 +693,7 @@ mod tests {
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(i64::MIN as _)
                 .get_shape(),
             IntShape {
@@ -780,7 +702,7 @@ mod tests {
             }
         );
         assert_eq!(
-            EnumDiscriminantShapeCalculator::new()
+            AggregateDiscriminantShapeCalculator::new()
                 .add_discriminant(i64::MIN as i128 - 1)
                 .get_shape(),
             IntShape {

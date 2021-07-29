@@ -20,7 +20,7 @@ use crate::{
         SourceLocation,
     },
     prelude::{Int, UInt1},
-    values::integer::IntShape,
+    values::{aggregate, integer::IntShape},
 };
 use alloc::{
     borrow::Cow,
@@ -472,6 +472,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 }
                 wires.into()
             }
+            #[cfg(todo)]
             IrValue::LiteralStruct(v) => {
                 let mut wires = Vec::with_capacity(v.fields().len());
                 for field in v.fields().iter() {
@@ -479,7 +480,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 }
                 wires.into()
             }
-            IrValue::LiteralEnumVariant(v) => {
+            IrValue::LiteralAggregateVariant(v) => {
                 let discriminant_wire =
                     if let Some(bit_count) = NonZeroU32::new(v.discriminant().bit_count()) {
                         let name = self.new_anonymous_symbol(module);
@@ -503,7 +504,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 {
                     let name = self.new_anonymous_symbol(module);
                     writeln!(self.writer, "  wire width {} {}", fields_bit_count, name)?;
-                    let wires = self.get_wires_for_value(module, v.fields_value())?;
+                    let wires = self.get_wires_for_value(module, todo!("v.fields_value()"))?;
                     write!(self.writer, "  connect {} {{", name)?;
                     for wire in wires.iter().rev() {
                         write!(self.writer, " {}", wire.name)?;
@@ -587,6 +588,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 )?;
                 wires.into()
             }
+            #[cfg(todo)]
             IrValue::ExtractStructField(v) => {
                 let struct_wires = self.get_wires_for_value(module, v.struct_value())?;
                 let mut struct_wires = struct_wires.iter();
@@ -608,9 +610,8 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 .unwrap();
                 wires.into()
             }
-            IrValue::ExtractEnumVariantFields(_) => todo!(),
-            IrValue::IsEnumVariant(_) => todo!(),
-            IrValue::MatchEnum(_) => todo!(),
+            IrValue::ExtractAggregateField(_) => todo!(),
+            IrValue::IsAggregateVariant(_) => todo!(),
             IrValue::ExpandScope(v) => self.get_wires_for_value(module, v.value())?,
             IrValue::ShrinkScope(v) => self.get_wires_for_value(module, v.value())?,
             IrValue::ExtractArrayElement(v) => {
@@ -1171,36 +1172,37 @@ fn visit_wire_types_in_type<'ctx, 'a, E, FR: FieldRange>(
                 )?;
             }
         }
-        IrValueType::Struct(s) => {
-            for (index, field) in s.fields().iter().enumerate() {
-                visit_wire_types_in_type_field(
-                    field.ty,
-                    index,
-                    path_builder.push_struct_member(&field.name),
-                    relation_to_selected_field,
-                    visitor,
-                )?;
-            }
-        }
-        IrValueType::Enum(e) => {
-            let checked_relation_to_selected_field =
-                relation_to_selected_field.map(|subfield_path| {
-                    // can't access subfields of enum
-                    assert!(subfield_path.is_empty());
-                });
-            if let Some(bit_count) = NonZeroU32::new(e.discriminant_type().bit_count) {
-                visitor(
-                    RtlilWireType { bit_count },
-                    path_builder.push_struct_member("$discriminant").get(),
-                    checked_relation_to_selected_field,
-                )?;
-            }
-            if let Some(bit_count) = NonZeroU32::new(e.flattened_fields().bit_count) {
-                visitor(
-                    RtlilWireType { bit_count },
-                    path_builder.push_struct_member("$fields").get(),
-                    checked_relation_to_selected_field,
-                )?;
+        IrValueType::Aggregate(aggregate) => {
+            if let Some(struct_fields) = aggregate.struct_fields() {
+                for (index, field) in struct_fields.iter().enumerate() {
+                    visit_wire_types_in_type_field(
+                        field.ty,
+                        index,
+                        path_builder.push_struct_member(&field.name),
+                        relation_to_selected_field,
+                        visitor,
+                    )?;
+                }
+            } else {
+                let checked_relation_to_selected_field =
+                    relation_to_selected_field.map(|subfield_path| {
+                        // can't access subfields of enum
+                        assert!(subfield_path.is_empty());
+                    });
+                if let Some(bit_count) = NonZeroU32::new(aggregate.discriminant_type().bit_count) {
+                    visitor(
+                        RtlilWireType { bit_count },
+                        path_builder.push_struct_member("$discriminant").get(),
+                        checked_relation_to_selected_field,
+                    )?;
+                }
+                if let Some(bit_count) = NonZeroU32::new(aggregate.flattened_fields().bit_count) {
+                    visitor(
+                        RtlilWireType { bit_count },
+                        path_builder.push_struct_member("$fields").get(),
+                        checked_relation_to_selected_field,
+                    )?;
+                }
             }
         }
     }

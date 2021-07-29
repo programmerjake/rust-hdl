@@ -8,14 +8,13 @@ use crate::{
         logic::{IrRegOutput, IrWireRead},
         scope::{OwningScope, Scope, ScopeRef},
         types::{
-            IrArrayType, IrBitVectorType, IrEnumType, IrEnumVariantType, IrStructFieldType,
-            IrStructType, IrValueType, IrValueTypeRef,
+            IrAggregateType, IrArrayType, IrBitVectorType, IrFieldType, IrValueType,
+            IrValueTypeRef, IrVariantType,
         },
         SourceLocation,
     },
     values::integer::{Int, IntShape, IntShapeTrait},
 };
-use alloc::{vec, vec::Vec};
 use core::{fmt, ops::Range};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -164,124 +163,79 @@ impl<'ctx> From<LiteralArray<'ctx>> for IrValue<'ctx> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct LiteralStructField<'ctx> {
-    pub name: Interned<'ctx, str>,
-    pub value: IrValueRef<'ctx>,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct LiteralStruct<'ctx> {
-    value_type: IrStructType<'ctx>,
-    scope: Option<ScopeRef<'ctx>>,
-    fields: Interned<'ctx, [LiteralStructField<'ctx>]>,
-}
-
-impl<'ctx> LiteralStruct<'ctx> {
-    pub fn new(
-        ctx: impl AsContext<'ctx>,
-        fields: impl AsRef<[LiteralStructField<'ctx>]>,
-        caller: &SourceLocation<'ctx>,
-    ) -> Self {
-        let fields = fields.as_ref();
-        let ctx = ctx.ctx();
-        let mut field_types = Vec::with_capacity(fields.len());
-        let mut scope = None;
-        for field in fields {
-            let field_type = IrStructFieldType {
-                name: field.name,
-                ty: field.value.get_type(ctx),
-            };
-            field_types.push(field_type);
-            scope = Scope::combine_or_panic([scope, field.value.owning_scope()], caller);
-        }
-        let fields = fields.intern(ctx);
-        Self {
-            value_type: IrStructType::new(ctx, field_types),
-            scope,
-            fields,
-        }
-    }
-    pub fn value_type(self) -> IrStructType<'ctx> {
-        self.value_type
-    }
-    pub fn fields(self) -> Interned<'ctx, [LiteralStructField<'ctx>]> {
-        self.fields
-    }
-}
-
-impl<'ctx> OwningScope<'ctx> for LiteralStruct<'ctx> {
-    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
-        self.scope
-    }
-}
-
-impl<'ctx> From<LiteralStruct<'ctx>> for IrValue<'ctx> {
-    fn from(v: LiteralStruct<'ctx>) -> Self {
-        Self::LiteralStruct(v)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct LiteralEnumVariant<'ctx> {
-    value_type: IrEnumType<'ctx>,
+pub struct LiteralAggregateVariant<'ctx> {
+    value_type: IrAggregateType<'ctx>,
     scope: Option<ScopeRef<'ctx>>,
     variant_index: usize,
-    fields_value: IrValueRef<'ctx>,
+    field_values: Interned<'ctx, [IrValueRef<'ctx>]>,
 }
 
-impl<'ctx> LiteralEnumVariant<'ctx> {
+impl<'ctx> LiteralAggregateVariant<'ctx> {
     pub fn new(
         ctx: impl AsContext<'ctx>,
-        value_type: IrEnumType<'ctx>,
+        value_type: IrAggregateType<'ctx>,
         variant_index: usize,
-        fields_value: IrValueRef<'ctx>,
+        field_values: impl AsRef<[IrValueRef<'ctx>]>,
         caller: &SourceLocation<'ctx>,
     ) -> Self {
         let ctx = ctx.ctx();
-        let variant = &value_type.variants()[variant_index];
-        let fields_type = fields_value.get_type(ctx);
+        let field_values = field_values.as_ref();
+        let variant = value_type
+            .variants()
+            .get()
+            .get(variant_index)
+            .unwrap_or_else(|| panic!("variant_index out of range\nat {}", caller));
         assert_eq!(
-            IrValueType::from(variant.fields),
-            *fields_type,
-            "enum variant fields type must match the type of the fields value\nat {}",
+            field_values.len(),
+            variant.fields().len(),
+            "wrong number of field values\nat {}",
             caller
         );
+        let mut scope = None;
+        for (field_type, field_value) in variant.fields().iter().zip(field_values) {
+            assert_eq!(
+                field_type.ty,
+                field_value.get_type(ctx),
+                "field value's type doesn't match expected type\nfield name = {:?}\nat {}",
+                field_type.name,
+                caller
+            );
+            scope = Scope::combine_or_panic([scope, field_value.owning_scope()], caller);
+        }
+        let field_values = field_values.intern(ctx);
         Self {
             value_type,
-            scope: fields_value.owning_scope(),
+            scope,
             variant_index,
-            fields_value,
+            field_values,
         }
     }
-    pub fn value_type(self) -> IrEnumType<'ctx> {
+    pub fn value_type(self) -> IrAggregateType<'ctx> {
         self.value_type
     }
     pub fn variant_index(self) -> usize {
         self.variant_index
     }
-    pub fn variant(self) -> &'ctx IrEnumVariantType<'ctx> {
+    pub fn variant(self) -> &'ctx IrVariantType<'ctx> {
         &self.value_type.variants().get()[self.variant_index]
     }
-    pub fn fields_type(self) -> IrStructType<'ctx> {
-        self.variant().fields
-    }
     pub fn discriminant(self) -> &'ctx LiteralBits {
-        &self.variant().discriminant
+        self.variant().discriminant()
     }
-    pub fn fields_value(self) -> IrValueRef<'ctx> {
-        self.fields_value
+    pub fn field_values(self) -> Interned<'ctx, [IrValueRef<'ctx>]> {
+        self.field_values
     }
 }
 
-impl<'ctx> OwningScope<'ctx> for LiteralEnumVariant<'ctx> {
+impl<'ctx> OwningScope<'ctx> for LiteralAggregateVariant<'ctx> {
     fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
         self.scope
     }
 }
 
-impl<'ctx> From<LiteralEnumVariant<'ctx>> for IrValue<'ctx> {
-    fn from(v: LiteralEnumVariant<'ctx>) -> Self {
-        Self::LiteralEnumVariant(v)
+impl<'ctx> From<LiteralAggregateVariant<'ctx>> for IrValue<'ctx> {
+    fn from(v: LiteralAggregateVariant<'ctx>) -> Self {
+        Self::LiteralAggregateVariant(v)
     }
 }
 
@@ -297,183 +251,86 @@ impl<'ctx> From<IrRegOutput<'ctx>> for IrValue<'ctx> {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Hash)]
-pub struct ExtractStructField<'ctx> {
-    struct_value: IrValueRef<'ctx>,
-    struct_type: IrStructType<'ctx>,
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub struct ExtractAggregateField<'ctx> {
+    aggregate_value: IrValueRef<'ctx>,
+    aggregate_type: IrAggregateType<'ctx>,
+    variant_index: usize,
     field_index: usize,
 }
 
-impl<'ctx> ExtractStructField<'ctx> {
+impl<'ctx> ExtractAggregateField<'ctx> {
     pub fn new(
         ctx: impl AsContext<'ctx>,
-        struct_value: IrValueRef<'ctx>,
+        aggregate_value: IrValueRef<'ctx>,
+        variant_index: usize,
         field_index: usize,
         caller: &SourceLocation<'ctx>,
     ) -> Self {
-        let struct_type = match *struct_value.get_type(ctx.ctx()) {
-            IrValueType::Struct(v) => v,
-            _ => panic!("value type is not a struct\nat {}", caller),
-        };
+        let aggregate_type = aggregate_value
+            .get_type(ctx.ctx())
+            .aggregate()
+            .unwrap_or_else(|| panic!("value type is not an aggregate\nat {}", caller));
+        let variant_type = aggregate_type
+            .variants()
+            .get()
+            .get(variant_index)
+            .unwrap_or_else(|| panic!("variant_index out of range\nat {}", caller));
         assert!(
-            field_index < struct_type.fields().len(),
+            field_index < variant_type.fields().len(),
             "field_index is out of bounds: field_index = {}, fields.len() = {}\nat {}",
             field_index,
-            struct_type.fields().len(),
+            variant_type.fields().len(),
             caller,
         );
-        Self::new_with_struct_type_unchecked(struct_value, struct_type, field_index)
-    }
-    pub fn new_with_struct_type_unchecked(
-        struct_value: IrValueRef<'ctx>,
-        struct_type: IrStructType<'ctx>,
-        field_index: usize,
-    ) -> Self {
-        assert!(field_index < struct_type.fields().len());
         Self {
-            struct_value,
-            struct_type,
+            aggregate_value,
+            aggregate_type,
+            variant_index,
             field_index,
         }
     }
-    pub fn struct_value(self) -> IrValueRef<'ctx> {
-        self.struct_value
+    pub fn aggregate_value(self) -> IrValueRef<'ctx> {
+        self.aggregate_value
     }
-    pub fn struct_field_type(self) -> IrStructFieldType<'ctx> {
-        self.struct_type.fields()[self.field_index]
-    }
-    pub fn value_type(self) -> IrValueTypeRef<'ctx> {
-        self.struct_field_type().ty
-    }
-    pub fn field_name(self) -> Interned<'ctx, str> {
-        self.struct_field_type().name
-    }
-    pub fn struct_type(self) -> IrStructType<'ctx> {
-        self.struct_type
-    }
-    pub fn field_index(self) -> usize {
-        self.field_index
-    }
-}
-
-impl<'ctx> OwningScope<'ctx> for ExtractStructField<'ctx> {
-    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
-        self.struct_value.owning_scope()
-    }
-}
-
-impl fmt::Debug for ExtractStructField<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ExtractStructField")
-            .field("struct_value", &self.struct_value())
-            .field("struct_field_type", &self.struct_field_type())
-            .field("field_index", &self.field_index())
-            .finish_non_exhaustive()
-    }
-}
-
-impl<'ctx> From<ExtractStructField<'ctx>> for IrValue<'ctx> {
-    fn from(v: ExtractStructField<'ctx>) -> Self {
-        Self::ExtractStructField(v)
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Hash)]
-pub struct ExtractEnumVariantFields<'ctx> {
-    enum_value: IrValueRef<'ctx>,
-    enum_type: IrEnumType<'ctx>,
-    variant_index: usize,
-    match_arm_scope: ScopeRef<'ctx>,
-}
-
-impl<'ctx> ExtractEnumVariantFields<'ctx> {
-    pub fn new(
-        ctx: impl AsContext<'ctx>,
-        enum_value: IrValueRef<'ctx>,
-        variant_index: usize,
-        match_arm_scope: ScopeRef<'ctx>,
-        caller: &SourceLocation<'ctx>,
-    ) -> Self {
-        let enum_type = match *enum_value.get_type(ctx.ctx()) {
-            IrValueType::Enum(v) => v,
-            _ => panic!("value type is not a enum\nat {}", caller),
-        };
-        assert!(
-            variant_index < enum_type.variants().len(),
-            "variant_index is out of bounds: variant_index = {}, variants.len() = {}\nat {}",
-            variant_index,
-            enum_type.variants().len(),
-            caller,
-        );
-        match_arm_scope.assert_scope_can_access_value(enum_value, caller);
-        Self {
-            enum_value,
-            enum_type,
-            variant_index,
-            match_arm_scope,
-        }
-    }
-    pub fn new_with_enum_type_unchecked(
-        enum_value: IrValueRef<'ctx>,
-        enum_type: IrEnumType<'ctx>,
-        variant_index: usize,
-        match_arm_scope: ScopeRef<'ctx>,
-    ) -> Self {
-        assert!(variant_index < enum_type.variants().len());
-        match_arm_scope.assert_scope_can_access_value(enum_value, &SourceLocation::caller());
-        Self {
-            enum_value,
-            enum_type,
-            variant_index,
-            match_arm_scope,
-        }
-    }
-    pub fn enum_value(self) -> IrValueRef<'ctx> {
-        self.enum_value
-    }
-    pub fn enum_variant_type(self) -> &'ctx IrEnumVariantType<'ctx> {
-        &self.enum_type.variants().get()[self.variant_index]
-    }
-    pub fn value_type(self) -> IrStructType<'ctx> {
-        self.enum_variant_type().fields
-    }
-    pub fn variant_name(self) -> Interned<'ctx, str> {
-        self.enum_variant_type().name
-    }
-    pub fn variant_discriminant(self) -> &'ctx LiteralBits {
-        &self.enum_variant_type().discriminant
-    }
-    pub fn enum_type(self) -> IrEnumType<'ctx> {
-        self.enum_type
+    pub fn aggregate_type(self) -> IrAggregateType<'ctx> {
+        self.aggregate_type
     }
     pub fn variant_index(self) -> usize {
         self.variant_index
     }
-    pub fn match_arm_scope(self) -> ScopeRef<'ctx> {
-        self.match_arm_scope
+    pub fn variant_type(self) -> &'ctx IrVariantType<'ctx> {
+        &self.aggregate_type.variants().get()[self.variant_index]
+    }
+    pub fn field_index(self) -> usize {
+        self.field_index
+    }
+    pub fn field_type(self) -> &'ctx IrFieldType<'ctx> {
+        &self.variant_type().fields().get()[self.field_index]
+    }
+    pub fn value_type(self) -> IrValueTypeRef<'ctx> {
+        self.field_type().ty
+    }
+    pub fn field_name(self) -> Interned<'ctx, str> {
+        self.field_type().name
+    }
+    pub fn variant_name(self) -> Interned<'ctx, str> {
+        self.variant_type().name()
+    }
+    pub fn discriminant(self) -> &'ctx LiteralBits {
+        self.variant_type().discriminant()
     }
 }
 
-impl<'ctx> OwningScope<'ctx> for ExtractEnumVariantFields<'ctx> {
+impl<'ctx> OwningScope<'ctx> for ExtractAggregateField<'ctx> {
     fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
-        Some(self.match_arm_scope)
+        self.aggregate_value.owning_scope()
     }
 }
 
-impl fmt::Debug for ExtractEnumVariantFields<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ExtractEnumVariantFields")
-            .field("enum_value", &self.enum_value())
-            .field("enum_variant_type", &self.enum_variant_type())
-            .field("variant_index", &self.variant_index())
-            .field("match_arm_scope", &self.match_arm_scope())
-            .finish_non_exhaustive()
-    }
-}
-
-impl<'ctx> From<ExtractEnumVariantFields<'ctx>> for IrValue<'ctx> {
-    fn from(v: ExtractEnumVariantFields<'ctx>) -> Self {
-        Self::ExtractEnumVariantFields(v)
+impl<'ctx> From<ExtractAggregateField<'ctx>> for IrValue<'ctx> {
+    fn from(v: ExtractAggregateField<'ctx>) -> Self {
+        Self::ExtractAggregateField(v)
     }
 }
 
@@ -574,50 +431,42 @@ impl<'ctx> From<ExpandScope<'ctx>> for IrValue<'ctx> {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Hash)]
-pub struct IsEnumVariant<'ctx> {
-    enum_value: IrValueRef<'ctx>,
-    enum_type: IrEnumType<'ctx>,
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub struct IsAggregateVariant<'ctx> {
+    aggregate_value: IrValueRef<'ctx>,
+    aggregate_type: IrAggregateType<'ctx>,
     variant_index: usize,
 }
 
-impl<'ctx> IsEnumVariant<'ctx> {
+impl<'ctx> IsAggregateVariant<'ctx> {
     pub fn new(
         ctx: impl AsContext<'ctx>,
-        enum_value: IrValueRef<'ctx>,
+        aggregate_value: IrValueRef<'ctx>,
         variant_index: usize,
         caller: &SourceLocation<'ctx>,
     ) -> Self {
-        let enum_type = match *enum_value.get_type(ctx.ctx()) {
-            IrValueType::Enum(v) => v,
-            _ => panic!("value type is not a enum\nat {}", caller),
-        };
+        let aggregate_type = aggregate_value
+            .get_type(ctx.ctx())
+            .aggregate()
+            .unwrap_or_else(|| panic!("value type is not an aggregate\nat {}", caller));
         assert!(
-            variant_index < enum_type.variants().len(),
+            variant_index < aggregate_type.variants().len(),
             "variant_index is out of bounds: variant_index = {}, variants.len() = {}\nat {}",
             variant_index,
-            enum_type.variants().len(),
+            aggregate_type.variants().len(),
             caller,
         );
-        Self::new_with_enum_type_unchecked(enum_value, enum_type, variant_index)
-    }
-    pub fn new_with_enum_type_unchecked(
-        enum_value: IrValueRef<'ctx>,
-        enum_type: IrEnumType<'ctx>,
-        variant_index: usize,
-    ) -> Self {
-        assert!(variant_index < enum_type.variants().len());
         Self {
-            enum_value,
-            enum_type,
+            aggregate_value,
+            aggregate_type,
             variant_index,
         }
     }
-    pub fn enum_value(self) -> IrValueRef<'ctx> {
-        self.enum_value
+    pub fn aggregate_value(self) -> IrValueRef<'ctx> {
+        self.aggregate_value
     }
-    pub fn enum_variant_type(self) -> &'ctx IrEnumVariantType<'ctx> {
-        &self.enum_type.variants().get()[self.variant_index]
+    pub fn variant_type(self) -> &'ctx IrVariantType<'ctx> {
+        &self.aggregate_type.variants().get()[self.variant_index]
     }
     pub fn value_type(self) -> IrBitVectorType {
         IrBitVectorType {
@@ -626,166 +475,28 @@ impl<'ctx> IsEnumVariant<'ctx> {
         }
     }
     pub fn variant_name(self) -> Interned<'ctx, str> {
-        self.enum_variant_type().name
+        self.variant_type().name()
     }
     pub fn variant_discriminant(self) -> &'ctx LiteralBits {
-        &self.enum_variant_type().discriminant
+        &self.variant_type().discriminant()
     }
-    pub fn enum_type(self) -> IrEnumType<'ctx> {
-        self.enum_type
+    pub fn aggregate_type(self) -> IrAggregateType<'ctx> {
+        self.aggregate_type
     }
     pub fn variant_index(self) -> usize {
         self.variant_index
     }
 }
 
-impl<'ctx> OwningScope<'ctx> for IsEnumVariant<'ctx> {
+impl<'ctx> OwningScope<'ctx> for IsAggregateVariant<'ctx> {
     fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
-        self.enum_value.owning_scope()
+        self.aggregate_value.owning_scope()
     }
 }
 
-impl fmt::Debug for IsEnumVariant<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IsEnumVariant")
-            .field("enum_value", &self.enum_value())
-            .field("enum_variant_type", &self.enum_variant_type())
-            .field("variant_index", &self.variant_index())
-            .finish_non_exhaustive()
-    }
-}
-
-impl<'ctx> From<IsEnumVariant<'ctx>> for IrValue<'ctx> {
-    fn from(v: IsEnumVariant<'ctx>) -> Self {
-        Self::IsEnumVariant(v)
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
-pub struct MatchArmForEnum<'ctx> {
-    pub result: IrValueRef<'ctx>,
-    pub match_arm_scope: ScopeRef<'ctx>,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Hash)]
-pub struct MatchEnum<'ctx> {
-    enum_value: IrValueRef<'ctx>,
-    enum_type: IrEnumType<'ctx>,
-    value_type: IrValueTypeRef<'ctx>,
-    match_arms: Interned<'ctx, [MatchArmForEnum<'ctx>]>,
-    result_scope: ScopeRef<'ctx>,
-}
-
-impl<'ctx> MatchEnum<'ctx> {
-    pub fn new(
-        ctx: impl AsContext<'ctx>,
-        enum_value: IrValueRef<'ctx>,
-        value_type: IrValueTypeRef<'ctx>,
-        match_arms: impl IntoIterator<Item = (usize, MatchArmForEnum<'ctx>)>,
-        result_scope: ScopeRef<'ctx>,
-        caller: &SourceLocation<'ctx>,
-    ) -> Self {
-        let ctx = ctx.ctx();
-        let enum_type = match *enum_value.get_type(ctx) {
-            IrValueType::Enum(v) => v,
-            _ => panic!("value type is not a enum\nat {}", caller),
-        };
-        result_scope.assert_scope_can_access_value(enum_value, caller);
-        let mut match_arms_opt = vec![None; enum_type.variants().len()];
-        for (
-            variant_index,
-            MatchArmForEnum {
-                result,
-                match_arm_scope,
-            },
-        ) in match_arms
-        {
-            assert!(
-                variant_index < enum_type.variants().len(),
-                "variant_index is out of bounds: variant_index = {}, variants.len() = {}\nat {}",
-                variant_index,
-                enum_type.variants().len(),
-                caller,
-            );
-            assert!(
-                result.get_type(ctx) == value_type,
-                "the match arm's result type doesn't match the expected type:\n\
-                variant index = {}, variant name = {}, variant discriminant = {:?}\nat {}",
-                variant_index,
-                enum_type.variants()[variant_index].name,
-                enum_type.variants()[variant_index].discriminant,
-                caller,
-            );
-            match_arm_scope.assert_scope_can_access_value(result, caller);
-            result_scope.assert_ancestor_of(match_arm_scope, caller);
-            // allow duplicate variants, the first one is the one that's used
-            match_arms_opt[variant_index].get_or_insert(MatchArmForEnum {
-                result,
-                match_arm_scope,
-            });
-        }
-        let match_arms: Vec<_> = match_arms_opt
-            .into_iter()
-            .enumerate()
-            .map(|(variant_index, match_arm)| match match_arm {
-                Some(match_arm) => match_arm,
-                None => panic!(
-                    "missing match arm for variant:\n\
-                    variant index = {}, variant name = {}, variant discriminant = {:?}\nat {}",
-                    variant_index,
-                    enum_type.variants()[variant_index].name,
-                    enum_type.variants()[variant_index].discriminant,
-                    caller,
-                ),
-            })
-            .collect();
-        let match_arms = match_arms.intern(ctx);
-        Self {
-            enum_value,
-            enum_type,
-            value_type,
-            match_arms,
-            result_scope,
-        }
-    }
-    pub fn enum_value(self) -> IrValueRef<'ctx> {
-        self.enum_value
-    }
-    pub fn value_type(self) -> IrValueTypeRef<'ctx> {
-        self.value_type
-    }
-    pub fn enum_type(self) -> IrEnumType<'ctx> {
-        self.enum_type
-    }
-    pub fn match_arms(self) -> Interned<'ctx, [MatchArmForEnum<'ctx>]> {
-        self.match_arms
-    }
-    pub fn result_scope(self) -> ScopeRef<'ctx> {
-        self.result_scope
-    }
-}
-
-impl<'ctx> OwningScope<'ctx> for MatchEnum<'ctx> {
-    fn owning_scope(&self) -> Option<ScopeRef<'ctx>> {
-        Some(self.result_scope)
-    }
-}
-
-impl fmt::Debug for MatchEnum<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MatchEnum")
-            .field("enum_value", &self.enum_value())
-            .field("enum_type", &self.enum_type())
-            .field("value_type", &self.value_type())
-            .field("match_arms", &self.match_arms())
-            .field("result_scope", &self.result_scope())
-            .finish_non_exhaustive()
-    }
-}
-
-impl<'ctx> From<MatchEnum<'ctx>> for IrValue<'ctx> {
-    fn from(v: MatchEnum<'ctx>) -> Self {
-        Self::MatchEnum(v)
+impl<'ctx> From<IsAggregateVariant<'ctx>> for IrValue<'ctx> {
+    fn from(v: IsAggregateVariant<'ctx>) -> Self {
+        Self::IsAggregateVariant(v)
     }
 }
 
@@ -1483,17 +1194,14 @@ impl<'ctx> From<ConvertIntWrapping<'ctx>> for IrValue<'ctx> {
 pub enum IrValue<'ctx> {
     LiteralBits(LiteralBits),
     LiteralArray(LiteralArray<'ctx>),
-    LiteralStruct(LiteralStruct<'ctx>),
-    LiteralEnumVariant(LiteralEnumVariant<'ctx>),
+    LiteralAggregateVariant(LiteralAggregateVariant<'ctx>),
     WireRead(IrWireRead<'ctx>),
     Input(IrModuleInput<'ctx>),
     OutputRead(IrOutputRead<'ctx>),
-    ExtractStructField(ExtractStructField<'ctx>),
-    ExtractEnumVariantFields(ExtractEnumVariantFields<'ctx>),
+    ExtractAggregateField(ExtractAggregateField<'ctx>),
     ShrinkScope(ShrinkScope<'ctx>),
     ExpandScope(ExpandScope<'ctx>),
-    IsEnumVariant(IsEnumVariant<'ctx>),
-    MatchEnum(MatchEnum<'ctx>),
+    IsAggregateVariant(IsAggregateVariant<'ctx>),
     ExtractArrayElement(ExtractArrayElement<'ctx>),
     SliceArray(SliceArray<'ctx>),
     RegOutput(IrRegOutput<'ctx>),
@@ -1522,17 +1230,14 @@ impl<'ctx> IrValue<'ctx> {
         match self {
             IrValue::LiteralBits(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::LiteralArray(v) => IrValueType::from(v.value_type()).intern(ctx),
-            IrValue::LiteralStruct(v) => IrValueType::from(v.value_type()).intern(ctx),
-            IrValue::LiteralEnumVariant(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::LiteralAggregateVariant(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::WireRead(v) => v.0.value_type(),
             IrValue::Input(v) => v.value_type(),
             IrValue::OutputRead(v) => v.0.value_type(),
-            IrValue::ExtractStructField(v) => v.value_type(),
-            IrValue::ExtractEnumVariantFields(v) => IrValueType::from(v.value_type()).intern(ctx),
+            IrValue::ExtractAggregateField(v) => v.value_type(),
             IrValue::ShrinkScope(v) => v.value_type(),
             IrValue::ExpandScope(v) => v.value_type(),
-            IrValue::IsEnumVariant(v) => IrValueType::from(v.value_type()).intern(ctx),
-            IrValue::MatchEnum(v) => v.value_type(),
+            IrValue::IsAggregateVariant(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::ExtractArrayElement(v) => v.value_type(),
             IrValue::SliceArray(v) => IrValueType::from(v.value_type()).intern(ctx),
             IrValue::RegOutput(v) => v.0.value_type(),
@@ -1553,17 +1258,14 @@ impl<'ctx> OwningScope<'ctx> for IrValue<'ctx> {
         match self {
             IrValue::LiteralBits(v) => v.owning_scope(),
             IrValue::LiteralArray(v) => v.owning_scope(),
-            IrValue::LiteralStruct(v) => v.owning_scope(),
-            IrValue::LiteralEnumVariant(v) => v.owning_scope(),
+            IrValue::LiteralAggregateVariant(v) => v.owning_scope(),
             IrValue::WireRead(v) => v.owning_scope(),
             IrValue::Input(v) => v.owning_scope(),
             IrValue::OutputRead(v) => v.owning_scope(),
-            IrValue::ExtractStructField(v) => v.owning_scope(),
-            IrValue::ExtractEnumVariantFields(v) => v.owning_scope(),
+            IrValue::ExtractAggregateField(v) => v.owning_scope(),
             IrValue::ShrinkScope(v) => v.owning_scope(),
             IrValue::ExpandScope(v) => v.owning_scope(),
-            IrValue::IsEnumVariant(v) => v.owning_scope(),
-            IrValue::MatchEnum(v) => v.owning_scope(),
+            IrValue::IsAggregateVariant(v) => v.owning_scope(),
             IrValue::ExtractArrayElement(v) => v.owning_scope(),
             IrValue::SliceArray(v) => v.owning_scope(),
             IrValue::RegOutput(v) => v.owning_scope(),
@@ -1584,17 +1286,14 @@ impl fmt::Debug for IrValue<'_> {
         match self {
             IrValue::LiteralBits(v) => v.fmt(f),
             IrValue::LiteralArray(v) => v.fmt(f),
-            IrValue::LiteralStruct(v) => v.fmt(f),
-            IrValue::LiteralEnumVariant(v) => v.fmt(f),
+            IrValue::LiteralAggregateVariant(v) => v.fmt(f),
             IrValue::WireRead(v) => v.fmt(f),
             IrValue::Input(v) => v.fmt(f),
             IrValue::OutputRead(v) => v.fmt(f),
-            IrValue::ExtractStructField(v) => v.fmt(f),
-            IrValue::ExtractEnumVariantFields(v) => v.fmt(f),
+            IrValue::ExtractAggregateField(v) => v.fmt(f),
             IrValue::ShrinkScope(v) => v.fmt(f),
             IrValue::ExpandScope(v) => v.fmt(f),
-            IrValue::IsEnumVariant(v) => v.fmt(f),
-            IrValue::MatchEnum(v) => v.fmt(f),
+            IrValue::IsAggregateVariant(v) => v.fmt(f),
             IrValue::ExtractArrayElement(v) => v.fmt(f),
             IrValue::SliceArray(v) => v.fmt(f),
             IrValue::RegOutput(v) => v.fmt(f),
