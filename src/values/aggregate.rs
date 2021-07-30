@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use core::{convert::Infallible, marker::PhantomData};
-
-use alloc::vec::Vec;
-
 use crate::{
     context::{AsContext, ContextRef, Intern},
     ir::{
@@ -15,6 +11,8 @@ use crate::{
     prelude::{FixedTypeValue, Int, Val, Value, ValueType},
     values::integer::{IntShape, IntShapeTrait},
 };
+use alloc::vec::Vec;
+use core::{convert::Infallible, marker::PhantomData};
 
 pub trait FieldValuesVisitor<'ctx, VV: VariantValue<'ctx>>: Sized {
     type BreakType;
@@ -168,6 +166,20 @@ pub trait VariantVisitor<'ctx, A: AggregateValue<'ctx>>: Sized {
         visitor: Self::AfterActiveVariant,
         variant: Variant<VR>,
     ) -> Result<Self::AfterActiveVariant, Self::BreakType>;
+}
+
+#[track_caller]
+pub fn get_variant_index<'ctx, VV: VariantValue<'ctx>>(
+    aggregate: Val<'ctx, VV::Aggregate>,
+) -> usize {
+    let discriminant = VV::discriminant().into();
+    aggregate
+        .value_type()
+        .ir()
+        .aggregate()
+        .expect("expected aggregate type")
+        .get_variant_index(&discriminant)
+        .unwrap_or_else(|| panic!("variant not found for discriminant {:?}", discriminant))
 }
 
 struct GetAggregateValueInactiveFieldVisitor<'ctx> {

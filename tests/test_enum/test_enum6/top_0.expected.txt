@@ -6,14 +6,14 @@ IrModule {
         Input(
             IrAggregateType {
                 discriminant_type: IrBitVectorType {
-                    bit_count: 2,
+                    bit_count: 4,
                     signed: false,
                 },
                 variants: [
                     IrVariantType {
                         name: "A",
                         discriminant: LiteralBits {
-                            value: 0x0_u2,
+                            value: 0x3_u4,
                         },
                         fields: [],
                         flattened_fields: IrBitVectorType {
@@ -24,7 +24,7 @@ IrModule {
                     IrVariantType {
                         name: "B",
                         discriminant: LiteralBits {
-                            value: 0x1_u2,
+                            value: 0x4_u4,
                         },
                         fields: [],
                         flattened_fields: IrBitVectorType {
@@ -35,7 +35,40 @@ IrModule {
                     IrVariantType {
                         name: "C",
                         discriminant: LiteralBits {
-                            value: 0x2_u2,
+                            value: 0x5_u4,
+                        },
+                        fields: [],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                    },
+                    IrVariantType {
+                        name: "D",
+                        discriminant: LiteralBits {
+                            value: 0xa_u4,
+                        },
+                        fields: [],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                    },
+                    IrVariantType {
+                        name: "E",
+                        discriminant: LiteralBits {
+                            value: 0xc_u4,
+                        },
+                        fields: [],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                    },
+                    IrVariantType {
+                        name: "F",
+                        discriminant: LiteralBits {
+                            value: 0xd_u4,
                         },
                         fields: [],
                         flattened_fields: IrBitVectorType {
@@ -57,14 +90,14 @@ IrModule {
                 external_value: ExternalInput {
                     value_type: IrAggregateType {
                         discriminant_type: IrBitVectorType {
-                            bit_count: 2,
+                            bit_count: 4,
                             signed: false,
                         },
                         variants: [
                             IrVariantType {
                                 name: "A",
                                 discriminant: LiteralBits {
-                                    value: 0x0_u2,
+                                    value: 0x3_u4,
                                 },
                                 fields: [],
                                 flattened_fields: IrBitVectorType {
@@ -75,7 +108,7 @@ IrModule {
                             IrVariantType {
                                 name: "B",
                                 discriminant: LiteralBits {
-                                    value: 0x1_u2,
+                                    value: 0x4_u4,
                                 },
                                 fields: [],
                                 flattened_fields: IrBitVectorType {
@@ -86,7 +119,40 @@ IrModule {
                             IrVariantType {
                                 name: "C",
                                 discriminant: LiteralBits {
-                                    value: 0x2_u2,
+                                    value: 0x5_u4,
+                                },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
+                                },
+                            },
+                            IrVariantType {
+                                name: "D",
+                                discriminant: LiteralBits {
+                                    value: 0xa_u4,
+                                },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
+                                },
+                            },
+                            IrVariantType {
+                                name: "E",
+                                discriminant: LiteralBits {
+                                    value: 0xc_u4,
+                                },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
+                                },
+                            },
+                            IrVariantType {
+                                name: "F",
+                                discriminant: LiteralBits {
+                                    value: 0xd_u4,
                                 },
                                 fields: [],
                                 flattened_fields: IrBitVectorType {
@@ -107,14 +173,14 @@ IrModule {
                     path: "io",
                     value_type: IrAggregateType {
                         discriminant_type: IrBitVectorType {
-                            bit_count: 2,
+                            bit_count: 4,
                             signed: false,
                         },
                         variants: [
                             IrVariantType {
                                 name: "A",
                                 discriminant: LiteralBits {
-                                    value: 0x0_u2,
+                                    value: 0x3_u4,
                                 },
                                 fields: [],
                                 flattened_fields: IrBitVectorType {
@@ -125,7 +191,7 @@ IrModule {
                             IrVariantType {
                                 name: "B",
                                 discriminant: LiteralBits {
-                                    value: 0x1_u2,
+                                    value: 0x4_u4,
                                 },
                                 fields: [],
                                 flattened_fields: IrBitVectorType {
@@ -136,7 +202,40 @@ IrModule {
                             IrVariantType {
                                 name: "C",
                                 discriminant: LiteralBits {
-                                    value: 0x2_u2,
+                                    value: 0x5_u4,
+                                },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
+                                },
+                            },
+                            IrVariantType {
+                                name: "D",
+                                discriminant: LiteralBits {
+                                    value: 0xa_u4,
+                                },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
+                                },
+                            },
+                            IrVariantType {
+                                name: "E",
+                                discriminant: LiteralBits {
+                                    value: 0xc_u4,
+                                },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
+                                },
+                            },
+                            IrVariantType {
+                                name: "F",
+                                discriminant: LiteralBits {
+                                    value: 0xd_u4,
                                 },
                                 fields: [],
                                 flattened_fields: IrBitVectorType {

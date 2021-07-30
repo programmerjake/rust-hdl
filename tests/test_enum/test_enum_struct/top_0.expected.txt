@@ -4,104 +4,92 @@ IrModule {
     parent: <None>,
     interface_types: [
         Input(
-            IrEnumType {
+            IrAggregateType {
                 discriminant_type: IrBitVectorType {
                     bit_count: 3,
                     signed: false,
                 },
                 variants: [
-                    IrEnumVariantType {
+                    IrVariantType {
                         name: "A",
                         discriminant: LiteralBits {
                             value: 0x0_u3,
                         },
-                        fields: IrStructType {
-                            fields: [
-                                IrStructFieldType {
-                                    name: "f1",
-                                    ty: IrBitVectorType {
-                                        bit_count: 8,
-                                        signed: true,
-                                    },
+                        fields: [
+                            IrFieldType {
+                                name: "f1",
+                                ty: IrBitVectorType {
+                                    bit_count: 8,
+                                    signed: true,
                                 },
-                            ],
-                            flattened: IrBitVectorType {
-                                bit_count: 8,
-                                signed: true,
                             },
+                        ],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 8,
+                            signed: true,
                         },
                     },
-                    IrEnumVariantType {
+                    IrVariantType {
                         name: "B",
                         discriminant: LiteralBits {
                             value: 0x1_u3,
                         },
-                        fields: IrStructType {
-                            fields: [],
-                            flattened: IrBitVectorType {
-                                bit_count: 0,
-                                signed: false,
-                            },
+                        fields: [],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
                         },
                     },
-                    IrEnumVariantType {
+                    IrVariantType {
                         name: "C",
                         discriminant: LiteralBits {
                             value: 0x2_u3,
                         },
-                        fields: IrStructType {
-                            fields: [],
-                            flattened: IrBitVectorType {
-                                bit_count: 0,
-                                signed: false,
-                            },
+                        fields: [],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
                         },
                     },
-                    IrEnumVariantType {
+                    IrVariantType {
                         name: "D",
                         discriminant: LiteralBits {
                             value: 0x3_u3,
                         },
-                        fields: IrStructType {
-                            fields: [
-                                IrStructFieldType {
-                                    name: "0",
-                                    ty: IrBitVectorType {
-                                        bit_count: 8,
-                                        signed: false,
-                                    },
+                        fields: [
+                            IrFieldType {
+                                name: "0",
+                                ty: IrBitVectorType {
+                                    bit_count: 8,
+                                    signed: false,
                                 },
-                            ],
-                            flattened: IrBitVectorType {
-                                bit_count: 8,
-                                signed: false,
                             },
+                        ],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 8,
+                            signed: false,
                         },
                     },
-                    IrEnumVariantType {
+                    IrVariantType {
                         name: "E",
                         discriminant: LiteralBits {
                             value: 0x4_u3,
                         },
-                        fields: IrStructType {
-                            fields: [],
-                            flattened: IrBitVectorType {
-                                bit_count: 0,
-                                signed: false,
-                            },
+                        fields: [],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
                         },
                     },
-                    IrEnumVariantType {
+                    IrVariantType {
                         name: "F",
                         discriminant: LiteralBits {
                             value: 0x5_u3,
                         },
-                        fields: IrStructType {
-                            fields: [],
-                            flattened: IrBitVectorType {
-                                bit_count: 0,
-                                signed: false,
-                            },
+                        fields: [],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
                         },
                     },
                 ],
@@ -116,104 +104,92 @@ IrModule {
         Input(
             IrModuleInputData {
                 external_value: ExternalInput {
-                    value_type: IrEnumType {
+                    value_type: IrAggregateType {
                         discriminant_type: IrBitVectorType {
                             bit_count: 3,
                             signed: false,
                         },
                         variants: [
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "A",
                                 discriminant: LiteralBits {
                                     value: 0x0_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [
-                                        IrStructFieldType {
-                                            name: "f1",
-                                            ty: IrBitVectorType {
-                                                bit_count: 8,
-                                                signed: true,
-                                            },
+                                fields: [
+                                    IrFieldType {
+                                        name: "f1",
+                                        ty: IrBitVectorType {
+                                            bit_count: 8,
+                                            signed: true,
                                         },
-                                    ],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 8,
-                                        signed: true,
                                     },
+                                ],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 8,
+                                    signed: true,
                                 },
                             },
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "B",
                                 discriminant: LiteralBits {
                                     value: 0x1_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 0,
-                                        signed: false,
-                                    },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
                                 },
                             },
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "C",
                                 discriminant: LiteralBits {
                                     value: 0x2_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 0,
-                                        signed: false,
-                                    },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
                                 },
                             },
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "D",
                                 discriminant: LiteralBits {
                                     value: 0x3_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [
-                                        IrStructFieldType {
-                                            name: "0",
-                                            ty: IrBitVectorType {
-                                                bit_count: 8,
-                                                signed: false,
-                                            },
+                                fields: [
+                                    IrFieldType {
+                                        name: "0",
+                                        ty: IrBitVectorType {
+                                            bit_count: 8,
+                                            signed: false,
                                         },
-                                    ],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 8,
-                                        signed: false,
                                     },
+                                ],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 8,
+                                    signed: false,
                                 },
                             },
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "E",
                                 discriminant: LiteralBits {
                                     value: 0x4_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 0,
-                                        signed: false,
-                                    },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
                                 },
                             },
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "F",
                                 discriminant: LiteralBits {
                                     value: 0x5_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 0,
-                                        signed: false,
-                                    },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
                                 },
                             },
                         ],
@@ -227,104 +203,92 @@ IrModule {
                     module: "top",
                     index: 0,
                     path: "io",
-                    value_type: IrEnumType {
+                    value_type: IrAggregateType {
                         discriminant_type: IrBitVectorType {
                             bit_count: 3,
                             signed: false,
                         },
                         variants: [
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "A",
                                 discriminant: LiteralBits {
                                     value: 0x0_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [
-                                        IrStructFieldType {
-                                            name: "f1",
-                                            ty: IrBitVectorType {
-                                                bit_count: 8,
-                                                signed: true,
-                                            },
+                                fields: [
+                                    IrFieldType {
+                                        name: "f1",
+                                        ty: IrBitVectorType {
+                                            bit_count: 8,
+                                            signed: true,
                                         },
-                                    ],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 8,
-                                        signed: true,
                                     },
+                                ],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 8,
+                                    signed: true,
                                 },
                             },
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "B",
                                 discriminant: LiteralBits {
                                     value: 0x1_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 0,
-                                        signed: false,
-                                    },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
                                 },
                             },
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "C",
                                 discriminant: LiteralBits {
                                     value: 0x2_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 0,
-                                        signed: false,
-                                    },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
                                 },
                             },
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "D",
                                 discriminant: LiteralBits {
                                     value: 0x3_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [
-                                        IrStructFieldType {
-                                            name: "0",
-                                            ty: IrBitVectorType {
-                                                bit_count: 8,
-                                                signed: false,
-                                            },
+                                fields: [
+                                    IrFieldType {
+                                        name: "0",
+                                        ty: IrBitVectorType {
+                                            bit_count: 8,
+                                            signed: false,
                                         },
-                                    ],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 8,
-                                        signed: false,
                                     },
+                                ],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 8,
+                                    signed: false,
                                 },
                             },
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "E",
                                 discriminant: LiteralBits {
                                     value: 0x4_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 0,
-                                        signed: false,
-                                    },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
                                 },
                             },
-                            IrEnumVariantType {
+                            IrVariantType {
                                 name: "F",
                                 discriminant: LiteralBits {
                                     value: 0x5_u3,
                                 },
-                                fields: IrStructType {
-                                    fields: [],
-                                    flattened: IrBitVectorType {
-                                        bit_count: 0,
-                                        signed: false,
-                                    },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
                                 },
                             },
                         ],

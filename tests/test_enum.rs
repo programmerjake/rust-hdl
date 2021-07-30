@@ -141,6 +141,14 @@ fn test_enum4() {
 }
 
 #[test]
+fn test_enum6() {
+    Context::with(|ctx| {
+        named!(let (top, _io): (_, Input<enum_mod::Enum6>) = ctx.top_module());
+        assert_formats_to!(test_enum6, top_0, top);
+    });
+}
+
+#[test]
 fn test_enum_struct() {
     Context::with(|ctx| {
         named!(let (top, _io): (_, Input<enum_mod::EnumStruct<UInt8>>) = ctx.top_module());

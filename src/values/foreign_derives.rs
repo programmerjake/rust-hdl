@@ -4,7 +4,6 @@
 use crate::prelude::*;
 use core::option::Option;
 
-#[cfg(todo)]
 #[derive(Value, FixedTypeValue)]
 #[rust_hdl(crate = crate, real_type_name = Option)]
 #[allow(dead_code)]
