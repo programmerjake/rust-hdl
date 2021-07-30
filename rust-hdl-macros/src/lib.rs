@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
+use std::{cmp::Ordering, mem};
+
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{format_ident, quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
-    Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Field, Fields, FieldsNamed,
-    FieldsUnnamed, GenericParam, Generics, Index, Lifetime, LifetimeDef, Path, Token, Variant,
-    VisRestricted, Visibility, WhereClause, WherePredicate,
+    Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Field, Fields, GenericParam,
+    Generics, Index, Lifetime, LifetimeDef, Path, Token, Variant, VisRestricted, Visibility,
+    WhereClause, WherePredicate,
 };
 
 #[macro_use]
@@ -19,6 +21,19 @@ mod val;
 mod kw {
     syn::custom_keyword!(ignored);
     syn::custom_keyword!(real_type_name);
+    syn::custom_keyword!(i8);
+    syn::custom_keyword!(i16);
+    syn::custom_keyword!(i32);
+    syn::custom_keyword!(i64);
+    syn::custom_keyword!(i128);
+    syn::custom_keyword!(isize);
+    syn::custom_keyword!(u8);
+    syn::custom_keyword!(u16);
+    syn::custom_keyword!(u32);
+    syn::custom_keyword!(u64);
+    syn::custom_keyword!(u128);
+    syn::custom_keyword!(usize);
+    syn::custom_keyword!(C);
 }
 
 enum RustHdlAttributeArg {
@@ -190,6 +205,135 @@ impl RustHdlVariantAttributes {
     }
 }
 
+#[derive(Clone, Copy)]
+enum EnumReprType {
+    U8(kw::u8),
+    U16(kw::u16),
+    U32(kw::u32),
+    U64(kw::u64),
+    U128(kw::u128),
+    USize(kw::usize),
+    I8(kw::i8),
+    I16(kw::i16),
+    I32(kw::i32),
+    I64(kw::i64),
+    I128(kw::i128),
+    ISize(kw::isize),
+}
+
+impl Default for EnumReprType {
+    fn default() -> Self {
+        Self::ISize(Default::default())
+    }
+}
+
+impl ToTokens for EnumReprType {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            EnumReprType::U8(v) => v.to_tokens(tokens),
+            EnumReprType::U16(v) => v.to_tokens(tokens),
+            EnumReprType::U32(v) => v.to_tokens(tokens),
+            EnumReprType::U64(v) => v.to_tokens(tokens),
+            EnumReprType::U128(v) => v.to_tokens(tokens),
+            EnumReprType::USize(v) => v.to_tokens(tokens),
+            EnumReprType::I8(v) => v.to_tokens(tokens),
+            EnumReprType::I16(v) => v.to_tokens(tokens),
+            EnumReprType::I32(v) => v.to_tokens(tokens),
+            EnumReprType::I64(v) => v.to_tokens(tokens),
+            EnumReprType::I128(v) => v.to_tokens(tokens),
+            EnumReprType::ISize(v) => v.to_tokens(tokens),
+        }
+    }
+}
+
+enum EnumReprAttributeArg {
+    Type(EnumReprType),
+    C(kw::C),
+}
+
+impl Parse for EnumReprAttributeArg {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(kw::C) {
+            Ok(Self::C(input.parse()?))
+        } else if input.peek(kw::u8) {
+            Ok(Self::Type(EnumReprType::U8(input.parse()?)))
+        } else if input.peek(kw::u16) {
+            Ok(Self::Type(EnumReprType::U16(input.parse()?)))
+        } else if input.peek(kw::u32) {
+            Ok(Self::Type(EnumReprType::U32(input.parse()?)))
+        } else if input.peek(kw::u64) {
+            Ok(Self::Type(EnumReprType::U64(input.parse()?)))
+        } else if input.peek(kw::u128) {
+            Ok(Self::Type(EnumReprType::U128(input.parse()?)))
+        } else if input.peek(kw::usize) {
+            Ok(Self::Type(EnumReprType::USize(input.parse()?)))
+        } else if input.peek(kw::i8) {
+            Ok(Self::Type(EnumReprType::I8(input.parse()?)))
+        } else if input.peek(kw::i16) {
+            Ok(Self::Type(EnumReprType::I16(input.parse()?)))
+        } else if input.peek(kw::i32) {
+            Ok(Self::Type(EnumReprType::I32(input.parse()?)))
+        } else if input.peek(kw::i64) {
+            Ok(Self::Type(EnumReprType::I64(input.parse()?)))
+        } else if input.peek(kw::i128) {
+            Ok(Self::Type(EnumReprType::I128(input.parse()?)))
+        } else if input.peek(kw::isize) {
+            Ok(Self::Type(EnumReprType::ISize(input.parse()?)))
+        } else {
+            Err(input.error("expected `C` or a primitive integer type (like `u8`)"))
+        }
+    }
+}
+
+struct EnumReprAttribute {
+    repr_c: Option<kw::C>,
+    repr_type: Option<EnumReprType>,
+}
+
+impl EnumReprAttribute {
+    fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
+        let mut repr_c = None;
+        let mut repr_type = None;
+        let mut saw_repr = false;
+        for attribute in attrs {
+            if attribute.path.is_ident("repr") {
+                if mem::replace(&mut saw_repr, true) {
+                    return Err(Error::new_spanned(
+                        &attribute.path,
+                        "multiple #[repr(...)] not allowed on enum",
+                    ));
+                }
+                let args = attribute.parse_args_with(
+                    Punctuated::<EnumReprAttributeArg, Token![,]>::parse_separated_nonempty,
+                )?;
+                for arg in args {
+                    match arg {
+                        EnumReprAttributeArg::Type(v) => {
+                            if repr_type.is_some() {
+                                return Err(Error::new_spanned(
+                                    v,
+                                    "conflicting enum representations",
+                                ));
+                            }
+                            repr_type = Some(v);
+                        }
+                        EnumReprAttributeArg::C(v) => {
+                            if repr_c.is_some() {
+                                return Err(Error::new_spanned(
+                                    v,
+                                    "conflicting enum representations",
+                                ));
+                            }
+                            repr_c = Some(v);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(Self { repr_c, repr_type })
+    }
+}
+
 fn get_or_add_lifetime_to_generics(
     mut generics: Generics,
     ident: &str,
@@ -309,6 +453,7 @@ struct ValueImplFirstStep<Data> {
     where_clause_with_value_bound: WhereClause,
     where_clause_with_fixed_type_value_bound: WhereClause,
     item_vis_in_mod: Visibility,
+    item_attrs: Vec<Attribute>,
     data: Data,
 }
 
@@ -343,6 +488,7 @@ impl ValueImpl {
             where_clause_with_value_bound,
             where_clause_with_fixed_type_value_bound,
             item_vis_in_mod,
+            item_attrs: _,
             data,
         } = first_step;
         let (_, original_ty_generics, _) = original_generics.split_for_impl();
@@ -459,8 +605,12 @@ impl ValueImpl {
                             #(#variant_value_visit_field_types)*
                             ::core::result::Result::Ok(visitor)
                         }
-                        fn visit_variants_with_self_as_active_variant<Visitor: #crate_path::values::aggregate::VariantVisitor<#ctx_lifetime, Self::Aggregate>>(
+                        fn visit_variants_with_self_as_active_variant<
+                            Ctx: #crate_path::context::AsContext<#ctx_lifetime>,
+                            Visitor: #crate_path::values::aggregate::VariantVisitor<#ctx_lifetime, Self::Aggregate>,
+                        >(
                             self,
+                            _ctx: Ctx,
                             visitor: Visitor,
                         ) -> ::core::result::Result<Visitor::AfterActiveVariant, Visitor::BreakType> {
                             visitor.visit_active_variant(#crate_path::values::aggregate::Variant { name: "", value: self })
@@ -599,8 +749,12 @@ impl ValueImpl {
                             #(#variant_value_visit_field_types)*
                             ::core::result::Result::Ok(visitor)
                         }
-                        fn visit_variants_with_self_as_active_variant<Visitor: #crate_path::values::aggregate::VariantVisitor<#ctx_lifetime, Self::Aggregate>>(
+                        fn visit_variants_with_self_as_active_variant<
+                            Ctx: #crate_path::context::AsContext<#ctx_lifetime>,
+                            Visitor: #crate_path::values::aggregate::VariantVisitor<#ctx_lifetime, Self::Aggregate>,
+                        >(
                             self,
+                            _ctx: Ctx,
                             visitor: Visitor,
                         ) -> ::core::result::Result<Visitor::AfterActiveVariant, Visitor::BreakType> {
                             visitor.visit_active_variant(#crate_path::values::aggregate::Variant { name: "", value: self })
@@ -670,8 +824,12 @@ impl ValueImpl {
                         ) -> ::core::result::Result<Visitor, Visitor::BreakType> {
                             ::core::result::Result::Ok(visitor)
                         }
-                        fn visit_variants_with_self_as_active_variant<Visitor: #crate_path::values::aggregate::VariantVisitor<#ctx_lifetime, Self::Aggregate>>(
+                        fn visit_variants_with_self_as_active_variant<
+                            Ctx: #crate_path::context::AsContext<#ctx_lifetime>,
+                            Visitor: #crate_path::values::aggregate::VariantVisitor<#ctx_lifetime, Self::Aggregate>,
+                        >(
                             self,
+                            _ctx: Ctx,
                             visitor: Visitor,
                         ) -> ::core::result::Result<Visitor::AfterActiveVariant, Visitor::BreakType> {
                             visitor.visit_active_variant(#crate_path::values::aggregate::Variant { name: "", value: self })
@@ -761,13 +919,369 @@ impl ValueImpl {
             where_clause_with_value_bound,
             where_clause_with_fixed_type_value_bound,
             item_vis_in_mod,
+            item_attrs,
             data,
         } = first_step;
-        let value_items = todo_err!(name);
-        let fixed_type_value_items = todo_err!(name);
-        let discriminant_shape = todo_err!(name);
-        let struct_of_variant_values_body = todo_err!(name);
-        let visit_variants_body = todo_err!(name);
+        let (_, original_ty_generics, _) = original_generics.split_for_impl();
+        let (impl_generics_with_ctx, ty_generics_with_ctx, _) = generics_with_ctx.split_for_impl();
+        let explicit_repr_type = EnumReprAttribute::parse(&item_attrs)?.repr_type;
+        let implicit_repr_type = explicit_repr_type.clone().unwrap_or_default();
+        let mut discriminant_consts = Vec::new();
+        let mut variant_field_values_structs = Vec::new();
+        let mut value_items = Vec::new();
+        let mut fixed_type_value_items = Vec::new();
+        for Variant {
+            attrs: _,
+            ident: variant_name,
+            fields: _,
+            discriminant,
+        } in data.variants.iter()
+        {
+            let discriminant_const = format_ident!(
+                "__{}_{}_discriminant__",
+                name,
+                variant_name,
+                span = variant_name.span()
+            );
+            value_items.push(if let Some((eq, expr)) = discriminant {
+                quote! {
+                    const #discriminant_const: #implicit_repr_type #eq #expr;
+                }
+            } else if let Some(last) = discriminant_consts.last() {
+                quote! {
+                    const #discriminant_const: #implicit_repr_type = #last + 1;
+                }
+            } else {
+                quote! {
+                    const #discriminant_const: #implicit_repr_type = 0;
+                }
+            });
+            discriminant_consts.push(discriminant_const);
+            variant_field_values_structs.push(format_ident!(
+                "__{}_{}_field_values__",
+                name,
+                variant_name,
+                span = variant_name.span()
+            ));
+        }
+        value_items.push(quote! {
+            const __DISCRIMINANT_SHAPE: #crate_path::values::integer::IntShape =
+                #crate_path::values::aggregate::AggregateDiscriminantShapeCalculator::new()
+                    #(.add_discriminant(#discriminant_consts as i128))*
+                    .get_shape();
+        });
+        let discriminant_shape = quote! {
+            #crate_path::values::integer::ConstIntShape<
+                { __DISCRIMINANT_SHAPE.bit_count },
+                { __DISCRIMINANT_SHAPE.signed },
+            >
+        };
+        value_items.push(quote! {
+            #item_vis_in_mod struct __Inactive<#ctx_lifetime, T>(#crate_path::context::ContextRef<#ctx_lifetime>, ::core::marker::PhantomData<T>);
+        });
+        value_items.push(quote! {
+            #[automatically_derived]
+            impl<#ctx_lifetime, T> ::core::marker::Copy for __Inactive<#ctx_lifetime, T> {}
+        });
+        value_items.push(quote! {
+            #[automatically_derived]
+            impl<#ctx_lifetime, T> ::core::clone::Clone for __Inactive<#ctx_lifetime, T> {
+                fn clone(&self) -> Self {
+                    *self
+                }
+            }
+        });
+        let mut struct_of_variant_values_fields = Vec::new();
+        let mut struct_of_variant_values_visit_variant_values = Vec::new();
+        let mut struct_of_variant_values_visit_variant_types = Vec::new();
+        let mut struct_of_variant_values_visit_variant_fixed_types = Vec::new();
+        let mut struct_of_variant_values_body_variants = Vec::new();
+        let mut visit_variants_body_variants = Vec::new();
+        for (
+            variant_index,
+            Variant {
+                attrs: variant_attrs,
+                ident: variant_name,
+                fields,
+                discriminant: _,
+            },
+        ) in data.variants.iter().enumerate()
+        {
+            let discriminant_const = &discriminant_consts[variant_index];
+            let variant_field_values_struct = &variant_field_values_structs[variant_index];
+            let RustHdlVariantAttributes {} = RustHdlVariantAttributes::parse(&variant_attrs)?;
+            let variant_name_str = variant_name.to_string();
+            let mut variant_value_visit_fields = Vec::<TokenStream>::new();
+            let mut variant_value_visit_field_types = Vec::<TokenStream>::new();
+            let mut active_variant_visit_fields = Vec::<TokenStream>::new();
+            let mut inactive_variant_visit_fields = Vec::<TokenStream>::new();
+            let mut variant_fixed_type_value_visit_field_fixed_types = Vec::<TokenStream>::new();
+            match fields {
+                Fields::Named(fields) => todo_err!(fields),
+                Fields::Unnamed(fields) => todo_err!(fields),
+                Fields::Unit => {
+                    value_items.push(quote! {
+                        #item_vis_in_mod struct #variant_field_values_struct #generics_with_ctx(
+                            #item_vis_in_mod ::core::marker::PhantomData<(#name #original_ty_generics, &#ctx_lifetime ())>,
+                        ) #where_clause_with_fixed_type_value_bound;
+                    });
+                    struct_of_variant_values_body_variants.push(quote! {
+                        #variant_name: #variant_field_values_struct(::core::marker::PhantomData),
+                    });
+                    visit_variants_body_variants.push(quote! {
+                        Self::#variant_name => #crate_path::values::aggregate::VariantValue::<#ctx_lifetime>::visit_variants_with_self_as_active_variant(
+                            #variant_field_values_struct::#ty_generics_with_ctx(::core::marker::PhantomData),
+                            ctx,
+                            visitor,
+                        ),
+                    });
+                }
+            }
+            value_items.push(quote! {
+                #[automatically_derived]
+                impl #impl_generics_with_ctx ::core::marker::Copy for #variant_field_values_struct #ty_generics_with_ctx
+                #where_clause_with_fixed_type_value_bound
+                {
+                }
+            });
+            value_items.push(quote! {
+                #[automatically_derived]
+                impl #impl_generics_with_ctx ::core::clone::Clone for #variant_field_values_struct #ty_generics_with_ctx
+                #where_clause_with_fixed_type_value_bound
+                {
+                    fn clone(&self) -> Self {
+                        *self
+                    }
+                }
+            });
+            value_items.push(quote! {
+                #[automatically_derived]
+                impl #impl_generics_with_ctx #crate_path::values::aggregate::ActiveVariantRef<#ctx_lifetime> for #variant_field_values_struct #ty_generics_with_ctx
+                #where_clause_with_fixed_type_value_bound
+                {
+                    type Aggregate = #name #original_ty_generics;
+                    type DiscriminantShape = #discriminant_shape;
+                    fn discriminant() -> #crate_path::values::Int<Self::DiscriminantShape> {
+                        #crate_path::values::Int::wrapping_new(#discriminant_const)
+                    }
+                    fn visit_fields<Visitor: #crate_path::values::aggregate::ActiveFieldVisitor<#ctx_lifetime, Self>>(
+                        self,
+                        visitor: Visitor,
+                    ) -> ::core::result::Result<Visitor, Visitor::BreakType> {
+                        #(#active_variant_visit_fields)*
+                        ::core::result::Result::Ok(visitor)
+                    }
+                }
+            });
+            value_items.push(quote! {
+                #[automatically_derived]
+                impl #impl_generics_with_ctx #crate_path::values::aggregate::InactiveVariantRef<#ctx_lifetime> for __Inactive<
+                    #ctx_lifetime,
+                    #variant_field_values_struct #ty_generics_with_ctx,
+                >
+                #where_clause_with_fixed_type_value_bound
+                {
+                    type Aggregate = #name #original_ty_generics;
+                    type DiscriminantShape = #discriminant_shape;
+                    fn discriminant() -> #crate_path::values::Int<Self::DiscriminantShape> {
+                        #crate_path::values::Int::wrapping_new(#discriminant_const)
+                    }
+                    fn visit_fields<Visitor: #crate_path::values::aggregate::InactiveFieldVisitor<#ctx_lifetime, Self>>(
+                        self,
+                        visitor: Visitor,
+                    ) -> ::core::result::Result<Visitor, Visitor::BreakType> {
+                        #(#inactive_variant_visit_fields)*
+                        ::core::result::Result::Ok(visitor)
+                    }
+                }
+            });
+            let mut visit_variants_with_self_as_active_variant = Vec::new();
+            for (
+                variant_index2,
+                Variant {
+                    ident: variant_name2,
+                    ..
+                },
+            ) in data.variants.iter().enumerate()
+            {
+                let variant_field_values_struct2 = &variant_field_values_structs[variant_index2];
+                let variant_name_str2 = variant_name2.to_string();
+                visit_variants_with_self_as_active_variant.push(
+                    match variant_index2.cmp(&variant_index) {
+                        Ordering::Less => quote! {
+                            let visitor = visitor.visit_before_active_variant(
+                                #crate_path::values::aggregate::Variant {
+                                    name: #variant_name_str2,
+                                    value: __Inactive(
+                                        ctx,
+                                        ::core::marker::PhantomData::<#variant_field_values_struct2 #ty_generics_with_ctx>,
+                                    ),
+                                },
+                            )?;
+                        },
+                        Ordering::Equal => quote! {
+                            let visitor = visitor.visit_active_variant(
+                                #crate_path::values::aggregate::Variant {
+                                    name: #variant_name_str2,
+                                    value: self,
+                                },
+                            )?;
+                        },
+                        Ordering::Greater => quote! {
+                            let visitor = Visitor::visit_after_active_variant(
+                                visitor,
+                                #crate_path::values::aggregate::Variant {
+                                    name: #variant_name_str2,
+                                    value: __Inactive(
+                                        ctx,
+                                        ::core::marker::PhantomData::<#variant_field_values_struct2 #ty_generics_with_ctx>,
+                                    ),
+                                },
+                            )?;
+                        },
+                    },
+                );
+            }
+            value_items.push(quote! {
+                #[automatically_derived]
+                impl #impl_generics_with_ctx #crate_path::values::aggregate::VariantValue<#ctx_lifetime> for #variant_field_values_struct #ty_generics_with_ctx
+                #where_clause_with_fixed_type_value_bound
+                {
+                    type Aggregate = #name #original_ty_generics;
+                    type DiscriminantShape = #discriminant_shape;
+                    fn discriminant() -> #crate_path::values::Int<Self::DiscriminantShape> {
+                        #crate_path::values::Int::wrapping_new(#discriminant_const)
+                    }
+                    fn visit_fields<Visitor: #crate_path::values::aggregate::FieldValuesVisitor<#ctx_lifetime, Self>>(
+                        self,
+                        visitor: Visitor,
+                    ) -> ::core::result::Result<Visitor, Visitor::BreakType> {
+                        #(#variant_value_visit_fields)*
+                        ::core::result::Result::Ok(visitor)
+                    }
+                    fn visit_field_types<Visitor: #crate_path::values::aggregate::FieldValueTypesVisitor<#ctx_lifetime, Self>>(
+                        visitor: Visitor,
+                    ) -> ::core::result::Result<Visitor, Visitor::BreakType> {
+                        #(#variant_value_visit_field_types)*
+                        ::core::result::Result::Ok(visitor)
+                    }
+                    fn visit_variants_with_self_as_active_variant<
+                        Ctx: #crate_path::context::AsContext<#ctx_lifetime>,
+                        Visitor: #crate_path::values::aggregate::VariantVisitor<#ctx_lifetime, Self::Aggregate>,
+                    >(
+                        self,
+                        ctx: Ctx,
+                        visitor: Visitor,
+                    ) -> ::core::result::Result<Visitor::AfterActiveVariant, Visitor::BreakType> {
+                        let ctx = ctx.ctx();
+                        #(#visit_variants_with_self_as_active_variant)*
+                        ::core::result::Result::Ok(visitor)
+                    }
+                }
+            });
+            struct_of_variant_values_fields.push(quote! {
+                #item_vis_in_mod #variant_name: #variant_field_values_struct #ty_generics_with_ctx,
+            });
+            struct_of_variant_values_visit_variant_values.push(quote! {
+                let visitor = visitor.visit(#crate_path::values::aggregate::Variant {
+                    name: #variant_name_str,
+                    value: self.#variant_name,
+                })?;
+            });
+            struct_of_variant_values_visit_variant_types.push(quote! {
+                let visitor = visitor.visit::<#variant_field_values_struct #ty_generics_with_ctx>(#crate_path::values::aggregate::Variant {
+                    name: #variant_name_str,
+                    value: (),
+                })?;
+            });
+            struct_of_variant_values_visit_variant_fixed_types.push(quote! {
+                let visitor = visitor.visit::<#variant_field_values_struct #ty_generics_with_ctx>(#crate_path::values::aggregate::Variant {
+                    name: #variant_name_str,
+                    value: (),
+                })?;
+            });
+            fixed_type_value_items.push(quote! {
+                #[automatically_derived]
+                impl #impl_generics_with_ctx #crate_path::values::aggregate::VariantFixedTypeValue<#ctx_lifetime> for #variant_field_values_struct #ty_generics_with_ctx
+                #where_clause_with_fixed_type_value_bound
+                {
+                    type Aggregate = #name #original_ty_generics;
+                    fn visit_field_fixed_types<Visitor: #crate_path::values::aggregate::FieldValueFixedTypesVisitor<#ctx_lifetime, Self>>(
+                        visitor: Visitor,
+                    ) -> ::core::result::Result<Visitor, Visitor::BreakType> {
+                        #(#variant_fixed_type_value_visit_field_fixed_types)*
+                        ::core::result::Result::Ok(visitor)
+                    }
+                }
+            });
+        }
+        value_items.push(quote! {
+            #item_vis_in_mod struct __StructOfVariantValues #generics_with_ctx #where_clause_with_fixed_type_value_bound {
+                #(#struct_of_variant_values_fields)*
+                #item_vis_in_mod __aggregate_phantom: ::core::marker::PhantomData<(#name #original_ty_generics, &#ctx_lifetime ())>,
+            }
+        });
+        value_items.push(quote! {
+            #[automatically_derived]
+            impl #impl_generics_with_ctx ::core::marker::Copy for __StructOfVariantValues #ty_generics_with_ctx
+            #where_clause_with_fixed_type_value_bound
+            {
+            }
+        });
+        value_items.push(quote! {
+            #[automatically_derived]
+            impl #impl_generics_with_ctx ::core::clone::Clone for __StructOfVariantValues #ty_generics_with_ctx
+            #where_clause_with_fixed_type_value_bound
+            {
+                fn clone(&self) -> Self {
+                    *self
+                }
+            }
+        });
+        value_items.push(quote! {
+            #[automatically_derived]
+            impl #impl_generics_with_ctx #crate_path::values::aggregate::StructOfVariantValues<#ctx_lifetime> for __StructOfVariantValues #ty_generics_with_ctx #where_clause_with_fixed_type_value_bound {
+                type Aggregate = #name #original_ty_generics;
+                fn visit_variant_values<Visitor: #crate_path::values::aggregate::VariantValuesVisitor<#ctx_lifetime, Self>>(
+                    self,
+                    visitor: Visitor,
+                ) -> ::core::result::Result<Visitor, Visitor::BreakType> {
+                    #(#struct_of_variant_values_visit_variant_values)*
+                    ::core::result::Result::Ok(visitor)
+                }
+                fn visit_variant_types<Visitor: #crate_path::values::aggregate::VariantValueTypesVisitor<#ctx_lifetime, Self>>(
+                    visitor: Visitor,
+                ) -> ::core::result::Result<Visitor, Visitor::BreakType> {
+                    #(#struct_of_variant_values_visit_variant_types)*
+                    ::core::result::Result::Ok(visitor)
+                }
+            }
+        });
+        fixed_type_value_items.push(quote! {
+            #[automatically_derived]
+            impl #impl_generics_with_ctx #crate_path::values::aggregate::StructOfVariantFixedTypeValues<#ctx_lifetime> for __StructOfVariantValues #ty_generics_with_ctx
+            #where_clause_with_fixed_type_value_bound
+            {
+                type Aggregate = #name #original_ty_generics;
+                fn visit_variant_fixed_types<Visitor: #crate_path::values::aggregate::VariantValueFixedTypesVisitor<#ctx_lifetime, Self>>(
+                    visitor: Visitor,
+                ) -> ::core::result::Result<Visitor, Visitor::BreakType> {
+                    #(#struct_of_variant_values_visit_variant_fixed_types)*
+                    ::core::result::Result::Ok(visitor)
+                }
+            }
+        });
+        let struct_of_variant_values_body = quote! {
+            __StructOfVariantValues {
+                #(#struct_of_variant_values_body_variants)*
+                __aggregate_phantom: ::core::marker::PhantomData,
+            }
+        };
+        let visit_variants_body = quote! {
+            match *self {
+                #(#visit_variants_body_variants)*
+            }
+        };
         Ok(Self {
             crate_path,
             value_mod,
@@ -788,7 +1302,7 @@ impl ValueImpl {
     }
     fn new(ast: DeriveInput) -> syn::Result<Self> {
         let DeriveInput {
-            attrs,
+            attrs: item_attrs,
             vis: item_vis,
             ident,
             generics: original_generics,
@@ -797,7 +1311,7 @@ impl ValueImpl {
         let RustHdlAttributes {
             crate_path,
             real_type_name,
-        } = RustHdlAttributes::parse(&attrs, AttributesFor::Derive)?;
+        } = RustHdlAttributes::parse(&item_attrs, AttributesFor::Derive)?;
         let name = real_type_name.unwrap_or(ident);
         let GenericsWithCtx {
             generics: generics_with_ctx,
@@ -826,6 +1340,7 @@ impl ValueImpl {
                 where_clause_with_value_bound,
                 where_clause_with_fixed_type_value_bound,
                 item_vis_in_mod,
+                item_attrs,
                 data,
             }),
             Data::Enum(data) => Self::new_enum(ValueImplFirstStep {
@@ -839,6 +1354,7 @@ impl ValueImpl {
                 where_clause_with_value_bound,
                 where_clause_with_fixed_type_value_bound,
                 item_vis_in_mod,
+                item_attrs,
                 data,
             }),
             Data::Union(_) => {
@@ -876,6 +1392,7 @@ impl ValueImpl {
         };
         Ok(quote! {
             #[allow(non_snake_case)]
+            #[allow(non_camel_case_types)]
             mod #value_mod {
                 #![no_implicit_prelude]
                 use super::*;

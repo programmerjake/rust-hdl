@@ -42,6 +42,17 @@ mod enum_mod {
 
     #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
+    pub enum Enum6 {
+        A = 3,
+        B,
+        C,
+        D = 10,
+        E = 12,
+        F,
+    }
+
+    #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
+    #[allow(dead_code)]
     pub enum EnumStruct<T> {
         A {
             f1: ::rust_hdl::values::Int8,

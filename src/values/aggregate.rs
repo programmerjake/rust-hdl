@@ -49,8 +49,12 @@ pub trait VariantValue<'ctx>: 'ctx + Copy {
     fn visit_field_types<Visitor: FieldValueTypesVisitor<'ctx, Self>>(
         visitor: Visitor,
     ) -> Result<Visitor, Visitor::BreakType>;
-    fn visit_variants_with_self_as_active_variant<Visitor: VariantVisitor<'ctx, Self::Aggregate>>(
+    fn visit_variants_with_self_as_active_variant<
+        Ctx: AsContext<'ctx>,
+        Visitor: VariantVisitor<'ctx, Self::Aggregate>,
+    >(
         self,
+        ctx: Ctx,
         visitor: Visitor,
     ) -> Result<Visitor::AfterActiveVariant, Visitor::BreakType>;
 }
@@ -59,8 +63,9 @@ pub fn get_variant_value<'ctx, Ctx: AsContext<'ctx>, VV: VariantValue<'ctx>>(
     ctx: Ctx,
     variant: VV,
 ) -> Val<'ctx, VV::Aggregate> {
-    get_aggregate_value(ctx.ctx(), |visitor| {
-        variant.visit_variants_with_self_as_active_variant(visitor)
+    let ctx = ctx.ctx();
+    get_aggregate_value(ctx, |visitor| {
+        variant.visit_variants_with_self_as_active_variant(ctx, visitor)
     })
 }
 
