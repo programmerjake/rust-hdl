@@ -368,15 +368,17 @@ pub trait AggregateValue<'ctx>: Value<'ctx> {
     type StructOfVariantValues: StructOfVariantValues<'ctx, Aggregate = Self>;
     fn source_location() -> SourceLocation<'static>;
     fn struct_of_variant_values(aggregate: Val<'ctx, Self>) -> Self::StructOfVariantValues;
-    fn visit_variants<Visitor: VariantVisitor<'ctx, Self>>(
+    fn visit_variants<Ctx: AsContext<'ctx>, Visitor: VariantVisitor<'ctx, Self>>(
         &self,
+        ctx: Ctx,
         visitor: Visitor,
     ) -> Result<Visitor::AfterActiveVariant, Visitor::BreakType>;
 }
 
 impl<'ctx, T: AggregateValue<'ctx>> Value<'ctx> for T {
     fn get_value<Ctx: AsContext<'ctx>>(&self, ctx: Ctx) -> Val<'ctx, Self> {
-        get_aggregate_value(ctx.ctx(), |visitor| self.visit_variants(visitor))
+        let ctx = ctx.ctx();
+        get_aggregate_value(ctx, |visitor| self.visit_variants(ctx, visitor))
     }
     fn static_value_type_opt<Ctx: AsContext<'ctx>>(ctx: Ctx) -> Option<ValueType<'ctx, Self>> {
         struct MyFieldVisitor<'ctx> {

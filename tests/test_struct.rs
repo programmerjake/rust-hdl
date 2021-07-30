@@ -40,9 +40,9 @@ mod struct_mod {
     #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     pub struct Struct<T> {
+        #[rust_hdl(ignored)]
         pub f1: ::rust_hdl::values::Int8,
         pub f2: T,
-        #[rust_hdl(ignored)]
         pub f3: ::rust_hdl::values::Int8,
         #[rust_hdl(ignored)]
         pub f4: ::std::string::String,
@@ -51,18 +51,18 @@ mod struct_mod {
     #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     pub struct TupleStruct<T>(
-        pub ::rust_hdl::values::Int8,
-        pub T,
         #[rust_hdl(ignored)] pub ::rust_hdl::values::Int8,
+        pub T,
+        pub ::rust_hdl::values::Int8,
         #[rust_hdl(ignored)] pub ::std::string::String,
     );
 
     #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     struct PrivateStruct {
+        #[rust_hdl(ignored)]
         f1: ::rust_hdl::values::Int8,
         f2: bool,
-        #[rust_hdl(ignored)]
         f3: ::rust_hdl::values::Int8,
         #[rust_hdl(ignored)]
         f4: ::std::string::String,
@@ -71,9 +71,9 @@ mod struct_mod {
     #[derive(::rust_hdl::values::Value, ::rust_hdl::values::FixedTypeValue)]
     #[allow(dead_code)]
     pub(crate) struct CrateStruct {
+        #[rust_hdl(ignored)]
         pub(crate) f1: ::rust_hdl::values::Int8,
         pub(crate) f2: bool,
-        #[rust_hdl(ignored)]
         pub(crate) f3: ::rust_hdl::values::Int8,
         #[rust_hdl(ignored)]
         pub(crate) f4: ::std::string::String,

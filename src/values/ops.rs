@@ -6,9 +6,9 @@ use crate::{
     ir::{
         scope::ScopeRef,
         values::{
-            BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExpandScope, IrValue,
-            IsAggregateVariant, LiteralBits, Mux, SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp,
-            SameSizeUnOpKind, ShrinkScope,
+            BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExpandScope,
+            ExtractAggregateField, IrValue, IsAggregateVariant, LiteralBits, Mux, SameSizeBinOp,
+            SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind, ShrinkScope,
         },
         SourceLocation,
     },
@@ -509,7 +509,10 @@ pub fn expand_scope<'ctx, T: Value<'ctx>>(
 pub fn assert_type_is_aggregate<'ctx, T: AggregateValue<'ctx>>() {}
 
 #[track_caller]
-pub fn assert_variant_is_empty<'ctx, T: AggregateValue<'ctx>>(variant: &T) {
+pub fn assert_variant_is_empty<'ctx, Ctx: AsContext<'ctx>, T: AggregateValue<'ctx>>(
+    ctx: Ctx,
+    variant: &T,
+) {
     struct MyFieldVisitor {
         caller: SourceLocation<'static>,
         variant_name: &'static str,
@@ -558,9 +561,12 @@ pub fn assert_variant_is_empty<'ctx, T: AggregateValue<'ctx>>(variant: &T) {
         }
     }
     variant
-        .visit_variants(MyVariantVisitor {
-            caller: SourceLocation::caller(),
-        })
+        .visit_variants(
+            ctx.ctx(),
+            MyVariantVisitor {
+                caller: SourceLocation::caller(),
+            },
+        )
         .unwrap();
 }
 
@@ -612,11 +618,14 @@ pub fn get_aggregate_variant_index<'ctx, Ctx: AsContext<'ctx>, T: AggregateValue
         }
     }
     variant
-        .visit_variants(Visitor {
-            caller: SourceLocation::caller(),
+        .visit_variants(
             ctx,
-            variant,
-        })
+            Visitor {
+                caller: SourceLocation::caller(),
+                ctx,
+                variant,
+            },
+        )
         .unwrap()
 }
 
@@ -634,6 +643,25 @@ pub fn is_aggregate_variant<'ctx, Ctx: AsContext<'ctx>, T: AggregateValue<'ctx>>
             &SourceLocation::caller(),
         ))
         .intern(value.ctx()),
+    )
+}
+
+#[track_caller]
+pub fn extract_aggregate_field_unchecked<'ctx, A: AggregateValue<'ctx>, F: Value<'ctx>>(
+    aggregate: Val<'ctx, A>,
+    variant_index: usize,
+    field_index: usize,
+) -> Val<'ctx, F> {
+    Val::from_ir_unchecked(
+        aggregate.ctx(),
+        IrValue::from(ExtractAggregateField::new(
+            aggregate.ctx(),
+            aggregate.ir(),
+            variant_index,
+            field_index,
+            &SourceLocation::caller(),
+        ))
+        .intern(aggregate.ctx()),
     )
 }
 
