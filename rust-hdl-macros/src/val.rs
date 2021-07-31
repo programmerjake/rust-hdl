@@ -244,7 +244,7 @@ impl PatternDefinedNames {
         handle_later_without_earlier: impl FnOnce(&'a Ident) -> E,
     ) -> Result<(), E> {
         let mut earlier_iter = self.0.keys();
-        let mut later_iter = self.0.keys();
+        let mut later_iter = later_defined_names.0.keys();
         loop {
             match (earlier_iter.next(), later_iter.next()) {
                 (None, None) => break,
