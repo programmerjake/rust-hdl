@@ -286,6 +286,7 @@ impl Parse for EnumReprAttributeArg {
 }
 
 struct EnumReprAttribute {
+    #[allow(dead_code)]
     repr_c: Option<kw::C>,
     repr_type: Option<EnumReprType>,
 }
@@ -472,7 +473,6 @@ struct ValueImpl {
     discriminant_shape: TokenStream,
     struct_of_variant_values_body: TokenStream,
     visit_variants_body: TokenStream,
-    item_vis_in_mod: Visibility,
 }
 
 impl ValueImpl {
@@ -904,7 +904,6 @@ impl ValueImpl {
             discriminant_shape,
             struct_of_variant_values_body,
             visit_variants_body,
-            item_vis_in_mod,
         })
     }
     fn new_enum(first_step: ValueImplFirstStep<DataEnum>) -> syn::Result<Self> {
@@ -1487,7 +1486,6 @@ impl ValueImpl {
             discriminant_shape,
             struct_of_variant_values_body,
             visit_variants_body,
-            item_vis_in_mod,
         })
     }
     fn new(ast: DeriveInput) -> syn::Result<Self> {
@@ -1571,7 +1569,6 @@ impl ValueImpl {
             discriminant_shape,
             struct_of_variant_values_body,
             visit_variants_body,
-            item_vis_in_mod,
         } = self;
         let (_, original_ty_generics, _) = original_generics.split_for_impl();
         let (impl_generics_with_ctx, ty_generics_with_ctx, _) = generics_with_ctx.split_for_impl();
@@ -1627,7 +1624,6 @@ impl ValueImpl {
             discriminant_shape: _,
             struct_of_variant_values_body: _,
             visit_variants_body: _,
-            item_vis_in_mod: _,
         } = self;
         let (_, original_ty_generics, _) = original_generics.split_for_impl();
         let (impl_generics_with_ctx, ty_generics_with_ctx, _) = generics_with_ctx.split_for_impl();

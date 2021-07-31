@@ -14,8 +14,7 @@ use std::{
         BTreeMap,
     },
     convert::TryInto,
-    fmt, iter,
-    panic::Location,
+    iter,
 };
 use syn::{
     parse::{Parse, ParseStream},

@@ -7,7 +7,7 @@ use crate::{
         scope::ScopeRef,
         values::{
             BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExpandScope,
-            ExtractAggregateField, IrValue, IsAggregateVariant, LiteralBits, Mux, SameSizeBinOp,
+            ExtractAggregateField, IrValue, IsAggregateVariant, Mux, SameSizeBinOp,
             SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind, ShrinkScope,
         },
         SourceLocation,
@@ -19,7 +19,6 @@ use crate::{
             VariantVisitor,
         },
         integer::IntShapeTrait,
-        ToVal,
     },
 };
 use core::{

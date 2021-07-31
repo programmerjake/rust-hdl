@@ -23,7 +23,7 @@ use crate::{
         SourceLocation,
     },
     prelude::{Int, UInt1},
-    values::{aggregate, integer::IntShape},
+    values::integer::IntShape,
 };
 use alloc::{
     borrow::Cow,
@@ -677,7 +677,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     }) => {
                         let discriminant_wire = discriminant
                             .map(|_| aggregate_wires.next().expect("discriminant wire"));
-                        let flattened_fields =
+                        let flattened_fields_wire =
                             aggregate_wires.next().expect("flattened fields wire");
                         assert!(aggregate_wires.next().is_none());
                         todo!();
