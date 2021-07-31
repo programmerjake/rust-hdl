@@ -503,6 +503,7 @@ impl PatternMatcher<'_> {
                 variant_path,
             }) => {
                 let condition = self.temp_name_maker.make_temp_name(span);
+                todo_err!(variant_path);
                 self.tokens.extend(quote_spanned! {span=>
                     #crate_path::values::ops::assert_enum_variant_is_empty::<#enum_type>(&#variant_path);
                     let __variant_index = #crate_path::values::ops::get_enum_variant_index::<_, #enum_type>(#module, &#variant_path);
@@ -516,6 +517,7 @@ impl PatternMatcher<'_> {
                 })
             }
             PatPathKind::Type(TypePathKind::Struct { span, struct_type }) => {
+                todo_err!(struct_type);
                 self.tokens.extend(quote_spanned! {span=>
                     #crate_path::values::ops::assert_type_is_empty_struct::<#struct_type>();
                 });
@@ -661,6 +663,7 @@ impl PatternMatcher<'_> {
         value: &Ident,
     ) -> syn::Result<PatternMatchResult> {
         let crate_path = &self.val_translator.crate_path;
+        todo_err!(pat_tuple);
         let PatTuple {
             attrs,
             paren_token,
@@ -1250,7 +1253,7 @@ impl ValTranslator {
                 assert_no_attrs(attrs)?;
                 let base = self.expr(base)?;
                 Ok(quote_spanned! {dot_token.span=>
-                    #crate_path::values::aggregate::StructValue::get_field_values(#base) #dot_token #member
+                    #crate_path::values::ops::assert_arg_is_val(#crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#base) #dot_token #member)
                 })
             }
             Expr::Group(ExprGroup {

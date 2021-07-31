@@ -204,7 +204,6 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
             }),
         ))
     }
-    #[cfg(todo)]
     #[track_caller]
     pub fn new<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,

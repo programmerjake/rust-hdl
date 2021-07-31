@@ -4,7 +4,6 @@
 pub use crate::{
     clocking::ClockDomain,
     context::{AsContext, Context, ContextRef},
-    field,
     io::{Input, NotIO, Output, PlainIO, IO},
     logic::{Reg, RegRef, Wire, WireRef},
     module::Module,

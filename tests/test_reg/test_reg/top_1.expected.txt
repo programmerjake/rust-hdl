@@ -4,24 +4,40 @@ IrModule {
     parent: <None>,
     interface_types: [
         Input(
-            IrStructType {
-                fields: [
-                    IrStructFieldType {
-                        name: "clk",
-                        ty: IrBitVectorType {
-                            bit_count: 1,
-                            signed: false,
+            IrAggregateType {
+                discriminant_type: IrBitVectorType {
+                    bit_count: 0,
+                    signed: false,
+                },
+                variants: [
+                    IrVariantType {
+                        name: "",
+                        discriminant: LiteralBits {
+                            value: 0x0_u0,
                         },
-                    },
-                    IrStructFieldType {
-                        name: "rst",
-                        ty: IrBitVectorType {
-                            bit_count: 1,
+                        fields: [
+                            IrFieldType {
+                                name: "clk",
+                                ty: IrBitVectorType {
+                                    bit_count: 1,
+                                    signed: false,
+                                },
+                            },
+                            IrFieldType {
+                                name: "rst",
+                                ty: IrBitVectorType {
+                                    bit_count: 1,
+                                    signed: false,
+                                },
+                            },
+                        ],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 2,
                             signed: false,
                         },
                     },
                 ],
-                flattened: IrBitVectorType {
+                flattened_fields: IrBitVectorType {
                     bit_count: 2,
                     signed: false,
                 },
@@ -44,24 +60,40 @@ IrModule {
         Input(
             IrModuleInputData {
                 external_value: ExternalInput {
-                    value_type: IrStructType {
-                        fields: [
-                            IrStructFieldType {
-                                name: "clk",
-                                ty: IrBitVectorType {
-                                    bit_count: 1,
-                                    signed: false,
+                    value_type: IrAggregateType {
+                        discriminant_type: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                        variants: [
+                            IrVariantType {
+                                name: "",
+                                discriminant: LiteralBits {
+                                    value: 0x0_u0,
                                 },
-                            },
-                            IrStructFieldType {
-                                name: "rst",
-                                ty: IrBitVectorType {
-                                    bit_count: 1,
+                                fields: [
+                                    IrFieldType {
+                                        name: "clk",
+                                        ty: IrBitVectorType {
+                                            bit_count: 1,
+                                            signed: false,
+                                        },
+                                    },
+                                    IrFieldType {
+                                        name: "rst",
+                                        ty: IrBitVectorType {
+                                            bit_count: 1,
+                                            signed: false,
+                                        },
+                                    },
+                                ],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 2,
                                     signed: false,
                                 },
                             },
                         ],
-                        flattened: IrBitVectorType {
+                        flattened_fields: IrBitVectorType {
                             bit_count: 2,
                             signed: false,
                         },
@@ -71,24 +103,40 @@ IrModule {
                     module: "top",
                     index: 0,
                     path: "io.cd",
-                    value_type: IrStructType {
-                        fields: [
-                            IrStructFieldType {
-                                name: "clk",
-                                ty: IrBitVectorType {
-                                    bit_count: 1,
-                                    signed: false,
+                    value_type: IrAggregateType {
+                        discriminant_type: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                        variants: [
+                            IrVariantType {
+                                name: "",
+                                discriminant: LiteralBits {
+                                    value: 0x0_u0,
                                 },
-                            },
-                            IrStructFieldType {
-                                name: "rst",
-                                ty: IrBitVectorType {
-                                    bit_count: 1,
+                                fields: [
+                                    IrFieldType {
+                                        name: "clk",
+                                        ty: IrBitVectorType {
+                                            bit_count: 1,
+                                            signed: false,
+                                        },
+                                    },
+                                    IrFieldType {
+                                        name: "rst",
+                                        ty: IrBitVectorType {
+                                            bit_count: 1,
+                                            signed: false,
+                                        },
+                                    },
+                                ],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 2,
                                     signed: false,
                                 },
                             },
                         ],
-                        flattened: IrBitVectorType {
+                        flattened_fields: IrBitVectorType {
                             bit_count: 2,
                             signed: false,
                         },
@@ -184,81 +232,175 @@ IrModule {
                     signed: false,
                 },
             },
-            clk: ExtractStructField {
-                struct_value: IrModuleInput {
+            clk: ExtractAggregateField {
+                aggregate_value: IrModuleInput {
                     module: "top",
                     index: 0,
                     path: "io.cd",
-                    value_type: IrStructType {
-                        fields: [
-                            IrStructFieldType {
-                                name: "clk",
-                                ty: IrBitVectorType {
-                                    bit_count: 1,
-                                    signed: false,
+                    value_type: IrAggregateType {
+                        discriminant_type: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                        variants: [
+                            IrVariantType {
+                                name: "",
+                                discriminant: LiteralBits {
+                                    value: 0x0_u0,
                                 },
-                            },
-                            IrStructFieldType {
-                                name: "rst",
-                                ty: IrBitVectorType {
-                                    bit_count: 1,
+                                fields: [
+                                    IrFieldType {
+                                        name: "clk",
+                                        ty: IrBitVectorType {
+                                            bit_count: 1,
+                                            signed: false,
+                                        },
+                                    },
+                                    IrFieldType {
+                                        name: "rst",
+                                        ty: IrBitVectorType {
+                                            bit_count: 1,
+                                            signed: false,
+                                        },
+                                    },
+                                ],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 2,
                                     signed: false,
                                 },
                             },
                         ],
-                        flattened: IrBitVectorType {
+                        flattened_fields: IrBitVectorType {
                             bit_count: 2,
                             signed: false,
                         },
                     },
                 },
-                struct_field_type: IrStructFieldType {
-                    name: "clk",
-                    ty: IrBitVectorType {
-                        bit_count: 1,
+                aggregate_type: IrAggregateType {
+                    discriminant_type: IrBitVectorType {
+                        bit_count: 0,
+                        signed: false,
+                    },
+                    variants: [
+                        IrVariantType {
+                            name: "",
+                            discriminant: LiteralBits {
+                                value: 0x0_u0,
+                            },
+                            fields: [
+                                IrFieldType {
+                                    name: "clk",
+                                    ty: IrBitVectorType {
+                                        bit_count: 1,
+                                        signed: false,
+                                    },
+                                },
+                                IrFieldType {
+                                    name: "rst",
+                                    ty: IrBitVectorType {
+                                        bit_count: 1,
+                                        signed: false,
+                                    },
+                                },
+                            ],
+                            flattened_fields: IrBitVectorType {
+                                bit_count: 2,
+                                signed: false,
+                            },
+                        },
+                    ],
+                    flattened_fields: IrBitVectorType {
+                        bit_count: 2,
                         signed: false,
                     },
                 },
+                variant_index: 0,
                 field_index: 0,
-                ..
             },
-            reset_enable: ExtractStructField {
-                struct_value: IrModuleInput {
+            reset_enable: ExtractAggregateField {
+                aggregate_value: IrModuleInput {
                     module: "top",
                     index: 0,
                     path: "io.cd",
-                    value_type: IrStructType {
-                        fields: [
-                            IrStructFieldType {
-                                name: "clk",
-                                ty: IrBitVectorType {
-                                    bit_count: 1,
-                                    signed: false,
+                    value_type: IrAggregateType {
+                        discriminant_type: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                        variants: [
+                            IrVariantType {
+                                name: "",
+                                discriminant: LiteralBits {
+                                    value: 0x0_u0,
                                 },
-                            },
-                            IrStructFieldType {
-                                name: "rst",
-                                ty: IrBitVectorType {
-                                    bit_count: 1,
+                                fields: [
+                                    IrFieldType {
+                                        name: "clk",
+                                        ty: IrBitVectorType {
+                                            bit_count: 1,
+                                            signed: false,
+                                        },
+                                    },
+                                    IrFieldType {
+                                        name: "rst",
+                                        ty: IrBitVectorType {
+                                            bit_count: 1,
+                                            signed: false,
+                                        },
+                                    },
+                                ],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 2,
                                     signed: false,
                                 },
                             },
                         ],
-                        flattened: IrBitVectorType {
+                        flattened_fields: IrBitVectorType {
                             bit_count: 2,
                             signed: false,
                         },
                     },
                 },
-                struct_field_type: IrStructFieldType {
-                    name: "rst",
-                    ty: IrBitVectorType {
-                        bit_count: 1,
+                aggregate_type: IrAggregateType {
+                    discriminant_type: IrBitVectorType {
+                        bit_count: 0,
+                        signed: false,
+                    },
+                    variants: [
+                        IrVariantType {
+                            name: "",
+                            discriminant: LiteralBits {
+                                value: 0x0_u0,
+                            },
+                            fields: [
+                                IrFieldType {
+                                    name: "clk",
+                                    ty: IrBitVectorType {
+                                        bit_count: 1,
+                                        signed: false,
+                                    },
+                                },
+                                IrFieldType {
+                                    name: "rst",
+                                    ty: IrBitVectorType {
+                                        bit_count: 1,
+                                        signed: false,
+                                    },
+                                },
+                            ],
+                            flattened_fields: IrBitVectorType {
+                                bit_count: 2,
+                                signed: false,
+                            },
+                        },
+                    ],
+                    flattened_fields: IrBitVectorType {
+                        bit_count: 2,
                         signed: false,
                     },
                 },
+                variant_index: 0,
                 field_index: 1,
-                ..
             },
             reset_value: LiteralBits {
                 value: 0x0_u1,

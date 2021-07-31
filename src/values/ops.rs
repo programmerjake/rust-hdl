@@ -508,6 +508,10 @@ pub fn expand_scope<'ctx, T: Value<'ctx>>(
 
 pub fn assert_type_is_aggregate<'ctx, T: AggregateValue<'ctx>>() {}
 
+pub fn assert_arg_is_val<'ctx, T: Value<'ctx>>(arg: Val<'ctx, T>) -> Val<'ctx, T> {
+    arg
+}
+
 #[track_caller]
 pub fn assert_variant_is_empty<'ctx, Ctx: AsContext<'ctx>, T: AggregateValue<'ctx>>(
     ctx: Ctx,

@@ -123,7 +123,6 @@ impl<'ctx> Module<'ctx> {
     ) -> Output<'ctx, T> {
         Output::with_type(self, value_type)
     }
-    #[cfg(todo)]
     #[track_caller]
     pub fn reg<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,

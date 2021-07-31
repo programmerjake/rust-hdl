@@ -14,7 +14,7 @@ module \top
   attribute \src "$FILE:$LINE-15.9"
   wire width 8 input 5 \io.input.b[2]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 4 input 6 \io.input.e2.$discriminant
+  wire width 4 input 6 \io.input.e2
   attribute \src "$FILE:$LINE-15.9"
   wire width 2 input 7 \io.input.e3.$discriminant
   attribute \src "$FILE:$LINE-15.9"
@@ -32,7 +32,7 @@ module \top
   attribute \src "$FILE:$LINE-15.9"
   wire width 8 output 14 \io.wire_output.b[2]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 4 output 15 \io.wire_output.e2.$discriminant
+  wire width 4 output 15 \io.wire_output.e2
   attribute \src "$FILE:$LINE-15.9"
   wire width 2 output 16 \io.wire_output.e3.$discriminant
   attribute \src "$FILE:$LINE-15.9"
@@ -50,7 +50,7 @@ module \top
   attribute \src "$FILE:$LINE-15.9"
   wire width 8 output 23 \io.reg_output.b[2]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 4 output 24 \io.reg_output.e2.$discriminant
+  wire width 4 output 24 \io.reg_output.e2
   attribute \src "$FILE:$LINE-15.9"
   wire width 2 output 25 \io.reg_output.e3.$discriminant
   attribute \src "$FILE:$LINE-15.9"
@@ -63,7 +63,7 @@ module \top
   wire width 8 \submodule.io.wire_output.b[0]
   wire width 8 \submodule.io.wire_output.b[1]
   wire width 8 \submodule.io.wire_output.b[2]
-  wire width 4 \submodule.io.wire_output.e2.$discriminant
+  wire width 4 \submodule.io.wire_output.e2
   wire width 2 \submodule.io.wire_output.e3.$discriminant
   wire width 1 \submodule.io.wire_output.e3.$fields
   wire width 2 \submodule.io.wire_output.e4.$discriminant
@@ -72,7 +72,7 @@ module \top
   connect \io.wire_output.b[0] \submodule.io.wire_output.b[0]
   connect \io.wire_output.b[1] \submodule.io.wire_output.b[1]
   connect \io.wire_output.b[2] \submodule.io.wire_output.b[2]
-  connect \io.wire_output.e2.$discriminant \submodule.io.wire_output.e2.$discriminant
+  connect \io.wire_output.e2 \submodule.io.wire_output.e2
   connect \io.wire_output.e3.$discriminant \submodule.io.wire_output.e3.$discriminant
   connect \io.wire_output.e3.$fields \submodule.io.wire_output.e3.$fields
   connect \io.wire_output.e4.$discriminant \submodule.io.wire_output.e4.$discriminant
@@ -81,7 +81,7 @@ module \top
   wire width 8 \submodule.io.reg_output.b[0]
   wire width 8 \submodule.io.reg_output.b[1]
   wire width 8 \submodule.io.reg_output.b[2]
-  wire width 4 \submodule.io.reg_output.e2.$discriminant
+  wire width 4 \submodule.io.reg_output.e2
   wire width 2 \submodule.io.reg_output.e3.$discriminant
   wire width 1 \submodule.io.reg_output.e3.$fields
   wire width 2 \submodule.io.reg_output.e4.$discriminant
@@ -90,7 +90,7 @@ module \top
   connect \io.reg_output.b[0] \submodule.io.reg_output.b[0]
   connect \io.reg_output.b[1] \submodule.io.reg_output.b[1]
   connect \io.reg_output.b[2] \submodule.io.reg_output.b[2]
-  connect \io.reg_output.e2.$discriminant \submodule.io.reg_output.e2.$discriminant
+  connect \io.reg_output.e2 \submodule.io.reg_output.e2
   connect \io.reg_output.e3.$discriminant \submodule.io.reg_output.e3.$discriminant
   connect \io.reg_output.e3.$fields \submodule.io.reg_output.e3.$fields
   connect \io.reg_output.e4.$discriminant \submodule.io.reg_output.e4.$discriminant
@@ -103,7 +103,7 @@ module \top
     connect \io.input.b[0] \io.input.b[0]
     connect \io.input.b[1] \io.input.b[1]
     connect \io.input.b[2] \io.input.b[2]
-    connect \io.input.e2.$discriminant \io.input.e2.$discriminant
+    connect \io.input.e2 \io.input.e2
     connect \io.input.e3.$discriminant \io.input.e3.$discriminant
     connect \io.input.e3.$fields \io.input.e3.$fields
     connect \io.input.e4.$discriminant \io.input.e4.$discriminant
@@ -112,7 +112,7 @@ module \top
     connect \io.wire_output.b[0] \submodule.io.wire_output.b[0]
     connect \io.wire_output.b[1] \submodule.io.wire_output.b[1]
     connect \io.wire_output.b[2] \submodule.io.wire_output.b[2]
-    connect \io.wire_output.e2.$discriminant \submodule.io.wire_output.e2.$discriminant
+    connect \io.wire_output.e2 \submodule.io.wire_output.e2
     connect \io.wire_output.e3.$discriminant \submodule.io.wire_output.e3.$discriminant
     connect \io.wire_output.e3.$fields \submodule.io.wire_output.e3.$fields
     connect \io.wire_output.e4.$discriminant \submodule.io.wire_output.e4.$discriminant
@@ -121,7 +121,7 @@ module \top
     connect \io.reg_output.b[0] \submodule.io.reg_output.b[0]
     connect \io.reg_output.b[1] \submodule.io.reg_output.b[1]
     connect \io.reg_output.b[2] \submodule.io.reg_output.b[2]
-    connect \io.reg_output.e2.$discriminant \submodule.io.reg_output.e2.$discriminant
+    connect \io.reg_output.e2 \submodule.io.reg_output.e2
     connect \io.reg_output.e3.$discriminant \submodule.io.reg_output.e3.$discriminant
     connect \io.reg_output.e3.$fields \submodule.io.reg_output.e3.$fields
     connect \io.reg_output.e4.$discriminant \submodule.io.reg_output.e4.$discriminant
@@ -144,7 +144,7 @@ module \top.submodule
   attribute \src "$FILE:$LINE-14.9"
   wire width 8 input 5 \io.input.b[2]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 4 input 6 \io.input.e2.$discriminant
+  wire width 4 input 6 \io.input.e2
   attribute \src "$FILE:$LINE-14.9"
   wire width 2 input 7 \io.input.e3.$discriminant
   attribute \src "$FILE:$LINE-14.9"
@@ -162,7 +162,7 @@ module \top.submodule
   attribute \src "$FILE:$LINE-14.9"
   wire width 8 output 14 \io.wire_output.b[2]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 4 output 15 \io.wire_output.e2.$discriminant
+  wire width 4 output 15 \io.wire_output.e2
   attribute \src "$FILE:$LINE-14.9"
   wire width 2 output 16 \io.wire_output.e3.$discriminant
   attribute \src "$FILE:$LINE-14.9"
@@ -180,7 +180,7 @@ module \top.submodule
   attribute \src "$FILE:$LINE-14.9"
   wire width 8 output 23 \io.reg_output.b[2]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 4 output 24 \io.reg_output.e2.$discriminant
+  wire width 4 output 24 \io.reg_output.e2
   attribute \src "$FILE:$LINE-14.9"
   wire width 2 output 25 \io.reg_output.e3.$discriminant
   attribute \src "$FILE:$LINE-14.9"
@@ -198,7 +198,7 @@ module \top.submodule
   attribute \src "$FILE:$LINE-7.9"
   wire width 8 \wire.b[2]
   attribute \src "$FILE:$LINE-7.9"
-  wire width 4 \wire.e2.$discriminant
+  wire width 4 \wire.e2
   attribute \src "$FILE:$LINE-7.9"
   wire width 2 \wire.e3.$discriminant
   attribute \src "$FILE:$LINE-7.9"
@@ -211,7 +211,7 @@ module \top.submodule
   connect \io.wire_output.b[0] \wire.b[0]
   connect \io.wire_output.b[1] \wire.b[1]
   connect \io.wire_output.b[2] \wire.b[2]
-  connect \io.wire_output.e2.$discriminant \wire.e2.$discriminant
+  connect \io.wire_output.e2 \wire.e2
   connect \io.wire_output.e3.$discriminant \wire.e3.$discriminant
   connect \io.wire_output.e3.$fields \wire.e3.$fields
   connect \io.wire_output.e4.$discriminant \wire.e4.$discriminant
@@ -225,7 +225,7 @@ module \top.submodule
   attribute \src "$FILE:$LINE-4.9"
   wire width 8 \reg.b[2]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 4 \reg.e2.$discriminant
+  wire width 4 \reg.e2
   attribute \src "$FILE:$LINE-4.9"
   wire width 2 \reg.e3.$discriminant
   attribute \src "$FILE:$LINE-4.9"
@@ -238,7 +238,7 @@ module \top.submodule
   connect \io.reg_output.b[0] \reg.b[0]
   connect \io.reg_output.b[1] \reg.b[1]
   connect \io.reg_output.b[2] \reg.b[2]
-  connect \io.reg_output.e2.$discriminant \reg.e2.$discriminant
+  connect \io.reg_output.e2 \reg.e2
   connect \io.reg_output.e3.$discriminant \reg.e3.$discriminant
   connect \io.reg_output.e3.$fields \reg.e3.$fields
   connect \io.reg_output.e4.$discriminant \reg.e4.$discriminant
@@ -247,7 +247,7 @@ module \top.submodule
   connect \wire.b[0] \io.input.b[0]
   connect \wire.b[1] \io.input.b[1]
   connect \wire.b[2] \io.input.b[2]
-  connect \wire.e2.$discriminant \io.input.e2.$discriminant
+  connect \wire.e2 \io.input.e2
   connect \wire.e3.$discriminant \io.input.e3.$discriminant
   connect \wire.e3.$fields \io.input.e3.$fields
   connect \wire.e4.$discriminant \io.input.e4.$discriminant
@@ -302,7 +302,7 @@ module \top.submodule
   cell $mux $16
     parameter \WIDTH 4
     connect \S \io.cd.rst
-    connect \A \io.input.e2.$discriminant
+    connect \A \io.input.e2
     connect \B $2
     connect \Y $15
   end
@@ -371,12 +371,12 @@ module \top.submodule
     connect \Q \reg.b[2]
   end
   attribute \src "$FILE:$LINE-4.9"
-  cell $dff \reg.e2.$discriminant#2
+  cell $dff \reg.e2#2
     parameter \WIDTH 4
     parameter \CLK_POLARITY 1'1
     connect \CLK \io.cd.clk
     connect \D $15
-    connect \Q \reg.e2.$discriminant
+    connect \Q \reg.e2
   end
   attribute \src "$FILE:$LINE-4.9"
   cell $dff \reg.e3.$discriminant#2
