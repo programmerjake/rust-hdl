@@ -697,3 +697,6 @@ pub fn match_range_inclusive<'ctx, Shape: IntShapeTrait>(
         HdlCompareLessEqual::compare_less_equal(value, range.end().get_value(value.ctx())),
     )
 }
+
+pub fn check_val_type<'ctx, T: Value<'ctx>, F: FnOnce(T, Infallible)>(_value: Val<'ctx, T>, _f: F) {
+}

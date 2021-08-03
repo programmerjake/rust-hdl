@@ -1032,6 +1032,9 @@ impl ValTranslator {
         Ok(quote_spanned! {match_token.span=>
             {
                 #tokens
+                #crate_path::values::ops::check_val_type(#value, |__value, _| match __value {
+                    #(#verification_match_arms)*
+                });
                 #result
             }
         })
