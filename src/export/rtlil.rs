@@ -22,7 +22,7 @@ use crate::{
         },
         SourceLocation,
     },
-    prelude::{Int, UInt1},
+    prelude::{Int, UInt1, Value},
     values::integer::IntShape,
 };
 use alloc::{
@@ -485,6 +485,88 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
         }
         writeln!(self.writer, "  end")
     }
+    fn slice_wire(
+        &mut self,
+        module: IrModuleRef<'ctx>,
+        base_wire: &RtlilWire<'ctx>,
+        bit_indexes: Range<u32>,
+    ) -> Result<Option<RtlilWire<'ctx>>, W::Error> {
+        if let Some(bit_count) = bit_indexes
+            .end
+            .checked_sub(bit_indexes.start)
+            .and_then(NonZeroU32::new)
+        {
+            let name = self.new_anonymous_symbol(module);
+            writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
+            // convert to an inclusive range
+            let last_bit_index = bit_indexes.end - 1;
+            let first_bit_index = bit_indexes.start;
+            writeln!(
+                self.writer,
+                "  connect {} {} [{}:{}]",
+                name, base_wire.name, last_bit_index, first_bit_index
+            )?;
+            Ok(Some(RtlilWire {
+                ty: RtlilWireType { bit_count },
+                name,
+                io_index: None,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+    fn bool_out_bin_op(
+        &mut self,
+        module: IrModuleRef<'ctx>,
+        kind: BoolOutBinOpKind,
+        input_type: IrBitVectorType,
+        lhs_wire: &RtlilWire<'ctx>,
+        rhs_wire: &RtlilWire<'ctx>,
+    ) -> Result<RtlilWire<'ctx>, W::Error> {
+        let input_bit_count = NonZeroU32::new(input_type.bit_count).unwrap();
+        let name = self.new_anonymous_symbol(module);
+        writeln!(self.writer, "  wire width 1 {}", name)?;
+        let cell_name = self.new_anonymous_symbol(module);
+        let mut lhs_signed = false;
+        let mut rhs_signed = false;
+        let cell_kind = match kind {
+            BoolOutBinOpKind::CompareEq => "$eq",
+            BoolOutBinOpKind::CompareLt => {
+                let signed = input_type.signed;
+                lhs_signed = signed;
+                rhs_signed = signed;
+                "$lt"
+            }
+        };
+        writeln!(
+            self.writer,
+            r"  cell {cell_kind} {cell_name}
+parameter \A_SIGNED {lhs_signed}
+parameter \A_WIDTH {input_bit_count}
+parameter \B_SIGNED {rhs_signed}
+parameter \B_WIDTH {input_bit_count}
+parameter \Y_WIDTH 1
+connect \A {lhs}
+connect \B {rhs}
+connect \Y {name}
+end",
+            cell_kind = cell_kind,
+            cell_name = cell_name,
+            lhs_signed = &(lhs_signed as u8),
+            input_bit_count = input_bit_count,
+            rhs_signed = &(rhs_signed as u8),
+            lhs = lhs_wire.name,
+            rhs = rhs_wire.name,
+            name = name,
+        )?;
+        Ok(RtlilWire {
+            ty: RtlilWireType {
+                bit_count: NonZeroU32::new(1).unwrap(),
+            },
+            name,
+            io_index: None,
+        })
+    }
     fn get_wires_for_value(
         &mut self,
         module: IrModuleRef<'ctx>,
@@ -672,20 +754,74 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     AggregateTypeLayout::Empty | AggregateTypeLayout::ScalarEnum { .. } => {}
                     AggregateTypeLayout::EnumWithFields(EnumWithFields {
                         discriminant,
-                        flattened_fields,
-                        variants,
+                        flattened_fields: _,
+                        variants: _,
                     }) => {
-                        let discriminant_wire = discriminant
+                        let _discriminant_wire = discriminant
                             .map(|_| aggregate_wires.next().expect("discriminant wire"));
                         let flattened_fields_wire =
                             aggregate_wires.next().expect("flattened fields wire");
                         assert!(aggregate_wires.next().is_none());
-                        todo!();
+                        let mut field_offset = v
+                            .variant_type()
+                            .flattened_field_offsets()
+                            .nth(v.field_index())
+                            .unwrap();
+                        visit_wire_types_in_type(
+                            &v.value_type(),
+                            &mut String::new(),
+                            RelationToSelectedField::InSelectedField(&[0; 0]),
+                            &mut |wire_type, _path, _relation_to_selected_field| {
+                                let next_field_offset = field_offset + wire_type.bit_count.get();
+                                let wire = self
+                                    .slice_wire(
+                                        module,
+                                        flattened_fields_wire,
+                                        field_offset..next_field_offset,
+                                    )?
+                                    .unwrap();
+                                wires.push(wire);
+                                field_offset = next_field_offset;
+                                Ok(())
+                            },
+                        )?;
                     }
                 }
                 wires.into()
             }
-            IrValue::IsAggregateVariant(_) => todo!(),
+            IrValue::IsAggregateVariant(v) => {
+                let aggregate_wires = self.get_wires_for_value(module, v.aggregate_value())?;
+                let mut aggregate_wires = aggregate_wires.iter();
+                match AggregateTypeLayout::new(v.aggregate_type()) {
+                    AggregateTypeLayout::Struct { .. }
+                    | AggregateTypeLayout::Empty
+                    | AggregateTypeLayout::EnumWithFields(EnumWithFields {
+                        discriminant: None,
+                        ..
+                    }) => self.get_wires_for_value(module, true.get_value(module.ctx()).ir())?,
+                    AggregateTypeLayout::ScalarEnum { .. }
+                    | AggregateTypeLayout::EnumWithFields(EnumWithFields {
+                        discriminant: Some(_),
+                        ..
+                    }) => {
+                        let discriminant_wire = aggregate_wires.next().unwrap();
+                        let discriminant_value_wire = self
+                            .get_int_wire_for_value(
+                                module,
+                                IrValue::from(v.variant_discriminant().clone())
+                                    .intern(module.ctx()),
+                            )?
+                            .unwrap();
+                        Rc::new([self.bool_out_bin_op(
+                            module,
+                            BoolOutBinOpKind::CompareEq,
+                            v.variant_discriminant().value_type(),
+                            discriminant_wire,
+                            &discriminant_value_wire,
+                        )?])
+                    }
+                }
+            }
             IrValue::ExpandScope(v) => self.get_wires_for_value(module, v.value())?,
             IrValue::ShrinkScope(v) => self.get_wires_for_value(module, v.value())?,
             IrValue::ExtractArrayElement(v) => {
@@ -816,25 +952,10 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 }
             }
             IrValue::SliceBitVector(v) => {
-                if let Some(bit_count) = NonZeroU32::new(v.value_type().bit_count) {
-                    let base_wire = self
-                        .get_int_wire_for_value(module, v.base_value())?
-                        .unwrap();
-                    let name = self.new_anonymous_symbol(module);
-                    writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
-                    // convert to an inclusive range
-                    let last_bit_index = v.bit_indexes().end - 1;
-                    let first_bit_index = v.bit_indexes().start;
-                    writeln!(
-                        self.writer,
-                        "  connect {} {} [{}:{}]",
-                        name, base_wire.name, last_bit_index, first_bit_index
-                    )?;
-                    Rc::new([RtlilWire {
-                        ty: RtlilWireType { bit_count },
-                        name,
-                        io_index: None,
-                    }])
+                if let Some(base_wire) = self.get_int_wire_for_value(module, v.base_value())? {
+                    self.slice_wire(module, &base_wire, v.bit_indexes())?
+                        .into_iter()
+                        .collect()
                 } else {
                     Rc::new([])
                 }
@@ -932,51 +1053,16 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 }
             }
             IrValue::BoolOutBinOp(v) => {
-                if let Some(input_bit_count) = NonZeroU32::new(v.input_type().bit_count) {
+                if v.input_type().bit_count > 0 {
                     let lhs_wire = self.get_int_wire_for_value(module, v.lhs())?.unwrap();
                     let rhs_wire = self.get_int_wire_for_value(module, v.rhs())?.unwrap();
-                    let name = self.new_anonymous_symbol(module);
-                    writeln!(self.writer, "  wire width 1 {}", name)?;
-                    let cell_name = self.new_anonymous_symbol(module);
-                    let mut lhs_signed = false;
-                    let mut rhs_signed = false;
-                    let cell_kind = match v.kind() {
-                        BoolOutBinOpKind::CompareEq => "$eq",
-                        BoolOutBinOpKind::CompareLt => {
-                            let signed = v.input_type().signed;
-                            lhs_signed = signed;
-                            rhs_signed = signed;
-                            "$lt"
-                        }
-                    };
-                    writeln!(
-                        self.writer,
-                        r"  cell {cell_kind} {cell_name}
-    parameter \A_SIGNED {lhs_signed}
-    parameter \A_WIDTH {input_bit_count}
-    parameter \B_SIGNED {rhs_signed}
-    parameter \B_WIDTH {input_bit_count}
-    parameter \Y_WIDTH 1
-    connect \A {lhs}
-    connect \B {rhs}
-    connect \Y {name}
-  end",
-                        cell_kind = cell_kind,
-                        cell_name = cell_name,
-                        lhs_signed = &(lhs_signed as u8),
-                        input_bit_count = input_bit_count,
-                        rhs_signed = &(rhs_signed as u8),
-                        lhs = lhs_wire.name,
-                        rhs = rhs_wire.name,
-                        name = name,
-                    )?;
-                    Rc::new([RtlilWire {
-                        ty: RtlilWireType {
-                            bit_count: NonZeroU32::new(1).unwrap(),
-                        },
-                        name,
-                        io_index: None,
-                    }])
+                    Rc::new([self.bool_out_bin_op(
+                        module,
+                        v.kind(),
+                        v.input_type(),
+                        &lhs_wire,
+                        &rhs_wire,
+                    )?])
                 } else {
                     let retval = match v.kind() {
                         BoolOutBinOpKind::CompareEq => true,

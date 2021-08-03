@@ -82,7 +82,7 @@ impl<'ctx, Discriminant> IrVariantType<'ctx, Discriminant> {
             flattened_fields,
         }
     }
-    pub fn flattened_field_offsets(self) -> impl Iterator<Item = u32> + Clone + 'ctx {
+    pub fn flattened_field_offsets<'a>(&'a self) -> impl Iterator<Item = u32> + Clone + 'a {
         let mut offset = 0;
         self.fields.get().iter().map(move |field| {
             let retval = offset;
