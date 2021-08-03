@@ -541,15 +541,15 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
         writeln!(
             self.writer,
             r"  cell {cell_kind} {cell_name}
-parameter \A_SIGNED {lhs_signed}
-parameter \A_WIDTH {input_bit_count}
-parameter \B_SIGNED {rhs_signed}
-parameter \B_WIDTH {input_bit_count}
-parameter \Y_WIDTH 1
-connect \A {lhs}
-connect \B {rhs}
-connect \Y {name}
-end",
+    parameter \A_SIGNED {lhs_signed}
+    parameter \A_WIDTH {input_bit_count}
+    parameter \B_SIGNED {rhs_signed}
+    parameter \B_WIDTH {input_bit_count}
+    parameter \Y_WIDTH 1
+    connect \A {lhs}
+    connect \B {rhs}
+    connect \Y {name}
+    end",
             cell_kind = cell_kind,
             cell_name = cell_name,
             lhs_signed = &(lhs_signed as u8),

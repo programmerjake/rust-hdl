@@ -1,0 +1,17 @@
+attribute \generator "rust-hdl"
+attribute \src "$FILE:$LINE-5.9"
+module \top
+  attribute \src "$FILE:$LINE-5.9"
+  wire width 8 input 0 \io.input
+  attribute \src "$FILE:$LINE-5.9"
+  wire width 8 output 1 \io.out
+  wire width 8 $0
+  cell $neg $1
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 8
+    parameter \Y_WIDTH 8
+    connect \A \io.input
+    connect \Y $0
+  end
+  connect \io.out $0
+end

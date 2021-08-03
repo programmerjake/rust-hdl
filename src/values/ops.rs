@@ -633,7 +633,7 @@ pub fn get_aggregate_variant_index<'ctx, Ctx: AsContext<'ctx>, T: AggregateValue
 }
 
 #[track_caller]
-pub fn is_aggregate_variant<'ctx, Ctx: AsContext<'ctx>, T: AggregateValue<'ctx>>(
+pub fn is_aggregate_variant<'ctx, T: AggregateValue<'ctx>>(
     value: Val<'ctx, T>,
     variant_index: usize,
 ) -> Val<'ctx, bool> {

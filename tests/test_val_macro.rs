@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
-use rust_hdl::{ir::module::IrModuleRef, prelude::*};
+use rust_hdl::{export::rtlil::RtlilExporter, ir::module::IrModuleRef, prelude::*};
 #[macro_use]
 mod common;
 
@@ -263,6 +263,8 @@ fn test_binary_fn<
         let IO { lhs, rhs, out }: IO<Input<T>, Output<R>> = io;
         out.assign(f(top.ir(), lhs.get(), rhs.get()));
         common::assert_string_is_impl(test_name, subtest_name, &format!("{:#?}", top));
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        common::assert_string_is_impl(test_name, &(subtest_name.to_owned() + "-rtlil"), &exported);
     })
 }
 
@@ -286,6 +288,8 @@ fn test_unary_fn<
         let IO { input, out }: IO<Input<T>, Output<R>> = io;
         out.assign(f(top.ir(), input.get()));
         common::assert_string_is_impl(test_name, subtest_name, &format!("{:#?}", top));
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        common::assert_string_is_impl(test_name, &(subtest_name.to_owned() + "-rtlil"), &exported);
     })
 }
 
@@ -475,6 +479,8 @@ fn test_mux() {
             false_value.get(),
         ));
         assert_formats_to!(test_mux, test, top);
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        assert_display_formats_to!(test_mux, output, exported);
     })
 }
 
@@ -508,5 +514,7 @@ fn test_mux2() {
             false_false_value.get(),
         ));
         assert_formats_to!(test_mux2, test, top);
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        assert_display_formats_to!(test_mux2, output, exported);
     })
 }

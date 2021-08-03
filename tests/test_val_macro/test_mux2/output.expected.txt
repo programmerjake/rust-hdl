@@ -1,0 +1,33 @@
+attribute \generator "rust-hdl"
+attribute \src "$FILE:$LINE-19.9"
+module \top
+  attribute \src "$FILE:$LINE-19.9"
+  wire width 1 input 0 \io.cond
+  attribute \src "$FILE:$LINE-19.9"
+  wire width 8 input 1 \io.true_value
+  attribute \src "$FILE:$LINE-19.9"
+  wire width 1 input 2 \io.cond2
+  attribute \src "$FILE:$LINE-19.9"
+  wire width 8 input 3 \io.false_true_value
+  attribute \src "$FILE:$LINE-19.9"
+  wire width 8 input 4 \io.false_false_value
+  attribute \src "$FILE:$LINE-19.9"
+  wire width 8 output 5 \io.out
+  wire width 8 $0
+  cell $mux $1
+    parameter \WIDTH 8
+    connect \S \io.cond2
+    connect \A \io.false_false_value
+    connect \B \io.false_true_value
+    connect \Y $0
+  end
+  wire width 8 $2
+  cell $mux $3
+    parameter \WIDTH 8
+    connect \S \io.cond
+    connect \A $0
+    connect \B \io.true_value
+    connect \Y $2
+  end
+  connect \io.out $2
+end

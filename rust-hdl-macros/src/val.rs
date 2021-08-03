@@ -312,6 +312,9 @@ impl PatPathKind {
         if path.segments.len() >= 2 {
             let mut enum_type = path.clone();
             enum_type.segments.pop();
+            // work around https://github.com/dtolnay/syn/issues/1043
+            let enum_type_name = enum_type.segments.pop().unwrap().into_value();
+            enum_type.segments.push(enum_type_name);
             let variant_path = PatPath {
                 attrs: Vec::new(),
                 qself: qself.clone(),
@@ -502,11 +505,10 @@ impl PatternMatcher<'_> {
                 variant_path,
             }) => {
                 let condition = self.temp_name_maker.make_temp_name(span);
-                todo_err!(variant_path);
                 self.tokens.extend(quote_spanned! {span=>
-                    #crate_path::values::ops::assert_enum_variant_is_empty::<#enum_type>(&#variant_path);
-                    let __variant_index = #crate_path::values::ops::get_enum_variant_index::<_, #enum_type>(#module, &#variant_path);
-                    let #condition = #crate_path::values::ops::is_enum_variant(#value, __variant_index);
+                    #crate_path::values::ops::assert_variant_is_empty::<_, #enum_type>(#module, &#variant_path);
+                    let __variant_index = #crate_path::values::ops::get_aggregate_variant_index::<_, #enum_type>(#module, &#variant_path);
+                    let #condition = #crate_path::values::ops::is_aggregate_variant(#value, __variant_index);
                 });
                 Ok(PatternMatchResult {
                     condition: MatchCondition::Dynamic(condition),
@@ -516,9 +518,8 @@ impl PatternMatcher<'_> {
                 })
             }
             PatPathKind::Type(TypePathKind::Struct { span, struct_type }) => {
-                todo_err!(struct_type);
                 self.tokens.extend(quote_spanned! {span=>
-                    #crate_path::values::ops::assert_type_is_empty_struct::<#struct_type>();
+                    #crate_path::values::ops::assert_type_is_aggregate::<#struct_type>();
                 });
                 let TypePath { qself, path } = struct_type;
                 Ok(PatternMatchResult {
