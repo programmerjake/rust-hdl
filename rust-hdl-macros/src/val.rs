@@ -1181,8 +1181,14 @@ impl ValTranslator {
                 bracket_token,
                 elems,
             }) => {
-                assert_no_attrs(&attrs)?;
-                todo_err!(expr)
+                assert_no_attrs(attrs)?;
+                let elements = elems
+                    .iter()
+                    .map(|e| self.expr(e))
+                    .collect::<syn::Result<Vec<_>>>()?;
+                Ok(quote_spanned! {bracket_token.span=>
+                    #crate_path::values::ops::literal_array(#module, [#(#elements,)*])
+                })
             }
             Expr::Binary(ExprBinary {
                 attrs,

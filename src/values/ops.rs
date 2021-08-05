@@ -7,7 +7,7 @@ use crate::{
         scope::ScopeRef,
         values::{
             BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExpandScope,
-            ExtractAggregateField, IrValue, IsAggregateVariant, Mux, SameSizeBinOp,
+            ExtractAggregateField, IrValue, IsAggregateVariant, LiteralArray, Mux, SameSizeBinOp,
             SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind, ShrinkScope,
         },
         SourceLocation,
@@ -22,7 +22,7 @@ use crate::{
     },
 };
 use core::{
-    convert::Infallible,
+    convert::{Infallible, TryInto},
     ops::{Range, RangeInclusive},
 };
 
@@ -699,4 +699,30 @@ pub fn match_range_inclusive<'ctx, Shape: IntShapeTrait>(
 }
 
 pub fn check_val_type<'ctx, T: Value<'ctx>, F: FnOnce(T, Infallible)>(_value: Val<'ctx, T>, _f: F) {
+}
+
+#[track_caller]
+pub fn literal_array<'ctx, Ctx: AsContext<'ctx>, T: FixedTypeValue<'ctx>, const N: usize>(
+    ctx: Ctx,
+    elements: [Val<'ctx, T>; N],
+) -> Val<'ctx, [T; N]> {
+    let ctx = ctx.ctx();
+    let mut ir_elements = if N == 0 {
+        [][..].try_into().unwrap()
+    } else {
+        [elements[0].ir(); N]
+    };
+    for (val, ir) in elements.iter().zip(&mut ir_elements) {
+        *ir = val.ir();
+    }
+    Val::from_ir_unchecked(
+        ctx,
+        IrValue::from(LiteralArray::new(
+            ctx,
+            T::static_value_type(ctx).ir(),
+            ir_elements,
+            &SourceLocation::caller(),
+        ))
+        .intern(ctx),
+    )
 }

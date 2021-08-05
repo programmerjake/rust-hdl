@@ -1,0 +1,81 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-2, 9),
+    parent: <None>,
+    interface_types: [
+        Output(
+            IrArrayType {
+                element: IrBitVectorType {
+                    bit_count: 1,
+                    signed: false,
+                },
+                length: 0,
+            },
+        ),
+    ],
+    interface: [
+        Output(
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: <None>,
+                        value_type: IrArrayType {
+                            element: IrBitVectorType {
+                                bit_count: 1,
+                                signed: false,
+                            },
+                            length: 0,
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top",
+                            index: 0,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."io",
+                    source_location: SourceLocation($FILE, $LINE-2, 9),
+                    value_type: IrArrayType {
+                        element: IrBitVectorType {
+                            bit_count: 1,
+                            signed: false,
+                        },
+                        length: 0,
+                    },
+                    assigned_value: LiteralArray {
+                        element_type: IrBitVectorType {
+                            bit_count: 1,
+                            signed: false,
+                        },
+                        scope: None,
+                        elements: [],
+                    },
+                    ..
+                },
+            },
+        ),
+    ],
+    wires: {
+        "io": IrWire {
+            source_location: SourceLocation($FILE, $LINE-2, 9),
+            value_type: IrArrayType {
+                element: IrBitVectorType {
+                    bit_count: 1,
+                    signed: false,
+                },
+                length: 0,
+            },
+            assigned_value: LiteralArray {
+                element_type: IrBitVectorType {
+                    bit_count: 1,
+                    signed: false,
+                },
+                scope: None,
+                elements: [],
+            },
+            ..
+        },
+    },
+    registers: {},
+    ..
+}

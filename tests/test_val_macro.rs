@@ -240,6 +240,63 @@ mod functions {
             }
         )
     }
+
+    pub fn my_literal_array0<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, [MyType; 0]> {
+        ::rust_hdl::prelude::val!(my_module, [])
+    }
+
+    pub fn my_literal_array1<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, [MyType; 1]> {
+        ::rust_hdl::prelude::val!(my_module, [v0])
+    }
+
+    pub fn my_literal_array2<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
+        v1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, [MyType; 2]> {
+        ::rust_hdl::prelude::val!(my_module, [v0, v1])
+    }
+
+    pub fn my_literal_array3<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
+        v1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
+        v2: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, [MyType; 3]> {
+        ::rust_hdl::prelude::val!(my_module, [v0, v1, v2])
+    }
+}
+
+#[track_caller]
+fn test_ternary_fn<
+    T: for<'ctx> FixedTypeValue<'ctx>,
+    R: for<'ctx> FixedTypeValue<'ctx>,
+    F: for<'ctx> Fn(IrModuleRef<'ctx>, Val<'ctx, T>, Val<'ctx, T>, Val<'ctx, T>) -> Val<'ctx, R>,
+>(
+    f: F,
+    test_name: &str,
+    subtest_name: &str,
+) {
+    #[derive(IO, PlainIO)]
+    struct IO<I, O> {
+        in0: I,
+        in1: I,
+        in2: I,
+        out: O,
+    }
+    Context::with(|ctx| {
+        named!(let (top, io) = ctx.top_module());
+        let IO { in0, in1, in2, out }: IO<Input<T>, Output<R>> = io;
+        out.assign(f(top.ir(), in0.get(), in1.get(), in2.get()));
+        common::assert_string_is_impl(test_name, subtest_name, &format!("{:#?}", top));
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        common::assert_string_is_impl(test_name, &(subtest_name.to_owned() + "-rtlil"), &exported);
+    })
 }
 
 #[track_caller]
@@ -287,6 +344,28 @@ fn test_unary_fn<
         named!(let (top, io) = ctx.top_module());
         let IO { input, out }: IO<Input<T>, Output<R>> = io;
         out.assign(f(top.ir(), input.get()));
+        common::assert_string_is_impl(test_name, subtest_name, &format!("{:#?}", top));
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        common::assert_string_is_impl(test_name, &(subtest_name.to_owned() + "-rtlil"), &exported);
+    })
+}
+
+#[track_caller]
+fn test_nullary_fn<
+    R: for<'ctx> FixedTypeValue<'ctx>,
+    F: for<'ctx> Fn(IrModuleRef<'ctx>) -> Val<'ctx, R>,
+>(
+    f: F,
+    test_name: &str,
+    subtest_name: &str,
+) {
+    #[derive(IO, PlainIO)]
+    struct IO<O> {
+        out: O,
+    }
+    Context::with(|ctx| {
+        named!(let (top, io): (_, Output<R>) = ctx.top_module());
+        io.assign(f(top.ir()));
         common::assert_string_is_impl(test_name, subtest_name, &format!("{:#?}", top));
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         common::assert_string_is_impl(test_name, &(subtest_name.to_owned() + "-rtlil"), &exported);
@@ -517,4 +596,60 @@ fn test_mux2() {
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(test_mux2, output, exported);
     })
+}
+
+#[test]
+fn test_literal_array0() {
+    test_nullary_fn::<[UInt8; 0], _>(
+        |m| functions::my_literal_array0(m),
+        "test_literal_array0",
+        "u8",
+    );
+    test_nullary_fn::<[bool; 0], _>(
+        |m| functions::my_literal_array0(m),
+        "test_literal_array0",
+        "bool",
+    );
+}
+
+#[test]
+fn test_literal_array1() {
+    test_unary_fn::<UInt8, [UInt8; 1], _>(
+        |m, v0| functions::my_literal_array1(m, v0),
+        "test_literal_array1",
+        "u8",
+    );
+    test_unary_fn::<bool, [bool; 1], _>(
+        |m, v0| functions::my_literal_array1(m, v0),
+        "test_literal_array1",
+        "bool",
+    );
+}
+
+#[test]
+fn test_literal_array2() {
+    test_binary_fn::<UInt8, [UInt8; 2], _>(
+        |m, v0, v1| functions::my_literal_array2(m, v0, v1),
+        "test_literal_array2",
+        "u8",
+    );
+    test_binary_fn::<bool, [bool; 2], _>(
+        |m, v0, v1| functions::my_literal_array2(m, v0, v1),
+        "test_literal_array2",
+        "bool",
+    );
+}
+
+#[test]
+fn test_literal_array3() {
+    test_ternary_fn::<UInt8, [UInt8; 3], _>(
+        |m, v0, v1, v2| functions::my_literal_array3(m, v0, v1, v2),
+        "test_literal_array3",
+        "u8",
+    );
+    test_ternary_fn::<bool, [bool; 3], _>(
+        |m, v0, v1, v2| functions::my_literal_array3(m, v0, v1, v2),
+        "test_literal_array3",
+        "bool",
+    );
 }
