@@ -769,6 +769,65 @@ impl PatternMatcher<'_> {
             verification_match_needs_if,
         })
     }
+    fn pat_range(
+        &mut self,
+        pat_range: &PatRange,
+        value: &Ident,
+    ) -> syn::Result<PatternMatchResult> {
+        let crate_path = &self.val_translator.crate_path;
+        let PatRange {
+            attrs,
+            lo,
+            limits,
+            hi,
+        } = pat_range;
+        assert_no_attrs(attrs)?;
+        let lo = self.pat_lit_expr(lo, None)?;
+        let hi = self.pat_lit_expr(hi, None)?;
+        let get_endpoint_tokens = |endpoint: PatternLiteral| -> syn::Result<TokenStream> {
+            match endpoint {
+                PatternLiteral::Int(endpoint) => {
+                    Ok(endpoint.to_tokens(crate_path).into_token_stream())
+                }
+                PatternLiteral::ByteStr(endpoint) => todo_err!(endpoint),
+                PatternLiteral::Byte(endpoint) => Ok(quote_spanned! {endpoint.span()=>
+                    <#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#endpoint)
+                }),
+                PatternLiteral::Bool(endpoint) => Ok(quote! { #endpoint }),
+            }
+        };
+        let lo = get_endpoint_tokens(lo)?;
+        let hi = get_endpoint_tokens(hi)?;
+        let (span, condition_expr) = match limits {
+            RangeLimits::HalfOpen(range) => (
+                range.spans[0],
+                quote_spanned! {range.spans[0]=>
+                    #crate_path::values::ops::match_range(value, &#lo #range &#hi)
+                },
+            ),
+            RangeLimits::Closed(range) => (
+                range.spans[0],
+                quote_spanned! {range.spans[0]=>
+                    #crate_path::values::ops::match_range_inclusive(value, &#lo #range &#hi)
+                },
+            ),
+        };
+        let condition = self.temp_name_maker.make_temp_name(span);
+        self.tokens.extend(quote_spanned! {span=>
+            let #condition = #condition_expr;
+        });
+        let mut underscore_token = <Token![_]>::default();
+        underscore_token.span = span;
+        Ok(PatternMatchResult {
+            condition: MatchCondition::Dynamic(condition),
+            defined_names: PatternDefinedNames::new(),
+            verification_match: Pat::Wild(PatWild {
+                attrs: Vec::new(),
+                underscore_token,
+            }),
+            verification_match_needs_if: true,
+        })
+    }
     fn pat(&mut self, pat: &Pat, value: &Ident) -> syn::Result<PatternMatchResult> {
         let crate_path = &self.val_translator.crate_path;
         match pat {
@@ -841,59 +900,7 @@ impl PatternMatcher<'_> {
             }
             Pat::Or(pat_or) => self.pat_or(pat_or, value),
             Pat::Path(pat_path) => self.pat_path(pat_path.clone(), value),
-            Pat::Range(PatRange {
-                attrs,
-                lo,
-                limits,
-                hi,
-            }) => {
-                assert_no_attrs(attrs)?;
-                let lo = self.pat_lit_expr(lo, None)?;
-                let hi = self.pat_lit_expr(hi, None)?;
-                let get_endpoint_tokens = |endpoint: PatternLiteral| -> syn::Result<TokenStream> {
-                    match endpoint {
-                        PatternLiteral::Int(endpoint) => {
-                            Ok(endpoint.to_tokens(crate_path).into_token_stream())
-                        }
-                        PatternLiteral::ByteStr(endpoint) => todo_err!(endpoint),
-                        PatternLiteral::Byte(endpoint) => Ok(quote_spanned! {endpoint.span()=>
-                            <#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#endpoint)
-                        }),
-                        PatternLiteral::Bool(endpoint) => Ok(quote! { #endpoint }),
-                    }
-                };
-                let lo = get_endpoint_tokens(lo)?;
-                let hi = get_endpoint_tokens(hi)?;
-                let (span, condition_expr) = match limits {
-                    RangeLimits::HalfOpen(range) => (
-                        range.spans[0],
-                        quote_spanned! {range.spans[0]=>
-                            #crate_path::values::ops::match_range(value, &#lo #range &#hi)
-                        },
-                    ),
-                    RangeLimits::Closed(range) => (
-                        range.spans[0],
-                        quote_spanned! {range.spans[0]=>
-                            #crate_path::values::ops::match_range_inclusive(value, &#lo #range &#hi)
-                        },
-                    ),
-                };
-                let condition = self.temp_name_maker.make_temp_name(span);
-                self.tokens.extend(quote_spanned! {span=>
-                    let #condition = #condition_expr;
-                });
-                let mut underscore_token = <Token![_]>::default();
-                underscore_token.span = span;
-                Ok(PatternMatchResult {
-                    condition: MatchCondition::Dynamic(condition),
-                    defined_names: PatternDefinedNames::new(),
-                    verification_match: Pat::Wild(PatWild {
-                        attrs: Vec::new(),
-                        underscore_token,
-                    }),
-                    verification_match_needs_if: true,
-                })
-            }
+            Pat::Range(pat_range) => self.pat_range(pat_range, value),
             Pat::Slice(pat) => todo_err!(pat),
             Pat::Struct(pat) => todo_err!(pat),
             Pat::Tuple(pat_tuple) => self.pat_tuple(None, pat_tuple, value),
