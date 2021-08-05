@@ -802,13 +802,13 @@ impl PatternMatcher<'_> {
             RangeLimits::HalfOpen(range) => (
                 range.spans[0],
                 quote_spanned! {range.spans[0]=>
-                    #crate_path::values::ops::match_range(value, &#lo #range &#hi)
+                    #crate_path::values::ops::match_range(#value, &#lo #range &#hi)
                 },
             ),
             RangeLimits::Closed(range) => (
                 range.spans[0],
                 quote_spanned! {range.spans[0]=>
-                    #crate_path::values::ops::match_range_inclusive(value, &#lo #range &#hi)
+                    #crate_path::values::ops::match_range_inclusive(#value, &#lo #range &#hi)
                 },
             ),
         };
