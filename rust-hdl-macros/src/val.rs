@@ -828,98 +828,114 @@ impl PatternMatcher<'_> {
             verification_match_needs_if: true,
         })
     }
-    fn pat(&mut self, pat: &Pat, value: &Ident) -> syn::Result<PatternMatchResult> {
+    fn pat_lit(&mut self, pat_lit: &PatLit, value: &Ident) -> syn::Result<PatternMatchResult> {
         let crate_path = &self.val_translator.crate_path;
+        let PatLit { attrs, expr } = pat_lit;
+        assert_no_attrs(attrs)?;
+        let span;
+        let lit_value = match self.pat_lit_expr(expr, None)? {
+            PatternLiteral::Int(lit_value) => {
+                span = lit_value.span;
+                lit_value.to_tokens(crate_path).into_token_stream()
+            }
+            PatternLiteral::ByteStr(_value) => todo_err!(pat_lit),
+            PatternLiteral::Byte(value) => {
+                span = value.span();
+                quote_spanned! {span=>
+                    <#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#value)
+                }
+            }
+            PatternLiteral::Bool(value) => {
+                span = value.span();
+                quote! { #value }
+            }
+        };
+        let condition = self.temp_name_maker.make_temp_name(span);
+        self.tokens.extend(quote_spanned! {span=>
+            let #condition = #crate_path::values::ops::match_eq(#value, &#lit_value);
+        });
+        let mut underscore_token = <Token![_]>::default();
+        underscore_token.span = span;
+        Ok(PatternMatchResult {
+            condition: MatchCondition::Dynamic(condition),
+            defined_names: PatternDefinedNames::new(),
+            verification_match: Pat::Wild(PatWild {
+                attrs: Vec::new(),
+                underscore_token,
+            }),
+            verification_match_needs_if: true,
+        })
+    }
+    fn pat_ident(
+        &mut self,
+        pat_ident: &PatIdent,
+        value: &Ident,
+    ) -> syn::Result<PatternMatchResult> {
+        let PatIdent {
+            attrs,
+            by_ref,
+            mutability,
+            ident,
+            subpat,
+        } = pat_ident;
+        assert_no_attrs(attrs)?;
+        if let Some(by_ref) = by_ref {
+            return Err(Error::new_spanned(by_ref, "`ref` not supported"));
+        }
+        if let Some(mutability) = mutability {
+            return Err(Error::new_spanned(mutability, "`mut` not supported"));
+        }
+        if let Some((_, subpat)) = subpat {
+            let mut retval = self.pat(subpat, value)?;
+            retval
+                .defined_names
+                .define_name(ident.clone(), value.clone())?;
+            Ok(retval)
+        } else {
+            self.pat_path(
+                PatPath {
+                    attrs: Vec::new(),
+                    qself: None,
+                    path: ident.clone().into(),
+                },
+                value,
+            )
+        }
+    }
+    fn pat_wild(&mut self, pat_wild: &PatWild) -> syn::Result<PatternMatchResult> {
+        let PatWild {
+            attrs,
+            underscore_token: _,
+        } = pat_wild;
+        assert_no_attrs(attrs)?;
+        Ok(PatternMatchResult {
+            condition: MatchCondition::Static(true),
+            defined_names: PatternDefinedNames::new(),
+            verification_match: Pat::Wild(pat_wild.clone()),
+            verification_match_needs_if: false,
+        })
+    }
+    fn pat_tuple_struct(
+        &mut self,
+        pat_tuple_struct: &PatTupleStruct,
+        value: &Ident,
+    ) -> syn::Result<PatternMatchResult> {
+        let PatTupleStruct { attrs, path, pat } = pat_tuple_struct;
+        assert_no_attrs(attrs)?;
+        self.pat_tuple(Some(TypePathKind::get(None, path.clone())), pat, value)
+    }
+    fn pat(&mut self, pat: &Pat, value: &Ident) -> syn::Result<PatternMatchResult> {
         match pat {
-            Pat::Ident(PatIdent {
-                attrs,
-                by_ref,
-                mutability,
-                ident,
-                subpat,
-            }) => {
-                assert_no_attrs(attrs)?;
-                if let Some(by_ref) = by_ref {
-                    return Err(Error::new_spanned(by_ref, "`ref` not supported"));
-                }
-                if let Some(mutability) = mutability {
-                    return Err(Error::new_spanned(mutability, "`mut` not supported"));
-                }
-                if let Some((_, subpat)) = subpat {
-                    let mut retval = self.pat(subpat, value)?;
-                    retval
-                        .defined_names
-                        .define_name(ident.clone(), value.clone())?;
-                    Ok(retval)
-                } else {
-                    self.pat_path(
-                        PatPath {
-                            attrs: Vec::new(),
-                            qself: None,
-                            path: ident.clone().into(),
-                        },
-                        value,
-                    )
-                }
-            }
-            Pat::Lit(PatLit { attrs, expr }) => {
-                assert_no_attrs(attrs)?;
-                let span;
-                let lit_value = match self.pat_lit_expr(expr, None)? {
-                    PatternLiteral::Int(lit_value) => {
-                        span = lit_value.span;
-                        lit_value.to_tokens(crate_path).into_token_stream()
-                    }
-                    PatternLiteral::ByteStr(_value) => todo_err!(pat),
-                    PatternLiteral::Byte(value) => {
-                        span = value.span();
-                        quote_spanned! {span=>
-                            <#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#value)
-                        }
-                    }
-                    PatternLiteral::Bool(value) => {
-                        span = value.span();
-                        quote! { #value }
-                    }
-                };
-                let condition = self.temp_name_maker.make_temp_name(span);
-                self.tokens.extend(quote_spanned! {span=>
-                    let #condition = #crate_path::values::ops::match_eq(#value, &#lit_value);
-                });
-                let mut underscore_token = <Token![_]>::default();
-                underscore_token.span = span;
-                Ok(PatternMatchResult {
-                    condition: MatchCondition::Dynamic(condition),
-                    defined_names: PatternDefinedNames::new(),
-                    verification_match: Pat::Wild(PatWild {
-                        attrs: Vec::new(),
-                        underscore_token,
-                    }),
-                    verification_match_needs_if: true,
-                })
-            }
+            Pat::Ident(pat_ident) => self.pat_ident(pat_ident, value),
+            Pat::Lit(pat_lit) => self.pat_lit(pat_lit, value),
             Pat::Or(pat_or) => self.pat_or(pat_or, value),
             Pat::Path(pat_path) => self.pat_path(pat_path.clone(), value),
             Pat::Range(pat_range) => self.pat_range(pat_range, value),
             Pat::Slice(pat) => todo_err!(pat),
             Pat::Struct(pat) => todo_err!(pat),
             Pat::Tuple(pat_tuple) => self.pat_tuple(None, pat_tuple, value),
-            Pat::TupleStruct(PatTupleStruct { attrs, path, pat }) => {
-                assert_no_attrs(attrs)?;
-                self.pat_tuple(Some(TypePathKind::get(None, path.clone())), pat, value)
-            }
-            Pat::Wild(PatWild {
-                attrs,
-                underscore_token: _,
-            }) => {
-                assert_no_attrs(attrs)?;
-                Ok(PatternMatchResult {
-                    condition: MatchCondition::Static(true),
-                    defined_names: PatternDefinedNames::new(),
-                    verification_match: pat.clone(),
-                    verification_match_needs_if: false,
-                })
-            }
+            Pat::TupleStruct(pat_tuple_struct) => self.pat_tuple_struct(pat_tuple_struct, value),
+            Pat::Wild(pat_wild) => self.pat_wild(pat_wild),
             Pat::Rest(pat) => todo_err!(pat),
             _ => Err(Error::new_spanned(pat, "unsupported match pattern")),
         }
