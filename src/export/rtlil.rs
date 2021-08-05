@@ -574,7 +574,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
     ) -> Result<Rc<[RtlilWire<'ctx>]>, W::Error> {
         module
             .scope()
-            .assert_scope_can_access_value(value, &module.source_location());
+            .assert_ancestor_of(value, &module.source_location());
         let module_data = self.get_module_data(module);
         if let Some(retval) = module_data.wires_for_values.borrow().get(&value) {
             return Ok(retval.clone());

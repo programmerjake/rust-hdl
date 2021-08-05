@@ -404,7 +404,7 @@ IrModule {
                                 signed: false,
                             },
                             input_scope: Scope {
-                                source_location: SourceLocation($FILE, $LINE-35, 9),
+                                source_location: SourceLocation($FILE, $LINE-50, 9),
                                 path: "top".'1,
                                 ..
                             },
@@ -434,7 +434,7 @@ IrModule {
                                 signed: false,
                             },
                             input_scope: Scope {
-                                source_location: SourceLocation($FILE, $LINE-35, 9),
+                                source_location: SourceLocation($FILE, $LINE-50, 9),
                                 path: "top".'1,
                                 ..
                             },
@@ -453,7 +453,7 @@ IrModule {
                                 signed: false,
                             },
                             input_scope: Scope {
-                                source_location: SourceLocation($FILE, $LINE-35, 9),
+                                source_location: SourceLocation($FILE, $LINE-50, 9),
                                 path: "top".'2,
                                 ..
                             },
@@ -666,7 +666,7 @@ IrModule {
                         signed: false,
                     },
                     input_scope: Scope {
-                        source_location: SourceLocation($FILE, $LINE-35, 9),
+                        source_location: SourceLocation($FILE, $LINE-50, 9),
                         path: "top".'1,
                         ..
                     },
@@ -696,7 +696,7 @@ IrModule {
                         signed: false,
                     },
                     input_scope: Scope {
-                        source_location: SourceLocation($FILE, $LINE-35, 9),
+                        source_location: SourceLocation($FILE, $LINE-50, 9),
                         path: "top".'1,
                         ..
                     },
@@ -715,7 +715,7 @@ IrModule {
                         signed: false,
                     },
                     input_scope: Scope {
-                        source_location: SourceLocation($FILE, $LINE-35, 9),
+                        source_location: SourceLocation($FILE, $LINE-50, 9),
                         path: "top".'2,
                         ..
                     },

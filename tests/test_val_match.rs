@@ -44,6 +44,21 @@ mod functions {
             }
         )
     }
+
+    pub(crate) fn my_match3<'my_ctx>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        my_value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = super::MyEnum1>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, super::MyEnum1> {
+        use super::MyEnum1;
+        ::rust_hdl::prelude::val!(
+            my_module,
+            match my_value {
+                v @ MyEnum1::A | v @ MyEnum1::Z => v,
+                MyEnum1::B => MyEnum1::C,
+                MyEnum1::C => MyEnum1::B,
+            }
+        )
+    }
 }
 
 #[test]
@@ -75,5 +90,21 @@ fn test_match2() {
         assert_formats_to!(test_match2, test, top);
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(test_match2, output, exported);
+    })
+}
+
+#[test]
+fn test_match3() {
+    #[derive(IO, PlainIO)]
+    struct IO<'ctx> {
+        value: Input<'ctx, MyEnum1>,
+        out: Output<'ctx, MyEnum1>,
+    }
+    Context::with(|ctx| {
+        named!(let (top, IO { value, out }) = ctx.top_module());
+        out.assign(functions::my_match3(&top, value.get()));
+        assert_formats_to!(test_match3, test, top);
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        assert_display_formats_to!(test_match3, output, exported);
     })
 }
