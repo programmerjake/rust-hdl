@@ -1,0 +1,87 @@
+attribute \generator "rust-hdl"
+attribute \src "$FILE:$LINE-4.9"
+module \top
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 1 input 0 \io.value.0
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 4 input 1 \io.value.1
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 1 output 2 \io.out
+  wire width 4 $0
+  connect $0 4'0000
+  wire width 1 $1
+  cell $eq $2
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 1
+    connect \A \io.value.1
+    connect \B $0
+    connect \Y $1
+    end
+  wire width 4 $3
+  connect $3 4'0101
+  wire width 1 $4
+  cell $eq $5
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 1
+    connect \A \io.value.1
+    connect \B $3
+    connect \Y $4
+    end
+  wire width 1 $6
+  cell $or $7
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $1
+    connect \B $4
+    connect \Y $6
+  end
+  wire width 1 $8
+  cell $mux $9
+    parameter \WIDTH 1
+    connect \S $4
+    connect \A \io.value.0
+    connect \B \io.value.0
+    connect \Y $8
+  end
+  wire width 1 $10
+  connect $10 1'1
+  wire width 1 $11
+  cell $eq $12
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A \io.value.0
+    connect \B $10
+    connect \Y $11
+    end
+  wire width 1 $13
+  connect $13 1'0
+  wire width 1 $14
+  cell $mux $15
+    parameter \WIDTH 1
+    connect \S $11
+    connect \A $10
+    connect \B $13
+    connect \Y $14
+  end
+  wire width 1 $16
+  cell $mux $17
+    parameter \WIDTH 1
+    connect \S $6
+    connect \A $14
+    connect \B $8
+    connect \Y $16
+  end
+  connect \io.out $16
+end

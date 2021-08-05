@@ -16,7 +16,7 @@ use crate::{
     values::{
         aggregate::{
             ActiveFieldVisitor, ActiveVariantRef, AggregateValue, InactiveVariantRef, Variant,
-            VariantVisitor,
+            VariantValue, VariantVisitor,
         },
         integer::IntShapeTrait,
     },
@@ -650,6 +650,24 @@ pub fn is_aggregate_variant<'ctx, T: AggregateValue<'ctx>>(
 }
 
 #[track_caller]
+pub fn get_aggregate_variant_index_from_variant_value<
+    'ctx,
+    A: AggregateValue<'ctx>,
+    VV: VariantValue<'ctx, Aggregate = A>,
+>(
+    aggregate: Val<'ctx, A>,
+    _variant: &VV,
+) -> usize {
+    let aggregate_type = aggregate.value_type().ir().aggregate().unwrap();
+    let discriminant = VV::discriminant().into();
+    if let Some(v) = aggregate_type.get_variant_index(&discriminant) {
+        v
+    } else {
+        panic!("variant not found for discriminant {:?}", discriminant)
+    }
+}
+
+#[track_caller]
 pub fn extract_aggregate_field_unchecked<'ctx, A: AggregateValue<'ctx>, F: Value<'ctx>>(
     aggregate: Val<'ctx, A>,
     variant_index: usize,
@@ -725,4 +743,9 @@ pub fn literal_array<'ctx, Ctx: AsContext<'ctx>, T: FixedTypeValue<'ctx>, const 
         ))
         .intern(ctx),
     )
+}
+
+/// make a fake `bool` for use in `val!`'s `match` checking, only intended for use in code that isn't ever run.
+pub fn match_fake_condition() -> bool {
+    panic!("match_fake_condition called")
 }

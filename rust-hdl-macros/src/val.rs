@@ -278,6 +278,7 @@ enum TypePathKind {
         span: Span,
         enum_type: TypePath,
         variant_path: PatPath,
+        variant_name: Ident,
     },
     Struct {
         span: Span,
@@ -303,15 +304,24 @@ impl PatPathKind {
     fn get(qself: Option<QSelf>, path: Path) -> Self {
         Self::get_impl(qself, path, true)
     }
+    fn get_well_known_enum_type(path: &Path) -> Option<TypePath> {
+        if path.is_ident("None") || path.is_ident("Some") {
+            Some(parse_quote! { ::core::option::Option })
+        } else if path.is_ident("Ok") || path.is_ident("Err") {
+            Some(parse_quote! { ::core::result::Result })
+        } else {
+            None
+        }
+    }
     fn get_impl(qself: Option<QSelf>, path: Path, can_be_variable: bool) -> Self {
-        let span = path
+        let last_path_segment = path
             .segments
             .last()
-            .expect("parser won't return empty path")
-            .span();
+            .expect("parser won't return empty path");
+        let span = last_path_segment.span();
         if path.segments.len() >= 2 {
             let mut enum_type = path.clone();
-            enum_type.segments.pop();
+            let variant_name = enum_type.segments.pop().unwrap().into_value().ident;
             // work around https://github.com/dtolnay/syn/issues/1043
             let enum_type_name = enum_type.segments.pop().unwrap().into_value();
             enum_type.segments.push(enum_type_name);
@@ -328,31 +338,24 @@ impl PatPathKind {
                 span,
                 enum_type,
                 variant_path,
+                variant_name,
             })
         } else if qself.is_some() {
             Self::Type(TypePathKind::Struct {
                 span,
                 struct_type: TypePath { qself, path },
             })
-        } else if path.is_ident("None") || path.is_ident("Some") {
+        } else if let Some(enum_type) = Self::get_well_known_enum_type(&path) {
+            let variant_name = last_path_segment.ident.clone();
             Self::Type(TypePathKind::EnumVariant {
                 span,
-                enum_type: parse_quote! { ::core::option::Option },
+                enum_type,
                 variant_path: PatPath {
                     attrs: Vec::new(),
                     qself,
                     path,
                 },
-            })
-        } else if path.is_ident("Ok") || path.is_ident("Err") {
-            Self::Type(TypePathKind::EnumVariant {
-                span,
-                enum_type: parse_quote! { ::core::result::Result },
-                variant_path: PatPath {
-                    attrs: Vec::new(),
-                    qself,
-                    path,
-                },
+                variant_name,
             })
         } else if let Some(ident) = path.get_ident() {
             if can_be_variable
@@ -493,7 +496,7 @@ impl PatternMatcher<'_> {
     fn pat_path(&mut self, pat_path: PatPath, value: &Ident) -> syn::Result<PatternMatchResult> {
         let ValTranslator {
             crate_path,
-            module,
+            module: _,
             scope: _,
         } = self.val_translator;
         let PatPath { attrs, qself, path } = pat_path;
@@ -501,13 +504,14 @@ impl PatternMatcher<'_> {
         match PatPathKind::get(qself, path) {
             PatPathKind::Type(TypePathKind::EnumVariant {
                 span,
-                enum_type,
+                enum_type: _,
                 variant_path,
+                variant_name,
             }) => {
                 let condition = self.temp_name_maker.make_temp_name(span);
                 self.tokens.extend(quote_spanned! {span=>
-                    #crate_path::values::ops::assert_variant_is_empty::<_, #enum_type>(#module, &#variant_path);
-                    let __variant_index = #crate_path::values::ops::get_aggregate_variant_index::<_, #enum_type>(#module, &#variant_path);
+                    let __fields = #crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#value).#variant_name;
+                    let __variant_index = #crate_path::values::ops::get_aggregate_variant_index_from_variant_value(#value, &__fields);
                     let #condition = #crate_path::values::ops::is_aggregate_variant(#value, __variant_index);
                 });
                 Ok(PatternMatchResult {
@@ -539,7 +543,10 @@ impl PatternMatcher<'_> {
                 Ok(PatternMatchResult {
                     condition: MatchCondition::Static(true),
                     defined_names,
-                    verification_match: parse_quote! {#name},
+                    verification_match: Pat::Wild(PatWild {
+                        attrs: Vec::new(),
+                        underscore_token: Token![_](name.span()),
+                    }),
                     verification_match_needs_if: false,
                 })
             }
@@ -663,7 +670,6 @@ impl PatternMatcher<'_> {
         value: &Ident,
     ) -> syn::Result<PatternMatchResult> {
         let crate_path = &self.val_translator.crate_path;
-        todo_err!(pat_tuple);
         let PatTuple {
             attrs,
             paren_token,
@@ -671,18 +677,31 @@ impl PatternMatcher<'_> {
         } = pat_tuple;
         assert_no_attrs(attrs)?;
         let fields = self.temp_name_maker.make_temp_name(paren_token.span);
-        match type_path_kind {
-            None|Some(TypePathKind::Struct{..})=>
-            self.tokens.extend(quote_spanned! {paren_token.span=>
-                let #fields = #crate_path::values::aggregate::StructValue::get_field_values(#value);
-            }),
-            Some(TypePathKind::EnumVariant{variant_path,..})=>todo_err!(variant_path, "enum variant match"),
-        }
+        let mut condition = match type_path_kind {
+            None | Some(TypePathKind::Struct { .. }) => {
+                self.tokens.extend(quote_spanned! {paren_token.span=>
+                    let #fields = #crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#value);
+                });
+                MatchCondition::Static(true)
+            }
+            Some(TypePathKind::EnumVariant {
+                span,
+                ref variant_name,
+                ..
+            }) => {
+                let condition = self.temp_name_maker.make_temp_name(span);
+                self.tokens.extend(quote_spanned! {span=>
+                    let #fields = #crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#value).#variant_name;
+                    let __variant_index = #crate_path::values::ops::get_aggregate_variant_index_from_variant_value(#value, &#fields);
+                    let #condition = #crate_path::values::ops::is_aggregate_variant(#value, __variant_index);
+                });
+                MatchCondition::Dynamic(condition)
+            }
+        };
         let mut verification_match_elems = Punctuated::new();
         let mut last_separator_span = paren_token.span;
         let mut defined_names = PatternDefinedNames::new();
         let mut verification_match_needs_if = false;
-        let mut condition = MatchCondition::Static(true);
         for (index, field) in elems.pairs().enumerate() {
             let field_variable = self.temp_name_maker.make_temp_name(last_separator_span);
             let index = Index::from(index);
@@ -712,28 +731,36 @@ impl PatternMatcher<'_> {
         let verification_match = match type_path_kind {
             None => Pat::Tuple(pat_tuple),
             Some(TypePathKind::Struct {
-                span,
-                struct_type:
-                    struct_type
-                    @
-                    TypePath {
-                        qself: Some(_),
-                        path: _,
-                    },
-            }) => todo_err!(struct_type, "qualified self"),
-            Some(TypePathKind::Struct {
                 span: _,
-                struct_type: TypePath { qself: None, path },
-            }) => Pat::TupleStruct(PatTupleStruct {
-                attrs: Vec::new(),
-                path,
-                pat: pat_tuple,
-            }),
+                struct_type: TypePath { qself, path },
+            }) => {
+                if qself.is_some() {
+                    todo_err!(TypePath { qself, path }, "qualified self");
+                }
+                Pat::TupleStruct(PatTupleStruct {
+                    attrs: Vec::new(),
+                    path,
+                    pat: pat_tuple,
+                })
+            }
             Some(TypePathKind::EnumVariant {
-                span,
-                enum_type,
-                variant_path,
-            }) => todo_err!(variant_path, "enum variant match"),
+                variant_path:
+                    PatPath {
+                        attrs: _,
+                        qself,
+                        path,
+                    },
+                ..
+            }) => {
+                if qself.is_some() {
+                    todo_err!(TypePath { qself, path }, "qualified self");
+                }
+                Pat::TupleStruct(PatTupleStruct {
+                    attrs: Vec::new(),
+                    path,
+                    pat: pat_tuple,
+                })
+            }
         };
         Ok(PatternMatchResult {
             condition,
@@ -946,7 +973,7 @@ impl ValTranslator {
                 verification_match_needs_if,
             } = pattern_matcher.pat(pat, &value)?;
             let verification_match_if = if verification_match_needs_if || guard.is_some() {
-                quote! { if __condition() }
+                quote! { if #crate_path::values::ops::match_fake_condition() }
             } else {
                 quote! {}
             };

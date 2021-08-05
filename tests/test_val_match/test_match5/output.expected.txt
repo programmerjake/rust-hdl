@@ -1,0 +1,36 @@
+attribute \generator "rust-hdl"
+attribute \src "$FILE:$LINE-4.9"
+module \top
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 1 input 0 \io.value.$discriminant
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 8 input 1 \io.value.$fields
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 8 output 2 \io.out
+  wire width 1 $0
+  connect $0 1'1
+  wire width 1 $1
+  cell $eq $2
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A \io.value.$discriminant
+    connect \B $0
+    connect \Y $1
+    end
+  wire width 8 $3
+  connect $3 \io.value.$fields [7:0]
+  wire width 8 $4
+  connect $4 8'00000000
+  wire width 8 $5
+  cell $mux $6
+    parameter \WIDTH 8
+    connect \S $1
+    connect \A $4
+    connect \B $3
+    connect \Y $5
+  end
+  connect \io.out $5
+end
