@@ -13,6 +13,14 @@ enum MyEnum1 {
     A = 5,
 }
 
+#[derive(Value, FixedTypeValue)]
+struct MyStruct1 {
+    a: MyEnum1,
+    b: bool,
+    c: (),
+    d: UInt8,
+}
+
 mod functions {
     #![no_implicit_prelude]
 
@@ -88,6 +96,31 @@ mod functions {
             match my_value {
                 Some(v) => v,
                 None => 0u8,
+            }
+        )
+    }
+
+    pub(crate) fn my_match6<'my_ctx>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        my_value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = super::MyStruct1>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, ::rust_hdl::prelude::UInt8> {
+        use super::{MyEnum1, MyStruct1};
+        ::rust_hdl::prelude::val!(
+            my_module,
+            match my_value {
+                MyStruct1 {
+                    a: MyEnum1::A,
+                    b: _,
+                    c: (),
+                    d,
+                } if d ^ 5u8 == 3u8 => 1u8,
+                MyStruct1 {
+                    a: MyEnum1::C,
+                    b,
+                    c: _,
+                    d,
+                } if !b => 2u8 + d,
+                _ => 3u8,
             }
         )
     }
@@ -170,5 +203,21 @@ fn test_match5() {
         assert_formats_to!(test_match5, test, top);
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(test_match5, output, exported);
+    })
+}
+
+#[test]
+fn test_match6() {
+    #[derive(IO, PlainIO)]
+    struct IO<'ctx> {
+        value: Input<'ctx, MyStruct1>,
+        out: Output<'ctx, UInt8>,
+    }
+    Context::with(|ctx| {
+        named!(let (top, IO { value, out }) = ctx.top_module());
+        out.assign(functions::my_match6(&top, value.get()));
+        assert_formats_to!(test_match6, test, top);
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        assert_display_formats_to!(test_match6, output, exported);
     })
 }

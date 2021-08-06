@@ -320,7 +320,7 @@ IrModule {
                                 signed: false,
                             },
                             input_scope: Scope {
-                                source_location: SourceLocation($FILE, $LINE-84, 9),
+                                source_location: SourceLocation($FILE, $LINE-109, 9),
                                 path: "top".'1,
                                 ..
                             },
@@ -490,7 +490,7 @@ IrModule {
                                     signed: false,
                                 },
                                 scope: Scope {
-                                    source_location: SourceLocation($FILE, $LINE-84, 9),
+                                    source_location: SourceLocation($FILE, $LINE-109, 9),
                                     path: "top".'1,
                                     ..
                                 },
@@ -500,7 +500,7 @@ IrModule {
                                 signed: false,
                             },
                             input_scope: Scope {
-                                source_location: SourceLocation($FILE, $LINE-84, 9),
+                                source_location: SourceLocation($FILE, $LINE-109, 9),
                                 path: "top".'1,
                                 ..
                             },
@@ -519,7 +519,7 @@ IrModule {
                                 signed: false,
                             },
                             input_scope: Scope {
-                                source_location: SourceLocation($FILE, $LINE-84, 9),
+                                source_location: SourceLocation($FILE, $LINE-109, 9),
                                 path: "top".'2,
                                 ..
                             },
@@ -690,7 +690,7 @@ IrModule {
                         signed: false,
                     },
                     input_scope: Scope {
-                        source_location: SourceLocation($FILE, $LINE-84, 9),
+                        source_location: SourceLocation($FILE, $LINE-109, 9),
                         path: "top".'1,
                         ..
                     },
@@ -860,7 +860,7 @@ IrModule {
                             signed: false,
                         },
                         scope: Scope {
-                            source_location: SourceLocation($FILE, $LINE-84, 9),
+                            source_location: SourceLocation($FILE, $LINE-109, 9),
                             path: "top".'1,
                             ..
                         },
@@ -870,7 +870,7 @@ IrModule {
                         signed: false,
                     },
                     input_scope: Scope {
-                        source_location: SourceLocation($FILE, $LINE-84, 9),
+                        source_location: SourceLocation($FILE, $LINE-109, 9),
                         path: "top".'1,
                         ..
                     },
@@ -889,7 +889,7 @@ IrModule {
                         signed: false,
                     },
                     input_scope: Scope {
-                        source_location: SourceLocation($FILE, $LINE-84, 9),
+                        source_location: SourceLocation($FILE, $LINE-109, 9),
                         path: "top".'2,
                         ..
                     },

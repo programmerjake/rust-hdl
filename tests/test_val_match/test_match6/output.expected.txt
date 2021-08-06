@@ -1,0 +1,126 @@
+attribute \generator "rust-hdl"
+attribute \src "$FILE:$LINE-4.9"
+module \top
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 4 input 0 \io.value.a
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 1 input 1 \io.value.b
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 8 input 2 \io.value.d
+  attribute \src "$FILE:$LINE-4.9"
+  wire width 8 output 3 \io.out
+  wire width 4 $0
+  connect $0 4'0101
+  wire width 1 $1
+  cell $eq $2
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 1
+    connect \A \io.value.a
+    connect \B $0
+    connect \Y $1
+    end
+  wire width 8 $3
+  connect $3 8'00000101
+  wire width 8 $4
+  cell $xor $5
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 8
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 8
+    parameter \Y_WIDTH 8
+    connect \A \io.value.d
+    connect \B $3
+    connect \Y $4
+  end
+  wire width 8 $6
+  connect $6 8'00000011
+  wire width 1 $7
+  cell $eq $8
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 8
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 8
+    parameter \Y_WIDTH 1
+    connect \A $4
+    connect \B $6
+    connect \Y $7
+    end
+  wire width 1 $9
+  cell $and $10
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $1
+    connect \B $7
+    connect \Y $9
+  end
+  wire width 8 $11
+  connect $11 8'00000001
+  wire width 4 $12
+  connect $12 4'1010
+  wire width 1 $13
+  cell $eq $14
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 1
+    connect \A \io.value.a
+    connect \B $12
+    connect \Y $13
+    end
+  wire width 1 $15
+  cell $not $16
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A \io.value.b
+    connect \Y $15
+  end
+  wire width 1 $17
+  cell $and $18
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A $13
+    connect \B $15
+    connect \Y $17
+  end
+  wire width 8 $19
+  connect $19 8'00000010
+  wire width 8 $20
+  cell $add $21
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 8
+    parameter \B_SIGNED 0
+    parameter \B_WIDTH 8
+    parameter \Y_WIDTH 8
+    connect \A $19
+    connect \B \io.value.d
+    connect \Y $20
+  end
+  wire width 8 $22
+  cell $mux $23
+    parameter \WIDTH 8
+    connect \S $17
+    connect \A $6
+    connect \B $20
+    connect \Y $22
+  end
+  wire width 8 $24
+  cell $mux $25
+    parameter \WIDTH 8
+    connect \S $9
+    connect \A $22
+    connect \B $11
+    connect \Y $24
+  end
+  connect \io.out $24
+end

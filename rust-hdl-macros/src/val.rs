@@ -22,9 +22,9 @@ use syn::{
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprField,
-    ExprGroup, ExprIf, ExprLit, ExprMatch, ExprUnary, Index, Lit, LitBool, LitByte, LitByteStr,
-    LitInt, Local, Pat, PatIdent, PatLit, PatOr, PatPath, PatRange, PatTuple, PatTupleStruct,
-    PatWild, Path, QSelf, RangeLimits, Stmt, Token, TypePath, UnOp,
+    ExprGroup, ExprIf, ExprLit, ExprMatch, ExprUnary, FieldPat, Index, Lit, LitBool, LitByte,
+    LitByteStr, LitInt, Local, Pat, PatIdent, PatLit, PatOr, PatPath, PatRange, PatStruct,
+    PatTuple, PatTupleStruct, PatWild, Path, QSelf, RangeLimits, Stmt, Token, TypePath, UnOp,
 };
 
 #[derive(Clone)]
@@ -924,6 +924,93 @@ impl PatternMatcher<'_> {
         assert_no_attrs(attrs)?;
         self.pat_tuple(Some(TypePathKind::get(None, path.clone())), pat, value)
     }
+    fn pat_struct(
+        &mut self,
+        pat_struct: &PatStruct,
+        value: &Ident,
+    ) -> syn::Result<PatternMatchResult> {
+        let crate_path = &self.val_translator.crate_path;
+        let PatStruct {
+            attrs,
+            path,
+            brace_token,
+            fields: struct_fields,
+            dot2_token,
+        } = pat_struct;
+        assert_no_attrs(attrs)?;
+        let type_path_kind = TypePathKind::get(None, path.clone());
+        let fields_var = self.temp_name_maker.make_temp_name(brace_token.span);
+        let mut condition = match type_path_kind {
+            TypePathKind::Struct { .. } => {
+                self.tokens.extend(quote_spanned! {brace_token.span=>
+                    let #fields_var = #crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#value);
+                });
+                MatchCondition::Static(true)
+            }
+            TypePathKind::EnumVariant {
+                span,
+                ref variant_name,
+                ..
+            } => {
+                let condition = self.temp_name_maker.make_temp_name(span);
+                self.tokens.extend(quote_spanned! {brace_token.span=>
+                    let #fields_var = #crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#value).#variant_name;
+                    let __variant_index = #crate_path::values::ops::get_aggregate_variant_index_from_variant_value(#value, &#fields_var);
+                    let #condition = #crate_path::values::ops::is_aggregate_variant(#value, __variant_index);
+                });
+                MatchCondition::Dynamic(condition)
+            }
+        };
+        let mut verification_match_fields = Punctuated::new();
+        let mut last_separator_span = brace_token.span;
+        let mut defined_names = PatternDefinedNames::new();
+        let mut verification_match_needs_if = false;
+        for field in struct_fields.pairs() {
+            let FieldPat {
+                attrs,
+                member,
+                colon_token,
+                pat,
+            } = field.value();
+            assert_no_attrs(attrs)?;
+            let field_variable = self.temp_name_maker.make_temp_name(member.span());
+            self.tokens.extend(quote_spanned! {member.span()=>
+                let #field_variable = #fields_var.#member;
+            });
+            let PatternMatchResult {
+                condition: field_condition,
+                defined_names: field_defined_names,
+                verification_match: field_verification_match,
+                verification_match_needs_if: field_verification_match_needs_if,
+            } = self.pat(pat, &field_variable)?;
+            condition = self.condition_and(last_separator_span, [condition, field_condition]);
+            defined_names.define_names(field_defined_names)?;
+            verification_match_fields.extend(iter::once(Pair::new(
+                FieldPat {
+                    attrs: Vec::new(),
+                    member: member.clone(),
+                    colon_token: Some(colon_token.unwrap_or_else(|| Token![:](member.span()))),
+                    pat: Box::new(field_verification_match),
+                },
+                field.punct().copied().copied(),
+            )));
+            verification_match_needs_if |= field_verification_match_needs_if;
+            last_separator_span = field.punct().map_or(brace_token.span, |v| v.span);
+        }
+        let verification_match = Pat::Struct(PatStruct {
+            attrs: Vec::new(),
+            path: path.clone(),
+            brace_token: *brace_token,
+            fields: verification_match_fields,
+            dot2_token: *dot2_token,
+        });
+        Ok(PatternMatchResult {
+            condition,
+            defined_names,
+            verification_match,
+            verification_match_needs_if,
+        })
+    }
     fn pat(&mut self, pat: &Pat, value: &Ident) -> syn::Result<PatternMatchResult> {
         match pat {
             Pat::Ident(pat_ident) => self.pat_ident(pat_ident, value),
@@ -931,12 +1018,12 @@ impl PatternMatcher<'_> {
             Pat::Or(pat_or) => self.pat_or(pat_or, value),
             Pat::Path(pat_path) => self.pat_path(pat_path.clone(), value),
             Pat::Range(pat_range) => self.pat_range(pat_range, value),
-            Pat::Slice(pat) => todo_err!(pat),
-            Pat::Struct(pat) => todo_err!(pat),
+            Pat::Slice(pat_slice) => todo_err!(pat_slice),
+            Pat::Struct(pat_struct) => self.pat_struct(pat_struct, value),
             Pat::Tuple(pat_tuple) => self.pat_tuple(None, pat_tuple, value),
             Pat::TupleStruct(pat_tuple_struct) => self.pat_tuple_struct(pat_tuple_struct, value),
             Pat::Wild(pat_wild) => self.pat_wild(pat_wild),
-            Pat::Rest(pat) => todo_err!(pat),
+            Pat::Rest(pat_rest) => todo_err!(pat_rest),
             _ => Err(Error::new_spanned(pat, "unsupported match pattern")),
         }
     }
