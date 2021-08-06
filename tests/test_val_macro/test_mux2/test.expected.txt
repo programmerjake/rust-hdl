@@ -159,13 +159,40 @@ IrModule {
                         signed: true,
                     },
                     assigned_value: Mux {
-                        condition: IrModuleInput {
-                            module: "top",
-                            index: 0,
-                            path: "io.cond",
+                        condition: ExpandScope {
+                            value: ShrinkScope {
+                                value: IrModuleInput {
+                                    module: "top",
+                                    index: 0,
+                                    path: "io.cond",
+                                    value_type: IrBitVectorType {
+                                        bit_count: 1,
+                                        signed: false,
+                                    },
+                                },
+                                value_type: IrBitVectorType {
+                                    bit_count: 1,
+                                    signed: false,
+                                },
+                                scope: Scope {
+                                    source_location: SourceLocation($FILE, $LINE-363, 9),
+                                    path: "top".'1,
+                                    ..
+                                },
+                            },
                             value_type: IrBitVectorType {
                                 bit_count: 1,
                                 signed: false,
+                            },
+                            input_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-363, 9),
+                                path: "top".'1,
+                                ..
+                            },
+                            result_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-17, 9),
+                                path: "top",
+                                ..
                             },
                         },
                         value_type: IrBitVectorType {
@@ -179,53 +206,144 @@ IrModule {
                                 ..
                             },
                         ),
-                        true_value: IrModuleInput {
-                            module: "top",
-                            index: 1,
-                            path: "io.true_value",
+                        true_value: ExpandScope {
+                            value: IrModuleInput {
+                                module: "top",
+                                index: 1,
+                                path: "io.true_value",
+                                value_type: IrBitVectorType {
+                                    bit_count: 8,
+                                    signed: true,
+                                },
+                            },
                             value_type: IrBitVectorType {
                                 bit_count: 8,
                                 signed: true,
+                            },
+                            input_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-363, 9),
+                                path: "top".'1,
+                                ..
+                            },
+                            result_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-17, 9),
+                                path: "top",
+                                ..
                             },
                         },
-                        false_value: Mux {
-                            condition: IrModuleInput {
-                                module: "top",
-                                index: 2,
-                                path: "io.cond2",
+                        false_value: ExpandScope {
+                            value: Mux {
+                                condition: ExpandScope {
+                                    value: ShrinkScope {
+                                        value: IrModuleInput {
+                                            module: "top",
+                                            index: 2,
+                                            path: "io.cond2",
+                                            value_type: IrBitVectorType {
+                                                bit_count: 1,
+                                                signed: false,
+                                            },
+                                        },
+                                        value_type: IrBitVectorType {
+                                            bit_count: 1,
+                                            signed: false,
+                                        },
+                                        scope: Scope {
+                                            source_location: SourceLocation($FILE, $LINE-363, 9),
+                                            path: "top".'3.'2,
+                                            ..
+                                        },
+                                    },
+                                    value_type: IrBitVectorType {
+                                        bit_count: 1,
+                                        signed: false,
+                                    },
+                                    input_scope: Scope {
+                                        source_location: SourceLocation($FILE, $LINE-363, 9),
+                                        path: "top".'3.'2,
+                                        ..
+                                    },
+                                    result_scope: Scope {
+                                        source_location: SourceLocation($FILE, $LINE-363, 9),
+                                        path: "top".'2,
+                                        ..
+                                    },
+                                },
                                 value_type: IrBitVectorType {
-                                    bit_count: 1,
-                                    signed: false,
+                                    bit_count: 8,
+                                    signed: true,
+                                },
+                                scope: Some(
+                                    Scope {
+                                        source_location: SourceLocation($FILE, $LINE-363, 9),
+                                        path: "top".'2,
+                                        ..
+                                    },
+                                ),
+                                true_value: ExpandScope {
+                                    value: IrModuleInput {
+                                        module: "top",
+                                        index: 3,
+                                        path: "io.false_true_value",
+                                        value_type: IrBitVectorType {
+                                            bit_count: 8,
+                                            signed: true,
+                                        },
+                                    },
+                                    value_type: IrBitVectorType {
+                                        bit_count: 8,
+                                        signed: true,
+                                    },
+                                    input_scope: Scope {
+                                        source_location: SourceLocation($FILE, $LINE-363, 9),
+                                        path: "top".'3.'2,
+                                        ..
+                                    },
+                                    result_scope: Scope {
+                                        source_location: SourceLocation($FILE, $LINE-363, 9),
+                                        path: "top".'2,
+                                        ..
+                                    },
+                                },
+                                false_value: ExpandScope {
+                                    value: IrModuleInput {
+                                        module: "top",
+                                        index: 4,
+                                        path: "io.false_false_value",
+                                        value_type: IrBitVectorType {
+                                            bit_count: 8,
+                                            signed: true,
+                                        },
+                                    },
+                                    value_type: IrBitVectorType {
+                                        bit_count: 8,
+                                        signed: true,
+                                    },
+                                    input_scope: Scope {
+                                        source_location: SourceLocation($FILE, $LINE-363, 9),
+                                        path: "top".'4.'2,
+                                        ..
+                                    },
+                                    result_scope: Scope {
+                                        source_location: SourceLocation($FILE, $LINE-363, 9),
+                                        path: "top".'2,
+                                        ..
+                                    },
                                 },
                             },
                             value_type: IrBitVectorType {
                                 bit_count: 8,
                                 signed: true,
                             },
-                            scope: Some(
-                                Scope {
-                                    source_location: SourceLocation($FILE, $LINE-17, 9),
-                                    path: "top",
-                                    ..
-                                },
-                            ),
-                            true_value: IrModuleInput {
-                                module: "top",
-                                index: 3,
-                                path: "io.false_true_value",
-                                value_type: IrBitVectorType {
-                                    bit_count: 8,
-                                    signed: true,
-                                },
+                            input_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-363, 9),
+                                path: "top".'2,
+                                ..
                             },
-                            false_value: IrModuleInput {
-                                module: "top",
-                                index: 4,
-                                path: "io.false_false_value",
-                                value_type: IrBitVectorType {
-                                    bit_count: 8,
-                                    signed: true,
-                                },
+                            result_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-17, 9),
+                                path: "top",
+                                ..
                             },
                         },
                     },
@@ -242,13 +360,40 @@ IrModule {
                 signed: true,
             },
             assigned_value: Mux {
-                condition: IrModuleInput {
-                    module: "top",
-                    index: 0,
-                    path: "io.cond",
+                condition: ExpandScope {
+                    value: ShrinkScope {
+                        value: IrModuleInput {
+                            module: "top",
+                            index: 0,
+                            path: "io.cond",
+                            value_type: IrBitVectorType {
+                                bit_count: 1,
+                                signed: false,
+                            },
+                        },
+                        value_type: IrBitVectorType {
+                            bit_count: 1,
+                            signed: false,
+                        },
+                        scope: Scope {
+                            source_location: SourceLocation($FILE, $LINE-363, 9),
+                            path: "top".'1,
+                            ..
+                        },
+                    },
                     value_type: IrBitVectorType {
                         bit_count: 1,
                         signed: false,
+                    },
+                    input_scope: Scope {
+                        source_location: SourceLocation($FILE, $LINE-363, 9),
+                        path: "top".'1,
+                        ..
+                    },
+                    result_scope: Scope {
+                        source_location: SourceLocation($FILE, $LINE-17, 9),
+                        path: "top",
+                        ..
                     },
                 },
                 value_type: IrBitVectorType {
@@ -262,53 +407,144 @@ IrModule {
                         ..
                     },
                 ),
-                true_value: IrModuleInput {
-                    module: "top",
-                    index: 1,
-                    path: "io.true_value",
+                true_value: ExpandScope {
+                    value: IrModuleInput {
+                        module: "top",
+                        index: 1,
+                        path: "io.true_value",
+                        value_type: IrBitVectorType {
+                            bit_count: 8,
+                            signed: true,
+                        },
+                    },
                     value_type: IrBitVectorType {
                         bit_count: 8,
                         signed: true,
+                    },
+                    input_scope: Scope {
+                        source_location: SourceLocation($FILE, $LINE-363, 9),
+                        path: "top".'1,
+                        ..
+                    },
+                    result_scope: Scope {
+                        source_location: SourceLocation($FILE, $LINE-17, 9),
+                        path: "top",
+                        ..
                     },
                 },
-                false_value: Mux {
-                    condition: IrModuleInput {
-                        module: "top",
-                        index: 2,
-                        path: "io.cond2",
+                false_value: ExpandScope {
+                    value: Mux {
+                        condition: ExpandScope {
+                            value: ShrinkScope {
+                                value: IrModuleInput {
+                                    module: "top",
+                                    index: 2,
+                                    path: "io.cond2",
+                                    value_type: IrBitVectorType {
+                                        bit_count: 1,
+                                        signed: false,
+                                    },
+                                },
+                                value_type: IrBitVectorType {
+                                    bit_count: 1,
+                                    signed: false,
+                                },
+                                scope: Scope {
+                                    source_location: SourceLocation($FILE, $LINE-363, 9),
+                                    path: "top".'3.'2,
+                                    ..
+                                },
+                            },
+                            value_type: IrBitVectorType {
+                                bit_count: 1,
+                                signed: false,
+                            },
+                            input_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-363, 9),
+                                path: "top".'3.'2,
+                                ..
+                            },
+                            result_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-363, 9),
+                                path: "top".'2,
+                                ..
+                            },
+                        },
                         value_type: IrBitVectorType {
-                            bit_count: 1,
-                            signed: false,
+                            bit_count: 8,
+                            signed: true,
+                        },
+                        scope: Some(
+                            Scope {
+                                source_location: SourceLocation($FILE, $LINE-363, 9),
+                                path: "top".'2,
+                                ..
+                            },
+                        ),
+                        true_value: ExpandScope {
+                            value: IrModuleInput {
+                                module: "top",
+                                index: 3,
+                                path: "io.false_true_value",
+                                value_type: IrBitVectorType {
+                                    bit_count: 8,
+                                    signed: true,
+                                },
+                            },
+                            value_type: IrBitVectorType {
+                                bit_count: 8,
+                                signed: true,
+                            },
+                            input_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-363, 9),
+                                path: "top".'3.'2,
+                                ..
+                            },
+                            result_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-363, 9),
+                                path: "top".'2,
+                                ..
+                            },
+                        },
+                        false_value: ExpandScope {
+                            value: IrModuleInput {
+                                module: "top",
+                                index: 4,
+                                path: "io.false_false_value",
+                                value_type: IrBitVectorType {
+                                    bit_count: 8,
+                                    signed: true,
+                                },
+                            },
+                            value_type: IrBitVectorType {
+                                bit_count: 8,
+                                signed: true,
+                            },
+                            input_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-363, 9),
+                                path: "top".'4.'2,
+                                ..
+                            },
+                            result_scope: Scope {
+                                source_location: SourceLocation($FILE, $LINE-363, 9),
+                                path: "top".'2,
+                                ..
+                            },
                         },
                     },
                     value_type: IrBitVectorType {
                         bit_count: 8,
                         signed: true,
                     },
-                    scope: Some(
-                        Scope {
-                            source_location: SourceLocation($FILE, $LINE-17, 9),
-                            path: "top",
-                            ..
-                        },
-                    ),
-                    true_value: IrModuleInput {
-                        module: "top",
-                        index: 3,
-                        path: "io.false_true_value",
-                        value_type: IrBitVectorType {
-                            bit_count: 8,
-                            signed: true,
-                        },
+                    input_scope: Scope {
+                        source_location: SourceLocation($FILE, $LINE-363, 9),
+                        path: "top".'2,
+                        ..
                     },
-                    false_value: IrModuleInput {
-                        module: "top",
-                        index: 4,
-                        path: "io.false_false_value",
-                        value_type: IrBitVectorType {
-                            bit_count: 8,
-                            signed: true,
-                        },
+                    result_scope: Scope {
+                        source_location: SourceLocation($FILE, $LINE-17, 9),
+                        path: "top",
+                        ..
                     },
                 },
             },

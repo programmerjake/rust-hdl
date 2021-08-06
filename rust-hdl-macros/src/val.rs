@@ -8,6 +8,7 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, quote_spanned, ToTokens};
 use rust_hdl_int::{Int, IntShape};
 use std::{
+    borrow::Cow,
     cmp::Ordering,
     collections::{
         btree_map::{self, Entry},
@@ -22,9 +23,10 @@ use syn::{
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprField,
-    ExprGroup, ExprIf, ExprLit, ExprMatch, ExprUnary, FieldPat, Index, Lit, LitBool, LitByte,
-    LitByteStr, LitInt, Local, Pat, PatIdent, PatLit, PatOr, PatPath, PatRange, PatStruct,
-    PatTuple, PatTupleStruct, PatWild, Path, QSelf, RangeLimits, Stmt, Token, TypePath, UnOp,
+    ExprGroup, ExprIf, ExprLet, ExprLit, ExprMatch, ExprTuple, ExprUnary, FieldPat, Index, Lit,
+    LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent, PatLit, PatOr, PatPath, PatRange,
+    PatStruct, PatTuple, PatTupleStruct, PatWild, Path, QSelf, RangeLimits, Stmt, Token, TypePath,
+    UnOp,
 };
 
 #[derive(Clone)]
@@ -148,6 +150,19 @@ fn assert_no_attrs(attrs: impl AsRef<[Attribute]>) -> syn::Result<()> {
     } else {
         Ok(())
     }
+}
+
+fn unwrap_expr_groups(mut expr: &Expr) -> syn::Result<&Expr> {
+    while let Expr::Group(ExprGroup {
+        attrs,
+        group_token: _,
+        expr: inner_expr,
+    }) = expr
+    {
+        assert_no_attrs(attrs)?;
+        expr = inner_expr;
+    }
+    Ok(expr)
 }
 
 #[derive(Default)]
@@ -1029,6 +1044,13 @@ impl PatternMatcher<'_> {
     }
 }
 
+struct IfOrMatchArm<'a> {
+    span: Span,
+    pat: Cow<'a, Pat>,
+    guard: Option<(Token![if], &'a Expr)>,
+    translated_body: TokenStream,
+}
+
 struct ValTranslator {
     crate_path: Path,
     module: Ident,
@@ -1036,28 +1058,25 @@ struct ValTranslator {
 }
 
 impl ValTranslator {
-    fn expr_match(&self, expr_match: &ExprMatch) -> syn::Result<TokenStream> {
+    fn expr_if_or_match<'a>(
+        &self,
+        if_or_match_token_span: Span,
+        expr: &Expr,
+        arms: impl IntoIterator<Item = IfOrMatchArm<'a>>,
+    ) -> syn::Result<TokenStream> {
         let Self {
             crate_path,
             module,
             scope,
         } = self;
-        let ExprMatch {
-            attrs,
-            match_token,
-            expr,
-            brace_token: _,
-            arms,
-        } = expr_match;
-        assert_no_attrs(attrs)?;
         let expr = self.expr(expr)?;
         let mut pattern_matcher = PatternMatcher::new(self);
         let value = pattern_matcher
             .temp_name_maker
-            .make_temp_name(match_token.span);
+            .make_temp_name(if_or_match_token_span);
         pattern_matcher
             .tokens
-            .extend(quote_spanned! {match_token.span=>
+            .extend(quote_spanned! {if_or_match_token_span=>
                 let #value = #crate_path::values::ops::shrink_scope(#expr, #scope);
             });
         let mut verification_match_arms = Vec::new();
@@ -1066,28 +1085,25 @@ impl ValTranslator {
             matched: Ident,
         }
         let mut match_arm_outputs = Vec::new();
-        for Arm {
-            attrs,
+        for IfOrMatchArm {
+            span: arm_span,
             pat,
             guard,
-            fat_arrow_token,
-            body,
-            comma: _,
+            translated_body,
         } in arms
         {
-            assert_no_attrs(attrs)?;
             let PatternMatchResult {
                 condition,
                 defined_names,
                 verification_match,
                 verification_match_needs_if,
-            } = pattern_matcher.pat(pat, &value)?;
+            } = pattern_matcher.pat(&pat, &value)?;
             let verification_match_if = if verification_match_needs_if || guard.is_some() {
                 quote! { if #crate_path::values::ops::match_fake_condition() }
             } else {
                 quote! {}
             };
-            verification_match_arms.push(quote_spanned! {fat_arrow_token.spans[0]=>
+            verification_match_arms.push(quote_spanned! {arm_span=>
                 #verification_match #verification_match_if => {}
             });
             let condition = if let Some((if_kw, guard_expr)) = guard {
@@ -1109,7 +1125,7 @@ impl ValTranslator {
                 }
             } else {
                 match condition {
-                    MatchCondition::Static(condition) => quote_spanned! {fat_arrow_token.spans[0]=>
+                    MatchCondition::Static(condition) => quote_spanned! {arm_span=>
                         #crate_path::values::Value::get_value(&#condition, #module)
                     },
                     MatchCondition::Dynamic(condition) => quote! { #condition },
@@ -1124,22 +1140,17 @@ impl ValTranslator {
                     }
                 })
                 .collect();
-            let body = self.expr(body)?;
-            let value = pattern_matcher
-                .temp_name_maker
-                .make_temp_name(fat_arrow_token.spans[0]);
-            let matched = pattern_matcher
-                .temp_name_maker
-                .make_temp_name(fat_arrow_token.spans[0]);
+            let value = pattern_matcher.temp_name_maker.make_temp_name(arm_span);
+            let matched = pattern_matcher.temp_name_maker.make_temp_name(arm_span);
             pattern_matcher
                 .tokens
-                .extend(quote_spanned! {fat_arrow_token.spans[0]=>
+                .extend(quote_spanned! {arm_span=>
                     let #value;
                     let #matched = {
                         let __match_scope = #scope;
                         let #scope = #crate_path::ir::scope::Scope::new(__match_scope, #crate_path::ir::SourceLocation::caller());
                         #(#define_names)*
-                        #value = #crate_path::values::ops::expand_scope(#body, #scope, __match_scope);
+                        #value = #crate_path::values::ops::expand_scope(#translated_body, #scope, __match_scope);
                         #crate_path::values::ops::expand_scope(#condition, #scope, __match_scope)
                     };
                 });
@@ -1156,17 +1167,20 @@ impl ValTranslator {
                     let __result = #crate_path::values::ops::mux(#matched, #value, __result);
                 });
             }
-            quote_spanned! {match_token.span=>
+            quote_spanned! {if_or_match_token_span=>
                 let _ = #last_matched;
                 let __result = #last_value;
                 #(#muxes)*
                 __result
             }
         } else {
-            todo_err!(match_token, "match of uninhabited value")
+            todo_err!(
+                Token![match](if_or_match_token_span),
+                "match of uninhabited value"
+            )
         };
         let tokens = pattern_matcher.tokens;
-        Ok(quote_spanned! {match_token.span=>
+        Ok(quote_spanned! {if_or_match_token_span=>
             {
                 #tokens
                 #crate_path::values::ops::check_val_type(#value, |__value, _| match __value {
@@ -1175,6 +1189,39 @@ impl ValTranslator {
                 #result
             }
         })
+    }
+    fn expr_match(&self, expr_match: &ExprMatch) -> syn::Result<TokenStream> {
+        let ExprMatch {
+            attrs,
+            match_token,
+            expr,
+            brace_token: _,
+            arms,
+        } = expr_match;
+        assert_no_attrs(attrs)?;
+        let arms = arms
+            .iter()
+            .map(
+                |Arm {
+                     attrs,
+                     pat,
+                     guard,
+                     fat_arrow_token,
+                     body,
+                     comma: _,
+                 }| {
+                    assert_no_attrs(attrs)?;
+                    let translated_body = self.expr(body)?;
+                    Ok(IfOrMatchArm {
+                        span: fat_arrow_token.span(),
+                        pat: Cow::Borrowed(pat),
+                        guard: guard.as_ref().map(|(if_token, expr)| (*if_token, &**expr)),
+                        translated_body,
+                    })
+                },
+            )
+            .collect::<syn::Result<Vec<_>>>()?;
+        return self.expr_if_or_match(match_token.span, expr, arms);
     }
 
     fn expr_lit(&self, neg: Option<&Token![-]>, lit: &ExprLit) -> syn::Result<TokenStream> {
@@ -1265,11 +1312,6 @@ impl ValTranslator {
     }
 
     fn expr_if(&self, expr_if: &ExprIf) -> syn::Result<TokenStream> {
-        let Self {
-            crate_path,
-            module: _,
-            scope: _,
-        } = self;
         let ExprIf {
             attrs,
             if_token,
@@ -1278,13 +1320,41 @@ impl ValTranslator {
             else_branch,
         } = expr_if;
         assert_no_attrs(attrs)?;
-        let cond = self.expr(cond)?;
+        let cond = unwrap_expr_groups(cond)?;
         let then_branch = self.block_interpreted(then_branch)?;
-        let else_expr = &*else_branch
-            .as_ref()
-            .ok_or_else(|| Error::new_spanned(if_token, "`if` expression must have `else` branch"))?
-            .1;
-        let else_branch = match else_expr {
+        let match_expr: Cow<Expr>;
+        let then_arm = if let Expr::Let(ExprLet {
+            attrs,
+            let_token,
+            pat,
+            eq_token: _,
+            expr,
+        }) = cond
+        {
+            assert_no_attrs(attrs)?;
+            match_expr = Cow::Borrowed(expr);
+            IfOrMatchArm {
+                span: let_token.span,
+                pat: Cow::Borrowed(pat),
+                guard: None,
+                translated_body: then_branch,
+            }
+        } else {
+            match_expr = Cow::Owned(parse_quote! { () });
+            IfOrMatchArm {
+                span: if_token.span,
+                pat: Cow::Owned(Pat::Wild(PatWild {
+                    attrs: Vec::new(),
+                    underscore_token: Token![_](if_token.span),
+                })),
+                guard: Some((*if_token, cond)),
+                translated_body: then_branch,
+            }
+        };
+        let (else_token, ref else_expr) = *else_branch.as_ref().ok_or_else(|| {
+            Error::new_spanned(if_token, "`if` expression must have `else` branch")
+        })?;
+        let else_branch = match &**else_expr {
             Expr::If(expr_if) => self.expr_if(expr_if)?,
             Expr::Block(ExprBlock {
                 attrs,
@@ -1301,9 +1371,36 @@ impl ValTranslator {
                 "the parser should produce only an if expression or a block expression"
             ),
         };
-        Ok(quote_spanned! {if_token.span=>
-            #crate_path::values::ops::mux(#cond, #then_branch, #else_branch)
-        })
+        let else_arm = IfOrMatchArm {
+            span: else_token.span,
+            pat: Cow::Owned(Pat::Wild(PatWild {
+                attrs: Vec::new(),
+                underscore_token: Token![_](else_token.span),
+            })),
+            guard: None,
+            translated_body: else_branch,
+        };
+        self.expr_if_or_match(if_token.span, &match_expr, [then_arm, else_arm])
+    }
+
+    fn expr_tuple(&self, expr_tuple: &ExprTuple) -> syn::Result<TokenStream> {
+        let Self {
+            crate_path,
+            module,
+            scope: _,
+        } = self;
+        let ExprTuple {
+            attrs,
+            paren_token: _,
+            elems,
+        } = expr_tuple;
+        assert_no_attrs(attrs)?;
+        if elems.is_empty() {
+            return Ok(quote_spanned! {expr_tuple.span()=>
+                #crate_path::values::ToVal::to_val(&(), #module)
+            });
+        }
+        todo_err!(expr_tuple)
     }
 
     fn expr(&self, expr: &Expr) -> syn::Result<TokenStream> {
@@ -1312,6 +1409,7 @@ impl ValTranslator {
             module,
             scope: _,
         } = self;
+        let expr = unwrap_expr_groups(expr)?;
         match expr {
             Expr::Array(ExprArray {
                 attrs,
@@ -1402,17 +1500,10 @@ impl ValTranslator {
                     #crate_path::values::ops::assert_arg_is_val(#crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#base) #dot_token #member)
                 })
             }
-            Expr::Group(ExprGroup {
-                attrs,
-                group_token: _,
-                expr,
-            }) => {
-                assert_no_attrs(attrs)?;
-                self.expr(expr)
-            }
+            Expr::Group(_) => unreachable!(),
             Expr::If(expr_if) => self.expr_if(expr_if),
             Expr::Index(expr) => todo_err!(expr),
-            Expr::Let(expr) => todo_err!(expr),
+            Expr::Let(expr) => Err(Error::new_spanned(expr, "let expressions not allowed here")),
             Expr::Lit(expr) => self.expr_lit(None, expr),
             Expr::Match(expr_match) => self.expr_match(expr_match),
             Expr::MethodCall(expr) => todo_err!(expr),
@@ -1434,14 +1525,13 @@ impl ValTranslator {
             }
             Expr::Path(expr) => {
                 assert_no_attrs(&expr.attrs)?;
-                let span = expr.path.segments.last().unwrap().ident.span();
-                Ok(quote_spanned! {span=>
+                Ok(quote_spanned! {expr.span()=>
                     #crate_path::values::ToVal::to_val(&#expr, #module)
                 })
             }
             Expr::Repeat(expr) => todo_err!(expr),
             Expr::Struct(expr) => todo_err!(expr),
-            Expr::Tuple(expr) => todo_err!(expr),
+            Expr::Tuple(expr_tuple) => self.expr_tuple(expr_tuple),
             Expr::Unary(expr) => {
                 if let UnOp::Neg(op) = &expr.op {
                     if let Expr::Lit(expr) = &*expr.expr {
