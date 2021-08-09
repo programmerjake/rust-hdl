@@ -130,6 +130,7 @@ mod functions {
             }
         )
     }
+
     #[track_caller]
     pub(crate) fn my_if_let1<'my_ctx>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
