@@ -1,0 +1,106 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-3, 9),
+    parent: <None>,
+    interface_types: [
+        Input(
+            IrBitVectorType {
+                bit_count: 8,
+                signed: false,
+            },
+        ),
+        Output(
+            IrArrayType {
+                element: IrBitVectorType {
+                    bit_count: 8,
+                    signed: false,
+                },
+                length: 0,
+            },
+        ),
+    ],
+    interface: [
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                        signed: false,
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io.input",
+                    value_type: IrBitVectorType {
+                        bit_count: 8,
+                        signed: false,
+                    },
+                },
+            },
+        ),
+        Output(
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: <None>,
+                        value_type: IrArrayType {
+                            element: IrBitVectorType {
+                                bit_count: 8,
+                                signed: false,
+                            },
+                            length: 0,
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top",
+                            index: 1,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."io.out",
+                    source_location: SourceLocation($FILE, $LINE-3, 9),
+                    value_type: IrArrayType {
+                        element: IrBitVectorType {
+                            bit_count: 8,
+                            signed: false,
+                        },
+                        length: 0,
+                    },
+                    assigned_value: LiteralArray {
+                        element_type: IrBitVectorType {
+                            bit_count: 8,
+                            signed: false,
+                        },
+                        scope: None,
+                        elements: [],
+                    },
+                    ..
+                },
+            },
+        ),
+    ],
+    wires: {
+        "io.out": IrWire {
+            source_location: SourceLocation($FILE, $LINE-3, 9),
+            value_type: IrArrayType {
+                element: IrBitVectorType {
+                    bit_count: 8,
+                    signed: false,
+                },
+                length: 0,
+            },
+            assigned_value: LiteralArray {
+                element_type: IrBitVectorType {
+                    bit_count: 8,
+                    signed: false,
+                },
+                scope: None,
+                elements: [],
+            },
+            ..
+        },
+    },
+    registers: {},
+    ..
+}

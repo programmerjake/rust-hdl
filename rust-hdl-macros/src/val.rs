@@ -23,10 +23,10 @@ use syn::{
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprField,
-    ExprGroup, ExprIf, ExprLet, ExprLit, ExprMatch, ExprTuple, ExprUnary, FieldPat, Index, Lit,
-    LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent, PatLit, PatOr, PatPath, PatRange,
-    PatStruct, PatTuple, PatTupleStruct, PatWild, Path, QSelf, RangeLimits, Stmt, Token, TypePath,
-    UnOp,
+    ExprGroup, ExprIf, ExprLet, ExprLit, ExprMatch, ExprRepeat, ExprTuple, ExprUnary, FieldPat,
+    Index, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent, PatLit, PatOr, PatPath,
+    PatRange, PatStruct, PatTuple, PatTupleStruct, PatWild, Path, QSelf, RangeLimits, Stmt, Token,
+    TypePath, UnOp,
 };
 
 #[derive(Clone)]
@@ -1233,7 +1233,9 @@ impl ValTranslator {
         let ExprLit { attrs, lit } = lit;
         assert_no_attrs(attrs)?;
         match lit {
-            Lit::ByteStr(lit) => todo_err!(lit),
+            Lit::ByteStr(lit) => Ok(quote_spanned! {lit.span()=>
+                #crate_path::values::ops::literal_byte_array(#module, #lit)
+            }),
             Lit::Byte(lit) => Ok(quote_spanned! {lit.span()=>
                 #crate_path::values::Value::get_value(&<#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#lit), #module)
             }),
@@ -1403,6 +1405,53 @@ impl ValTranslator {
         todo_err!(expr_tuple)
     }
 
+    fn expr_array(&self, expr_array: &ExprArray) -> syn::Result<TokenStream> {
+        let Self {
+            crate_path,
+            module,
+            scope: _,
+        } = self;
+        let ExprArray {
+            attrs,
+            bracket_token,
+            elems,
+        } = expr_array;
+        assert_no_attrs(attrs)?;
+        let elements = elems
+            .iter()
+            .map(|e| self.expr(e))
+            .collect::<syn::Result<Vec<_>>>()?;
+        if elements.is_empty() {
+            Ok(quote_spanned! {bracket_token.span=>
+                #crate_path::values::ops::literal_empty_array(#module)
+            })
+        } else {
+            Ok(quote_spanned! {bracket_token.span=>
+                #crate_path::values::ops::literal_nonempty_array([#(#elements,)*])
+            })
+        }
+    }
+
+    fn expr_repeat(&self, expr_repeat: &ExprRepeat) -> syn::Result<TokenStream> {
+        let Self {
+            crate_path,
+            module: _,
+            scope: _,
+        } = self;
+        let ExprRepeat {
+            attrs,
+            bracket_token,
+            expr,
+            semi_token: _,
+            len,
+        } = expr_repeat;
+        assert_no_attrs(attrs)?;
+        let expr = self.expr(expr)?;
+        Ok(quote_spanned! {bracket_token.span=>
+            #crate_path::values::ops::literal_array_repeat::<_, { #len }>(#expr)
+        })
+    }
+
     fn expr(&self, expr: &Expr) -> syn::Result<TokenStream> {
         let Self {
             crate_path,
@@ -1411,20 +1460,7 @@ impl ValTranslator {
         } = self;
         let expr = unwrap_expr_groups(expr)?;
         match expr {
-            Expr::Array(ExprArray {
-                attrs,
-                bracket_token,
-                elems,
-            }) => {
-                assert_no_attrs(attrs)?;
-                let elements = elems
-                    .iter()
-                    .map(|e| self.expr(e))
-                    .collect::<syn::Result<Vec<_>>>()?;
-                Ok(quote_spanned! {bracket_token.span=>
-                    #crate_path::values::ops::literal_array(#module, [#(#elements,)*])
-                })
-            }
+            Expr::Array(expr_array) => self.expr_array(expr_array),
             Expr::Binary(ExprBinary {
                 attrs,
                 left,
@@ -1529,7 +1565,7 @@ impl ValTranslator {
                     #crate_path::values::ToVal::to_val(&#expr, #module)
                 })
             }
-            Expr::Repeat(expr) => todo_err!(expr),
+            Expr::Repeat(expr_repeat) => self.expr_repeat(expr_repeat),
             Expr::Struct(expr) => todo_err!(expr),
             Expr::Tuple(expr_tuple) => self.expr_tuple(expr_tuple),
             Expr::Unary(expr) => {

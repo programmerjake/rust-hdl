@@ -720,11 +720,10 @@ pub fn check_val_type<'ctx, T: Value<'ctx>, F: FnOnce(T, Infallible)>(_value: Va
 }
 
 #[track_caller]
-pub fn literal_array<'ctx, Ctx: AsContext<'ctx>, T: FixedTypeValue<'ctx>, const N: usize>(
-    ctx: Ctx,
+pub fn literal_array<'ctx, T: Value<'ctx>, const N: usize>(
+    element_type: ValueType<'ctx, T>,
     elements: [Val<'ctx, T>; N],
 ) -> Val<'ctx, [T; N]> {
-    let ctx = ctx.ctx();
     let mut ir_elements = if N == 0 {
         [][..].try_into().unwrap()
     } else {
@@ -734,10 +733,64 @@ pub fn literal_array<'ctx, Ctx: AsContext<'ctx>, T: FixedTypeValue<'ctx>, const 
         *ir = val.ir();
     }
     Val::from_ir_unchecked(
+        element_type.ctx(),
+        IrValue::from(LiteralArray::new(
+            element_type.ctx(),
+            element_type.ir(),
+            ir_elements,
+            &SourceLocation::caller(),
+        ))
+        .intern(element_type.ctx()),
+    )
+}
+
+#[track_caller]
+pub fn literal_empty_array<'ctx, Ctx: AsContext<'ctx>, T: FixedTypeValue<'ctx>>(
+    ctx: Ctx,
+) -> Val<'ctx, [T; 0]> {
+    literal_array(T::static_value_type(ctx.ctx()), [])
+}
+
+#[track_caller]
+pub fn literal_nonempty_array<'ctx, T: Value<'ctx>, const N: usize>(
+    elements: [Val<'ctx, T>; N],
+) -> Val<'ctx, [T; N]> {
+    let first = elements
+        .get(0)
+        .expect("array must have length > 0 to use literal_nonempty_array");
+    literal_array(first.value_type(), elements)
+}
+
+#[track_caller]
+pub fn literal_array_repeat<'ctx, T: Value<'ctx>, const N: usize>(
+    element: Val<'ctx, T>,
+) -> Val<'ctx, [T; N]> {
+    Val::from_ir_unchecked(
+        element.ctx(),
+        IrValue::from(LiteralArray::new(
+            element.ctx(),
+            element.value_type().ir(),
+            [element.ir(); N],
+            &SourceLocation::caller(),
+        ))
+        .intern(element.ctx()),
+    )
+}
+
+pub fn literal_byte_array<'ctx, Ctx: AsContext<'ctx>, const N: usize>(
+    ctx: Ctx,
+    bytes: &[u8; N],
+) -> Val<'ctx, [UInt8; N]> {
+    let ctx = ctx.ctx();
+    let mut ir_elements = [UInt8::default().get_value(ctx).ir(); N];
+    for (val, ir) in bytes.iter().zip(&mut ir_elements) {
+        *ir = UInt8::from(*val).get_value(ctx).ir();
+    }
+    Val::from_ir_unchecked(
         ctx,
         IrValue::from(LiteralArray::new(
             ctx,
-            T::static_value_type(ctx).ir(),
+            UInt8::static_value_type(ctx).ir(),
             ir_elements,
             &SourceLocation::caller(),
         ))

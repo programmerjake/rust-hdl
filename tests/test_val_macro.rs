@@ -269,7 +269,7 @@ mod functions {
     }
 
     #[track_caller]
-    pub fn my_literal_array1<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
+    pub fn my_literal_array1<'my_ctx, MyType: ::rust_hdl::values::Value<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
     ) -> ::rust_hdl::values::Val<'my_ctx, [MyType; 1]> {
@@ -277,7 +277,7 @@ mod functions {
     }
 
     #[track_caller]
-    pub fn my_literal_array2<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
+    pub fn my_literal_array2<'my_ctx, MyType: ::rust_hdl::values::Value<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
         v1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
@@ -286,13 +286,32 @@ mod functions {
     }
 
     #[track_caller]
-    pub fn my_literal_array3<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
+    pub fn my_literal_array3<'my_ctx, MyType: ::rust_hdl::values::Value<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
         v1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
         v2: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
     ) -> ::rust_hdl::values::Val<'my_ctx, [MyType; 3]> {
         ::rust_hdl::prelude::val!(my_module, [v0, v1, v2])
+    }
+
+    #[track_caller]
+    pub fn my_literal_array_repeat<
+        'my_ctx,
+        MyType: ::rust_hdl::values::Value<'my_ctx>,
+        const N: usize,
+    >(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        element: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, [MyType; N]> {
+        ::rust_hdl::prelude::val!(my_module, [element; N])
+    }
+
+    #[track_caller]
+    pub fn my_byte_literal<'my_ctx>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, [::rust_hdl::values::UInt8; 12]> {
+        ::rust_hdl::prelude::val!(my_module, b"Hello World!")
     }
 }
 
@@ -675,5 +694,42 @@ fn test_literal_array3() {
         |m, v0, v1, v2| functions::my_literal_array3(m, v0, v1, v2),
         "test_literal_array3",
         "bool",
+    );
+}
+
+#[test]
+fn test_literal_array_repeat0() {
+    test_unary_fn::<UInt8, [UInt8; 0], _>(
+        |m, v| functions::my_literal_array_repeat(m, v),
+        "test_literal_array_repeat0",
+        "u8",
+    );
+    test_unary_fn::<bool, [bool; 0], _>(
+        |m, v| functions::my_literal_array_repeat(m, v),
+        "test_literal_array_repeat0",
+        "bool",
+    );
+}
+
+#[test]
+fn test_literal_array_repeat10() {
+    test_unary_fn::<UInt8, [UInt8; 10], _>(
+        |m, v| functions::my_literal_array_repeat(m, v),
+        "test_literal_array_repeat10",
+        "u8",
+    );
+    test_unary_fn::<bool, [bool; 10], _>(
+        |m, v| functions::my_literal_array_repeat(m, v),
+        "test_literal_array_repeat10",
+        "bool",
+    );
+}
+
+#[test]
+fn test_my_byte_literal() {
+    test_nullary_fn(
+        |m| functions::my_byte_literal(m),
+        "test_my_byte_literal",
+        "test",
     );
 }
