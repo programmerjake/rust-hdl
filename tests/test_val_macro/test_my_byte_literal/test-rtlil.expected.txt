@@ -2,29 +2,29 @@ attribute \generator "rust-hdl"
 attribute \src "$FILE:$LINE-4.9"
 module \top
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 0 \io[0]
+  wire width 8 output 1 \io[0]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 1 \io[1]
+  wire width 8 output 2 \io[1]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 2 \io[2]
+  wire width 8 output 3 \io[2]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 3 \io[3]
+  wire width 8 output 4 \io[3]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 4 \io[4]
+  wire width 8 output 5 \io[4]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 5 \io[5]
+  wire width 8 output 6 \io[5]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 6 \io[6]
+  wire width 8 output 7 \io[6]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 7 \io[7]
+  wire width 8 output 8 \io[7]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 8 \io[8]
+  wire width 8 output 9 \io[8]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 9 \io[9]
+  wire width 8 output 10 \io[9]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 10 \io[10]
+  wire width 8 output 11 \io[10]
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 11 \io[11]
+  wire width 8 output 12 \io[11]
   wire width 8 $0
   connect $0 8'01001000
   wire width 8 $1

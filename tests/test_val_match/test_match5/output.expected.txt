@@ -2,11 +2,11 @@ attribute \generator "rust-hdl"
 attribute \src "$FILE:$LINE-4.9"
 module \top
   attribute \src "$FILE:$LINE-4.9"
-  wire width 1 input 0 \io.value.$discriminant
+  wire width 1 input 1 \io.value.$discriminant
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 input 1 \io.value.$fields
+  wire width 8 input 2 \io.value.$fields
   attribute \src "$FILE:$LINE-4.9"
-  wire width 8 output 2 \io.out
+  wire width 8 output 3 \io.out
   wire width 1 $0
   connect $0 1'1
   wire width 1 $1

@@ -2,9 +2,9 @@ attribute \generator "rust-hdl"
 attribute \src "$FILE:$LINE-4.9"
 module \top
   attribute \src "$FILE:$LINE-4.9"
-  wire width 4 input 0 \io.value
+  wire width 4 input 1 \io.value
   attribute \src "$FILE:$LINE-4.9"
-  wire width 1 output 1 \io.out
+  wire width 1 output 2 \io.out
   wire width 4 $0
   connect $0 4'0101
   wire width 1 $1

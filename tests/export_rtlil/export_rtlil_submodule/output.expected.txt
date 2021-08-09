@@ -2,63 +2,63 @@ attribute \generator "rust-hdl"
 attribute \src "$FILE:$LINE-15.9"
 module \top
   attribute \src "$FILE:$LINE-15.9"
-  wire width 1 input 0 \io.cd.clk
+  wire width 1 input 1 \io.cd.clk
   attribute \src "$FILE:$LINE-15.9"
-  wire width 1 input 1 \io.cd.rst
+  wire width 1 input 2 \io.cd.rst
   attribute \src "$FILE:$LINE-15.9"
-  wire width 1 input 2 \io.input.a
+  wire width 1 input 3 \io.input.a
   attribute \src "$FILE:$LINE-15.9"
-  wire width 8 input 3 \io.input.b[0]
+  wire width 8 input 4 \io.input.b[0]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 8 input 4 \io.input.b[1]
+  wire width 8 input 5 \io.input.b[1]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 8 input 5 \io.input.b[2]
+  wire width 8 input 6 \io.input.b[2]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 4 input 6 \io.input.e2
+  wire width 4 input 7 \io.input.e2
   attribute \src "$FILE:$LINE-15.9"
-  wire width 2 input 7 \io.input.e3.$discriminant
+  wire width 2 input 8 \io.input.e3.$discriminant
   attribute \src "$FILE:$LINE-15.9"
-  wire width 1 input 8 \io.input.e3.$fields
+  wire width 1 input 9 \io.input.e3.$fields
   attribute \src "$FILE:$LINE-15.9"
-  wire width 2 input 9 \io.input.e4.$discriminant
+  wire width 2 input 10 \io.input.e4.$discriminant
   attribute \src "$FILE:$LINE-15.9"
-  wire width 2 input 10 \io.input.e4.$fields
+  wire width 2 input 11 \io.input.e4.$fields
   attribute \src "$FILE:$LINE-15.9"
-  wire width 1 output 11 \io.wire_output.a
+  wire width 1 output 12 \io.wire_output.a
   attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 12 \io.wire_output.b[0]
+  wire width 8 output 13 \io.wire_output.b[0]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 13 \io.wire_output.b[1]
+  wire width 8 output 14 \io.wire_output.b[1]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 14 \io.wire_output.b[2]
+  wire width 8 output 15 \io.wire_output.b[2]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 4 output 15 \io.wire_output.e2
+  wire width 4 output 16 \io.wire_output.e2
   attribute \src "$FILE:$LINE-15.9"
-  wire width 2 output 16 \io.wire_output.e3.$discriminant
+  wire width 2 output 17 \io.wire_output.e3.$discriminant
   attribute \src "$FILE:$LINE-15.9"
-  wire width 1 output 17 \io.wire_output.e3.$fields
+  wire width 1 output 18 \io.wire_output.e3.$fields
   attribute \src "$FILE:$LINE-15.9"
-  wire width 2 output 18 \io.wire_output.e4.$discriminant
+  wire width 2 output 19 \io.wire_output.e4.$discriminant
   attribute \src "$FILE:$LINE-15.9"
-  wire width 2 output 19 \io.wire_output.e4.$fields
+  wire width 2 output 20 \io.wire_output.e4.$fields
   attribute \src "$FILE:$LINE-15.9"
-  wire width 1 output 20 \io.reg_output.a
+  wire width 1 output 21 \io.reg_output.a
   attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 21 \io.reg_output.b[0]
+  wire width 8 output 22 \io.reg_output.b[0]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 22 \io.reg_output.b[1]
+  wire width 8 output 23 \io.reg_output.b[1]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 8 output 23 \io.reg_output.b[2]
+  wire width 8 output 24 \io.reg_output.b[2]
   attribute \src "$FILE:$LINE-15.9"
-  wire width 4 output 24 \io.reg_output.e2
+  wire width 4 output 25 \io.reg_output.e2
   attribute \src "$FILE:$LINE-15.9"
-  wire width 2 output 25 \io.reg_output.e3.$discriminant
+  wire width 2 output 26 \io.reg_output.e3.$discriminant
   attribute \src "$FILE:$LINE-15.9"
-  wire width 1 output 26 \io.reg_output.e3.$fields
+  wire width 1 output 27 \io.reg_output.e3.$fields
   attribute \src "$FILE:$LINE-15.9"
-  wire width 2 output 27 \io.reg_output.e4.$discriminant
+  wire width 2 output 28 \io.reg_output.e4.$discriminant
   attribute \src "$FILE:$LINE-15.9"
-  wire width 2 output 28 \io.reg_output.e4.$fields
+  wire width 2 output 29 \io.reg_output.e4.$fields
   wire width 1 \submodule.io.wire_output.a
   wire width 8 \submodule.io.wire_output.b[0]
   wire width 8 \submodule.io.wire_output.b[1]
@@ -132,63 +132,63 @@ attribute \generator "rust-hdl"
 attribute \src "$FILE:$LINE-14.9"
 module \top.submodule
   attribute \src "$FILE:$LINE-14.9"
-  wire width 1 input 0 \io.cd.clk
+  wire width 1 input 1 \io.cd.clk
   attribute \src "$FILE:$LINE-14.9"
-  wire width 1 input 1 \io.cd.rst
+  wire width 1 input 2 \io.cd.rst
   attribute \src "$FILE:$LINE-14.9"
-  wire width 1 input 2 \io.input.a
+  wire width 1 input 3 \io.input.a
   attribute \src "$FILE:$LINE-14.9"
-  wire width 8 input 3 \io.input.b[0]
+  wire width 8 input 4 \io.input.b[0]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 8 input 4 \io.input.b[1]
+  wire width 8 input 5 \io.input.b[1]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 8 input 5 \io.input.b[2]
+  wire width 8 input 6 \io.input.b[2]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 4 input 6 \io.input.e2
+  wire width 4 input 7 \io.input.e2
   attribute \src "$FILE:$LINE-14.9"
-  wire width 2 input 7 \io.input.e3.$discriminant
+  wire width 2 input 8 \io.input.e3.$discriminant
   attribute \src "$FILE:$LINE-14.9"
-  wire width 1 input 8 \io.input.e3.$fields
+  wire width 1 input 9 \io.input.e3.$fields
   attribute \src "$FILE:$LINE-14.9"
-  wire width 2 input 9 \io.input.e4.$discriminant
+  wire width 2 input 10 \io.input.e4.$discriminant
   attribute \src "$FILE:$LINE-14.9"
-  wire width 2 input 10 \io.input.e4.$fields
+  wire width 2 input 11 \io.input.e4.$fields
   attribute \src "$FILE:$LINE-14.9"
-  wire width 1 output 11 \io.wire_output.a
+  wire width 1 output 12 \io.wire_output.a
   attribute \src "$FILE:$LINE-14.9"
-  wire width 8 output 12 \io.wire_output.b[0]
+  wire width 8 output 13 \io.wire_output.b[0]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 8 output 13 \io.wire_output.b[1]
+  wire width 8 output 14 \io.wire_output.b[1]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 8 output 14 \io.wire_output.b[2]
+  wire width 8 output 15 \io.wire_output.b[2]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 4 output 15 \io.wire_output.e2
+  wire width 4 output 16 \io.wire_output.e2
   attribute \src "$FILE:$LINE-14.9"
-  wire width 2 output 16 \io.wire_output.e3.$discriminant
+  wire width 2 output 17 \io.wire_output.e3.$discriminant
   attribute \src "$FILE:$LINE-14.9"
-  wire width 1 output 17 \io.wire_output.e3.$fields
+  wire width 1 output 18 \io.wire_output.e3.$fields
   attribute \src "$FILE:$LINE-14.9"
-  wire width 2 output 18 \io.wire_output.e4.$discriminant
+  wire width 2 output 19 \io.wire_output.e4.$discriminant
   attribute \src "$FILE:$LINE-14.9"
-  wire width 2 output 19 \io.wire_output.e4.$fields
+  wire width 2 output 20 \io.wire_output.e4.$fields
   attribute \src "$FILE:$LINE-14.9"
-  wire width 1 output 20 \io.reg_output.a
+  wire width 1 output 21 \io.reg_output.a
   attribute \src "$FILE:$LINE-14.9"
-  wire width 8 output 21 \io.reg_output.b[0]
+  wire width 8 output 22 \io.reg_output.b[0]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 8 output 22 \io.reg_output.b[1]
+  wire width 8 output 23 \io.reg_output.b[1]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 8 output 23 \io.reg_output.b[2]
+  wire width 8 output 24 \io.reg_output.b[2]
   attribute \src "$FILE:$LINE-14.9"
-  wire width 4 output 24 \io.reg_output.e2
+  wire width 4 output 25 \io.reg_output.e2
   attribute \src "$FILE:$LINE-14.9"
-  wire width 2 output 25 \io.reg_output.e3.$discriminant
+  wire width 2 output 26 \io.reg_output.e3.$discriminant
   attribute \src "$FILE:$LINE-14.9"
-  wire width 1 output 26 \io.reg_output.e3.$fields
+  wire width 1 output 27 \io.reg_output.e3.$fields
   attribute \src "$FILE:$LINE-14.9"
-  wire width 2 output 27 \io.reg_output.e4.$discriminant
+  wire width 2 output 28 \io.reg_output.e4.$discriminant
   attribute \src "$FILE:$LINE-14.9"
-  wire width 2 output 28 \io.reg_output.e4.$fields
+  wire width 2 output 29 \io.reg_output.e4.$fields
   attribute \src "$FILE:$LINE-7.9"
   wire width 1 \wire.a
   attribute \src "$FILE:$LINE-7.9"

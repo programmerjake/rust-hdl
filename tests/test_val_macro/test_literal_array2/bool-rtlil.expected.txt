@@ -2,13 +2,13 @@ attribute \generator "rust-hdl"
 attribute \src "$FILE:$LINE-5.9"
 module \top
   attribute \src "$FILE:$LINE-5.9"
-  wire width 1 input 0 \io.lhs
+  wire width 1 input 1 \io.lhs
   attribute \src "$FILE:$LINE-5.9"
-  wire width 1 input 1 \io.rhs
+  wire width 1 input 2 \io.rhs
   attribute \src "$FILE:$LINE-5.9"
-  wire width 1 output 2 \io.out[0]
+  wire width 1 output 3 \io.out[0]
   attribute \src "$FILE:$LINE-5.9"
-  wire width 1 output 3 \io.out[1]
+  wire width 1 output 4 \io.out[1]
   connect \io.out[0] \io.lhs
   connect \io.out[1] \io.rhs
 end

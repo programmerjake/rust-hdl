@@ -36,7 +36,7 @@ use core::{
     cell::{Cell, RefCell},
     convert::{Infallible, TryFrom},
     fmt::{self, Write as _},
-    num::NonZeroU32,
+    num::{NonZeroU32, NonZeroUsize},
     ops::Range,
 };
 use hashbrown::HashMap;
@@ -203,7 +203,10 @@ struct RtlilWireType {
 struct RtlilWire<'ctx> {
     name: RtlilId<'ctx>,
     ty: RtlilWireType,
-    io_index: Option<usize>,
+    /// a rtlil wire's `port_id` is non-zero to indicate that the wire is an input/output port
+    ///
+    /// https://github.com/YosysHQ/yosys/blob/55e8f5061af57bf25bd9e30528de8196c6eabe9e/manual/PRESENTATION_Prog.tex#L214
+    port_id: Option<NonZeroUsize>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -260,12 +263,33 @@ struct ModuleData<'ctx> {
     submodule_worklist: RefCell<Vec<IrModuleRef<'ctx>>>,
 }
 
+struct PortIdGenerator {
+    next_port_id: NonZeroUsize,
+}
+
+impl PortIdGenerator {
+    fn new() -> Self {
+        Self {
+            next_port_id: NonZeroUsize::new(1).unwrap(),
+        }
+    }
+    fn generate(&mut self) -> NonZeroUsize {
+        let port_id = self.next_port_id;
+        self.next_port_id = port_id
+            .get()
+            .checked_add(1)
+            .and_then(NonZeroUsize::new)
+            .unwrap();
+        port_id
+    }
+}
+
 impl<'ctx> ModuleData<'ctx> {
     fn new(module: IrModuleRef<'ctx>, global_symbol_table: &GlobalSymbolTable<'ctx>) -> Self {
         let symbol_table = SymbolTable::new(module);
         let name = global_symbol_table.new_id(module.ctx(), module.path().to_string());
         let mut wires_for_values = HashMap::new();
-        let mut io_index = 0usize;
+        let mut port_id_generator = PortIdGenerator::new();
         let ir_interface = module.interface().expect("module is missing its interface");
         let mut interface = Vec::with_capacity(ir_interface.len());
         for io in ir_interface {
@@ -281,9 +305,8 @@ impl<'ctx> ModuleData<'ctx> {
                             wires.push(RtlilWire {
                                 name,
                                 ty,
-                                io_index: Some(io_index),
+                                port_id: Some(port_id_generator.generate()),
                             });
-                            io_index += 1;
                             Ok::<_, Infallible>(())
                         },
                     )
@@ -306,9 +329,8 @@ impl<'ctx> ModuleData<'ctx> {
                             wires.push(RtlilWire {
                                 name,
                                 ty,
-                                io_index: Some(io_index),
+                                port_id: Some(port_id_generator.generate()),
                             });
-                            io_index += 1;
                             Ok::<_, Infallible>(())
                         },
                     )
@@ -509,7 +531,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
             Ok(Some(RtlilWire {
                 ty: RtlilWireType { bit_count },
                 name,
-                io_index: None,
+                port_id: None,
             }))
         } else {
             Ok(None)
@@ -564,7 +586,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 bit_count: NonZeroU32::new(1).unwrap(),
             },
             name,
-            io_index: None,
+            port_id: None,
         })
     }
     fn get_wires_for_value(
@@ -588,7 +610,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     Rc::new([RtlilWire {
                         name,
                         ty: RtlilWireType { bit_count },
-                        io_index: None,
+                        port_id: None,
                     }])
                 } else {
                     Rc::new([])
@@ -635,7 +657,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                         Some(RtlilWire {
                             name,
                             ty: discriminant,
-                            io_index: None,
+                            port_id: None,
                         })
                     } else {
                         None
@@ -658,7 +680,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     let fields_wire = RtlilWire {
                         name,
                         ty: flattened_fields,
-                        io_index: None,
+                        port_id: None,
                     };
                     discriminant_wire.into_iter().chain([fields_wire]).collect()
                 }
@@ -680,7 +702,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                         wires.push(RtlilWire {
                             name,
                             ty,
-                            io_index: None,
+                            port_id: None,
                         });
                         Ok(())
                     },
@@ -722,7 +744,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                         wires.push(RtlilWire {
                             name,
                             ty,
-                            io_index: None,
+                            port_id: None,
                         });
                         writeln!(self.writer, "  wire width {} {}", ty.bit_count, name)
                     },
@@ -883,7 +905,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                         wires.push(RtlilWire {
                             name,
                             ty,
-                            io_index: None,
+                            port_id: None,
                         });
                         Ok(())
                     },
@@ -923,7 +945,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     wires.push(RtlilWire {
                         name,
                         ty,
-                        io_index: None,
+                        port_id: None,
                     });
                 }
                 wires.into()
@@ -945,7 +967,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     Rc::new([RtlilWire {
                         ty: RtlilWireType { bit_count },
                         name,
-                        io_index: None,
+                        port_id: None,
                     }])
                 } else {
                     Rc::new([])
@@ -1010,7 +1032,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     Rc::new([RtlilWire {
                         ty: RtlilWireType { bit_count },
                         name,
-                        io_index: None,
+                        port_id: None,
                     }])
                 } else {
                     Rc::new([])
@@ -1046,7 +1068,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                     Rc::new([RtlilWire {
                         ty: RtlilWireType { bit_count },
                         name,
-                        io_index: None,
+                        port_id: None,
                     }])
                 } else {
                     Rc::new([])
@@ -1107,7 +1129,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                             bit_count: NonZeroU32::new(1).unwrap(),
                         },
                         name,
-                        io_index: None,
+                        port_id: None,
                     }])
                 } else {
                     let retval = match v.kind() {
@@ -1148,7 +1170,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                         Rc::new([RtlilWire {
                             ty: RtlilWireType { bit_count },
                             name,
-                            io_index: None,
+                            port_id: None,
                         }])
                     } else {
                         self.get_wires_for_value(
@@ -1407,7 +1429,7 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
                                 self.writer,
                                 "  wire width {} input {} {}",
                                 wire.ty.bit_count,
-                                wire.io_index.unwrap(),
+                                wire.port_id.unwrap(),
                                 wire.name,
                             )?;
                         }
@@ -1423,7 +1445,7 @@ impl<'ctx, W: ?Sized + Write> Exporter<'ctx> for RtlilExporter<'ctx, W> {
                                 self.writer,
                                 "  wire width {} output {} {}",
                                 wire.ty.bit_count,
-                                wire.io_index.unwrap(),
+                                wire.port_id.unwrap(),
                                 wire.name,
                             )?;
                         }
