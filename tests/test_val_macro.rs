@@ -7,6 +7,7 @@ mod common;
 mod functions {
     #![no_implicit_prelude]
 
+    #[track_caller]
     pub fn my_add<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlAdd<'my_ctx, MyRhs>,
@@ -19,6 +20,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs + my_rhs)
     }
 
+    #[track_caller]
     pub fn my_sub<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlSub<'my_ctx, MyRhs>,
@@ -31,6 +33,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs - my_rhs)
     }
 
+    #[track_caller]
     pub fn my_mul<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlMul<'my_ctx, MyRhs>,
@@ -43,6 +46,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs * my_rhs)
     }
 
+    #[track_caller]
     pub fn my_and<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlAnd<'my_ctx, MyRhs>,
@@ -55,6 +59,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs & my_rhs)
     }
 
+    #[track_caller]
     pub fn my_logical_and<'my_ctx>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         my_lhs: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = bool>,
@@ -63,6 +68,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs && my_rhs)
     }
 
+    #[track_caller]
     pub fn my_or<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlOr<'my_ctx, MyRhs>,
@@ -75,6 +81,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs | my_rhs)
     }
 
+    #[track_caller]
     pub fn my_logical_or<'my_ctx>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         my_lhs: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = bool>,
@@ -83,6 +90,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs || my_rhs)
     }
 
+    #[track_caller]
     pub fn my_xor<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlXor<'my_ctx, MyRhs>,
@@ -95,6 +103,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs ^ my_rhs)
     }
 
+    #[track_caller]
     pub fn my_shl<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlShiftLeft<'my_ctx, MyRhs>,
@@ -107,6 +116,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs << my_rhs)
     }
 
+    #[track_caller]
     pub fn my_shr<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlShiftRight<'my_ctx, MyRhs>,
@@ -119,6 +129,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs >> my_rhs)
     }
 
+    #[track_caller]
     pub fn my_compare_eq<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlCompareEqual<'my_ctx, MyRhs>,
@@ -131,6 +142,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs == my_rhs)
     }
 
+    #[track_caller]
     pub fn my_compare_ne<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlCompareNotEqual<'my_ctx, MyRhs>,
@@ -143,6 +155,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs != my_rhs)
     }
 
+    #[track_caller]
     pub fn my_compare_lt<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlCompareLess<'my_ctx, MyRhs>,
@@ -155,6 +168,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs < my_rhs)
     }
 
+    #[track_caller]
     pub fn my_compare_le<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlCompareLessEqual<'my_ctx, MyRhs>,
@@ -167,6 +181,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs <= my_rhs)
     }
 
+    #[track_caller]
     pub fn my_compare_gt<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlCompareGreater<'my_ctx, MyRhs>,
@@ -179,6 +194,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs > my_rhs)
     }
 
+    #[track_caller]
     pub fn my_compare_ge<
         'my_ctx,
         MyLhs: ::rust_hdl::values::ops::HdlCompareGreaterEqual<'my_ctx, MyRhs>,
@@ -191,6 +207,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, my_lhs >= my_rhs)
     }
 
+    #[track_caller]
     pub fn my_not<'my_ctx, MyInput: ::rust_hdl::values::ops::HdlNot<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         my_input: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyInput>,
@@ -198,6 +215,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, !my_input)
     }
 
+    #[track_caller]
     pub fn my_neg<'my_ctx, MyInput: ::rust_hdl::values::ops::HdlNeg<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         my_input: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyInput>,
@@ -205,6 +223,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, -my_input)
     }
 
+    #[track_caller]
     pub fn my_mux<'my_ctx, MyType: ::rust_hdl::values::Value<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         my_cond: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = bool>,
@@ -221,6 +240,7 @@ mod functions {
         )
     }
 
+    #[track_caller]
     pub fn my_mux2<'my_ctx, MyType: ::rust_hdl::values::Value<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         my_cond: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = bool>,
@@ -241,12 +261,14 @@ mod functions {
         )
     }
 
+    #[track_caller]
     pub fn my_literal_array0<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
     ) -> ::rust_hdl::values::Val<'my_ctx, [MyType; 0]> {
         ::rust_hdl::prelude::val!(my_module, [])
     }
 
+    #[track_caller]
     pub fn my_literal_array1<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
@@ -254,6 +276,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, [v0])
     }
 
+    #[track_caller]
     pub fn my_literal_array2<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
@@ -262,6 +285,7 @@ mod functions {
         ::rust_hdl::prelude::val!(my_module, [v0, v1])
     }
 
+    #[track_caller]
     pub fn my_literal_array3<'my_ctx, MyType: ::rust_hdl::values::FixedTypeValue<'my_ctx>>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = MyType>,
