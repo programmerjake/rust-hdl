@@ -2,6 +2,7 @@
 // See Notices.txt for copyright information
 
 use crate::{AttributesFor, RustHdlAttributes};
+use core::fmt;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -23,10 +24,10 @@ use syn::{
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprField,
-    ExprGroup, ExprIf, ExprLet, ExprLit, ExprMatch, ExprRepeat, ExprTuple, ExprUnary, FieldPat,
-    Index, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent, PatLit, PatOr, PatPath,
-    PatRange, PatStruct, PatTuple, PatTupleStruct, PatWild, Path, QSelf, RangeLimits, Stmt, Token,
-    TypePath, UnOp,
+    ExprGroup, ExprIf, ExprLet, ExprLit, ExprMatch, ExprPath, ExprRepeat, ExprTuple, ExprUnary,
+    FieldPat, Index, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent, PatLit,
+    PatOr, PatPath, PatRange, PatStruct, PatTuple, PatTupleStruct, PatWild, Path, QSelf,
+    RangeLimits, Stmt, Token, TypePath, UnOp,
 };
 
 #[derive(Clone)]
@@ -288,6 +289,64 @@ struct PatternMatchResult {
     verification_match_needs_if: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum NameCasingStyle {
+    /// SCREAMING_SNAKE_CASE: e.g. `const MY_NAME: usize = 0`
+    ConstStyle,
+    /// UpperCamelCase: e.g. `type MyName = ();`
+    TypeStyle,
+    /// snake_case: e.g. `let my_name = 1;`
+    VarStyle,
+}
+
+impl NameCasingStyle {
+    fn get_impl<ErrorFn: FnOnce(fmt::Arguments<'_>) -> E, E>(
+        name: &str,
+        error_fn: ErrorFn,
+    ) -> Result<Self, E> {
+        if !name.is_ascii() {
+            return Err(error_fn(format_args!(
+                "non-ASCII identifiers not yet supported -- please create a bug report if you need them"
+            )));
+        }
+        if !name.contains(|c: char| c.is_ascii_uppercase()) {
+            return Ok(Self::VarStyle);
+        }
+        if name.contains('_') {
+            Ok(Self::ConstStyle)
+        } else if name.contains(|c: char| c.is_ascii_lowercase()) {
+            Ok(Self::TypeStyle)
+        } else if name.len() <= 1 {
+            Ok(Self::TypeStyle)
+        } else {
+            Ok(Self::ConstStyle)
+        }
+    }
+    fn get(name: &Ident) -> syn::Result<Self> {
+        Self::get_impl(&name.to_string(), |message| {
+            Error::new_spanned(name, message)
+        })
+    }
+}
+
+enum PathKindVariant {
+    Type,
+    Pat,
+    Expr,
+}
+
+enum PathKind {
+    Type(TypePathKind),
+    VarOrFn { name: Ident },
+    Function { span: Span, path: ExprPath },
+}
+
+impl PathKind {
+    fn get(qself: Option<QSelf>, path: Path, variant: PathKindVariant) -> syn::Result<Self> {
+        todo_err!(path)
+    }
+}
+
 enum TypePathKind {
     EnumVariant {
         span: Span,
@@ -329,6 +388,7 @@ impl PatPathKind {
         }
     }
     fn get_impl(qself: Option<QSelf>, path: Path, can_be_variable: bool) -> Self {
+        // TODO: switch to using PathKind::get
         let last_path_segment = path
             .segments
             .last()
