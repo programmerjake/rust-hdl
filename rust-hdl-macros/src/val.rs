@@ -897,11 +897,17 @@ impl PatternMatcher<'_> {
                 PatternLiteral::Int(endpoint) => {
                     Ok(endpoint.to_tokens(crate_path).into_token_stream())
                 }
-                PatternLiteral::ByteStr(endpoint) => todo_err!(endpoint),
+                PatternLiteral::ByteStr(endpoint) => Err(Error::new_spanned(
+                    endpoint,
+                    "byte strings are not allowed in range patterns",
+                )),
                 PatternLiteral::Byte(endpoint) => Ok(quote_spanned! {endpoint.span()=>
                     <#crate_path::values::integer::UInt8 as ::core::convert::From>::from(#endpoint)
                 }),
-                PatternLiteral::Bool(endpoint) => Ok(quote! { #endpoint }),
+                PatternLiteral::Bool(endpoint) => Err(Error::new_spanned(
+                    endpoint,
+                    "`bool` type is not allowed in range patterns",
+                )),
             }
         };
         let lo = get_endpoint_tokens(lo)?;
