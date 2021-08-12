@@ -15,5 +15,5 @@ module \top
     connect \A \io.value
     connect \B $0
     connect \Y $1
-    end
+  end
 end

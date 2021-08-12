@@ -19,7 +19,7 @@ module \top
     connect \A \io.value.$discriminant
     connect \B $0
     connect \Y $1
-    end
+  end
   wire width 8 $3
   connect $3 \io.value.$fields [7:0]
   wire width 8 $4

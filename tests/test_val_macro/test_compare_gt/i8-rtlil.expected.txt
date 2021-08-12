@@ -17,6 +17,6 @@ module \top
     connect \A \io.rhs
     connect \B \io.lhs
     connect \Y $0
-    end
+  end
   connect \io.out $0
 end

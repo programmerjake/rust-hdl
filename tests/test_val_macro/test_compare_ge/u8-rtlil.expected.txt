@@ -17,7 +17,7 @@ module \top
     connect \A \io.lhs
     connect \B \io.rhs
     connect \Y $0
-    end
+  end
   wire width 1 $2
   cell $not $3
     parameter \A_SIGNED 0

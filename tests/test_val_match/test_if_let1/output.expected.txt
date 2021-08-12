@@ -21,7 +21,7 @@ module \top
     connect \A \io.value.a
     connect \B $0
     connect \Y $1
-    end
+  end
   wire width 8 $3
   connect $3 8'00000001
   wire width 8 $4
