@@ -110,18 +110,17 @@ mod functions {
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         my_value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = super::MyStruct1>,
     ) -> ::rust_hdl::values::Val<'my_ctx, ::rust_hdl::prelude::UInt8> {
-        use super::{MyEnum1, MyStruct1};
         ::rust_hdl::prelude::val!(
             my_module,
             match my_value {
-                MyStruct1 {
-                    a: MyEnum1::A,
+                super::MyStruct1 {
+                    a: super::MyEnum1::A,
                     b: _,
                     c: (),
                     d,
                 } if d ^ 5u8 == 3u8 => 1u8,
-                MyStruct1 {
-                    a: MyEnum1::C,
+                super::MyStruct1 {
+                    a: super::MyEnum1::C,
                     b,
                     c: _,
                     d,
