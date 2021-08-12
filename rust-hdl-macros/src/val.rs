@@ -24,10 +24,10 @@ use syn::{
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprField,
-    ExprGroup, ExprIf, ExprLet, ExprLit, ExprMatch, ExprPath, ExprRepeat, ExprTuple, ExprUnary,
-    FieldPat, Index, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent, PatLit,
-    PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct, PatWild, Path, QSelf,
-    RangeLimits, Stmt, Token, TypePath, UnOp,
+    ExprGroup, ExprIf, ExprLet, ExprLit, ExprMatch, ExprParen, ExprPath, ExprRepeat, ExprTuple,
+    ExprUnary, FieldPat, Index, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent,
+    PatLit, PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct, PatWild, Path,
+    QSelf, RangeLimits, Stmt, Token, TypePath, UnOp,
 };
 
 #[derive(Clone)]
@@ -1371,7 +1371,8 @@ impl ValTranslator {
                      comma: _,
                  }| {
                     assert_no_attrs(attrs)?;
-                    let translated_body = self.expr(body)?;
+                    let translated_body =
+                        self.expr_or_block(body, |block| self.block_interpreted(block, true))?;
                     Ok(IfOrMatchArm {
                         span: fat_arrow_token.span(),
                         pat: Cow::Borrowed(pat),
@@ -1382,6 +1383,36 @@ impl ValTranslator {
             )
             .collect::<syn::Result<Vec<_>>>()?;
         return self.expr_if_or_match(match_token.span, expr, arms);
+    }
+
+    fn expr_or_block(
+        &self,
+        expr: &Expr,
+        block_fn: impl FnOnce(&Block) -> syn::Result<TokenStream>,
+    ) -> syn::Result<TokenStream> {
+        let expr = unwrap_expr_groups(expr)?;
+        if let Expr::Block(expr_block) = expr {
+            self.expr_block(expr_block, block_fn)
+        } else {
+            self.expr(expr)
+        }
+    }
+
+    fn expr_block(
+        &self,
+        expr_block: &ExprBlock,
+        block_fn: impl FnOnce(&Block) -> syn::Result<TokenStream>,
+    ) -> syn::Result<TokenStream> {
+        let ExprBlock {
+            attrs,
+            label,
+            block,
+        } = expr_block;
+        assert_no_attrs(attrs)?;
+        if let Some(label) = label {
+            return Err(Error::new_spanned(label, "block labels are not supported"));
+        }
+        block_fn(block)
     }
 
     fn expr_lit(&self, neg: Option<&Token![-]>, lit: &ExprLit) -> syn::Result<TokenStream> {
@@ -1424,37 +1455,67 @@ impl ValTranslator {
         }
     }
 
-    fn stmt(&self, stmt: &Stmt) -> syn::Result<TokenStream> {
-        match stmt {
-            Stmt::Local(Local {
-                attrs,
-                let_token,
-                pat: _,
-                init: _,
-                semi_token: _,
-            }) => {
-                assert_no_attrs(attrs)?;
-                todo_err!(let_token)
-            }
-            Stmt::Item(item) => Err(Error::new_spanned(item, "items are not supported")),
-            Stmt::Expr(expr) => self.expr(expr),
-            Stmt::Semi(expr, semi) => {
-                let expr = self.expr(expr)?;
-                Ok(quote! {#expr #semi})
-            }
-        }
-    }
-
-    fn block_interpreted(&self, block: &Block) -> syn::Result<TokenStream> {
+    fn block_interpreted(
+        &self,
+        block: &Block,
+        warn_on_unused_braces: bool,
+    ) -> syn::Result<TokenStream> {
+        let Self {
+            crate_path,
+            module,
+            scope: _,
+        } = self;
         let Block { brace_token, stmts } = block;
-        let stmts = stmts
-            .iter()
-            .map(|stmt| self.stmt(stmt))
-            .collect::<syn::Result<Vec<_>>>()?;
+        if stmts.is_empty() {
+            return Ok(quote_spanned! {brace_token.span=>
+                #crate_path::values::ToVal::to_val(&(), #module)
+            });
+        }
+        let mut translated_statements = Vec::with_capacity(1 + stmts.len());
+        if !warn_on_unused_braces {
+            translated_statements.push(quote_spanned! {brace_token.span=>
+                let () = (); // useless let to shut-up #[warn(unused_braces)]
+            });
+        }
+        let mut need_empty_return = true;
+        for stmt in stmts {
+            let stmt_need_empty_return;
+            translated_statements.push(match stmt {
+                Stmt::Local(Local {
+                    attrs,
+                    let_token,
+                    pat: _,
+                    init: _,
+                    semi_token: _,
+                }) => {
+                    assert_no_attrs(attrs)?;
+                    stmt_need_empty_return = true;
+                    let _ = stmt_need_empty_return;
+                    todo_err!(let_token)
+                }
+                Stmt::Item(item) => {
+                    return Err(Error::new_spanned(item, "items are not supported"))
+                }
+                Stmt::Expr(expr) => {
+                    stmt_need_empty_return = false;
+                    self.expr(expr)?
+                }
+                Stmt::Semi(expr, semi) => {
+                    stmt_need_empty_return = true;
+                    let expr = self.expr(expr)?;
+                    quote! {#expr #semi}
+                }
+            });
+            need_empty_return = stmt_need_empty_return;
+        }
+        if need_empty_return {
+            translated_statements.push(quote_spanned! {brace_token.span=>
+                #crate_path::values::ToVal::to_val(&(), #module)
+            });
+        }
         Ok(quote_spanned! {brace_token.span=>
             {
-                let () = (); // useless let to shut-up #[warn(unused_braces)]
-                #(#stmts)*
+                #(#translated_statements)*
             }
         })
     }
@@ -1483,7 +1544,7 @@ impl ValTranslator {
         } = expr_if;
         assert_no_attrs(attrs)?;
         let cond = unwrap_expr_groups(cond)?;
-        let then_branch = self.block_interpreted(then_branch)?;
+        let then_branch = self.block_interpreted(then_branch, false)?;
         let match_expr: Cow<Expr>;
         let then_arm = if let Expr::Let(ExprLet {
             attrs,
@@ -1518,16 +1579,8 @@ impl ValTranslator {
         })?;
         let else_branch = match &**else_expr {
             Expr::If(expr_if) => self.expr_if(expr_if)?,
-            Expr::Block(ExprBlock {
-                attrs,
-                label,
-                block,
-            }) => {
-                assert_no_attrs(attrs)?;
-                if let Some(label) = label {
-                    return Err(Error::new_spanned(label, "block labels are not supported"));
-                }
-                self.block_interpreted(block)?
+            Expr::Block(expr_block) => {
+                self.expr_block(expr_block, |block| self.block_interpreted(block, false))?
             }
             _ => unreachable!(
                 "the parser should produce only an if expression or a block expression"
@@ -1703,21 +1756,13 @@ impl ValTranslator {
             Expr::Lit(expr) => self.expr_lit(None, expr),
             Expr::Match(expr_match) => self.expr_match(expr_match),
             Expr::MethodCall(expr) => todo_err!(expr),
-            Expr::Paren(expr) => {
-                if let Expr::Block(ExprBlock {
-                    attrs,
-                    label,
-                    block,
-                }) = &*expr.expr
-                {
-                    assert_no_attrs(attrs)?;
-                    if let Some(label) = label {
-                        return Err(Error::new_spanned(label, "block labels are not supported"));
-                    }
-                    self.block_uninterpreted(block)
-                } else {
-                    self.expr(&expr.expr)
-                }
+            Expr::Paren(ExprParen {
+                attrs,
+                paren_token: _,
+                expr,
+            }) => {
+                assert_no_attrs(attrs)?;
+                self.expr_or_block(expr, |block| self.block_uninterpreted(block))
             }
             Expr::Path(expr) => {
                 assert_no_attrs(&expr.attrs)?;
@@ -1745,17 +1790,13 @@ impl ValTranslator {
                     _ => Err(Error::new_spanned(expr.op, "unsupported unary op")),
                 }
             }
-            Expr::Block(ExprBlock {
-                attrs,
-                label,
-                block,
-            }) => {
-                assert_no_attrs(attrs)?;
-                if let Some(label) = label {
-                    return Err(Error::new_spanned(label, "block labels are not supported"));
-                }
-                Err(Error::new_spanned(block, "uninterpreted blocks must be surrounded with both parenthesis and curly braces, like so: `({ uninterpreted() })`"))
-            }
+            Expr::Block(expr_block) => self.expr_block(expr_block, |block| {
+                Err(Error::new_spanned(
+                    block,
+                    "uninterpreted blocks must be surrounded with both parenthesis \
+                    and curly braces, like so: `({ uninterpreted() })`",
+                ))
+            }),
             _ => Err(Error::new_spanned(expr, "unsupported expression")),
         }
     }

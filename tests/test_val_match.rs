@@ -131,6 +131,20 @@ mod functions {
     }
 
     #[track_caller]
+    pub(crate) fn my_match7<'my_ctx>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        my_value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = ::rust_hdl::values::UInt8>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, ()> {
+        ::rust_hdl::prelude::val!(
+            my_module,
+            match my_value {
+                1u8 => {}
+                _ => (),
+            }
+        )
+    }
+
+    #[track_caller]
     pub(crate) fn my_if_let1<'my_ctx>(
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         my_value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = super::MyStruct1>,
@@ -246,6 +260,22 @@ fn test_match6() {
         assert_formats_to!(test_match6, test, top);
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(test_match6, output, exported);
+    })
+}
+
+#[test]
+fn test_match7() {
+    #[derive(IO, PlainIO)]
+    struct IO<'ctx> {
+        value: Input<'ctx, UInt8>,
+        out: Output<'ctx, ()>,
+    }
+    Context::with(|ctx| {
+        named!(let (top, IO { value, out }) = ctx.top_module());
+        out.assign(functions::my_match7(&top, value.get()));
+        assert_formats_to!(test_match7, test, top);
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        assert_display_formats_to!(test_match7, output, exported);
     })
 }
 
