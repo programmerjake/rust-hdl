@@ -135,13 +135,13 @@ mod functions {
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
         my_value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = super::MyStruct1>,
     ) -> ::rust_hdl::values::Val<'my_ctx, ::rust_hdl::prelude::UInt8> {
-        use super::{MyEnum1, MyStruct1};
+        #![allow(unused_parens)]
         ::rust_hdl::prelude::val!(
             my_module,
-            if let MyStruct1 {
-                a: MyEnum1::A,
-                b: _,
-                c: (),
+            if let super::MyStruct1 {
+                a: super::MyEnum1::A,
+                b: (_),
+                c: (..),
                 d,
             } = my_value
             {

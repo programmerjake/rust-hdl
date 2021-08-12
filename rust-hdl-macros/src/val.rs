@@ -26,7 +26,7 @@ use syn::{
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprField,
     ExprGroup, ExprIf, ExprLet, ExprLit, ExprMatch, ExprPath, ExprRepeat, ExprTuple, ExprUnary,
     FieldPat, Index, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent, PatLit,
-    PatOr, PatPath, PatRange, PatStruct, PatTuple, PatTupleStruct, PatWild, Path, QSelf,
+    PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct, PatWild, Path, QSelf,
     RangeLimits, Stmt, Token, TypePath, UnOp,
 };
 
@@ -763,6 +763,29 @@ impl PatternMatcher<'_> {
             elems,
         } = pat_tuple;
         assert_no_attrs(attrs)?;
+        if path_kind.is_none()
+            && !elems.trailing_punct()
+            && elems.len() == 1
+            && !matches!(elems[0], Pat::Rest(_))
+        {
+            // the pattern is actually parenthesis like `(pat)` and not a tuple pattern
+            let PatternMatchResult {
+                condition,
+                defined_names,
+                verification_match,
+                verification_match_needs_if,
+            } = self.pat(&elems[0], value)?;
+            return Ok(PatternMatchResult {
+                condition,
+                defined_names,
+                verification_match: Pat::Tuple(PatTuple {
+                    attrs: Vec::new(),
+                    paren_token: *paren_token,
+                    elems: iter::once(verification_match).collect(),
+                }),
+                verification_match_needs_if,
+            });
+        }
         let fields = self.temp_name_maker.make_temp_name(paren_token.span);
         let mut condition = match path_kind {
             None | Some(PathKind::Type { .. }) => {
@@ -807,7 +830,24 @@ impl PatternMatcher<'_> {
         let mut last_separator_span = paren_token.span;
         let mut defined_names = PatternDefinedNames::new();
         let mut verification_match_needs_if = false;
+        let mut rest_index = None;
         for (index, field) in elems.pairs().enumerate() {
+            if rest_index.is_some() {
+                todo_err!(field.value(), "tuple fields after `..`");
+            }
+            if let Pat::Rest(PatRest {
+                attrs,
+                dot2_token: _,
+            }) = field.value()
+            {
+                assert_no_attrs(attrs)?;
+                rest_index = Some(index);
+                verification_match_elems.extend(iter::once(Pair::new(
+                    (*field.value()).clone(),
+                    field.punct().copied().copied(),
+                )));
+                continue;
+            }
             let field_variable = self.temp_name_maker.make_temp_name(last_separator_span);
             let index = Index::from(index);
             self.tokens.extend(quote_spanned! {paren_token.span=>
@@ -1155,7 +1195,10 @@ impl PatternMatcher<'_> {
             Pat::Tuple(pat_tuple) => self.pat_tuple(None, pat_tuple, value),
             Pat::TupleStruct(pat_tuple_struct) => self.pat_tuple_struct(pat_tuple_struct, value),
             Pat::Wild(pat_wild) => self.pat_wild(pat_wild),
-            Pat::Rest(pat_rest) => todo_err!(pat_rest),
+            Pat::Rest(pat_rest) => Err(Error::new_spanned(
+                pat_rest,
+                "`..` patterns aren't allowed here",
+            )),
             _ => Err(Error::new_spanned(pat, "unsupported match pattern")),
         }
     }
