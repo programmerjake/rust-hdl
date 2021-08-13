@@ -371,6 +371,15 @@ pub trait StructOfVariantValues<'ctx>: 'ctx + Copy {
     ) -> Result<Visitor, Visitor::BreakType>;
 }
 
+pub trait AggregateOfVariantValues<'ctx>: 'ctx + Copy {
+    type Aggregate: AggregateValue<'ctx, AggregateOfVariantValues = Self>;
+    fn visit_variants<Ctx: AsContext<'ctx>, Visitor: VariantVisitor<'ctx, Self::Aggregate>>(
+        self,
+        ctx: Ctx,
+        visitor: Visitor,
+    ) -> Result<Visitor::AfterActiveVariant, Visitor::BreakType>;
+}
+
 pub trait StructOfVariantFixedTypeValues<'ctx>:
     StructOfVariantValues<'ctx, Aggregate = <Self as StructOfVariantFixedTypeValues<'ctx>>::Aggregate>
 {
@@ -383,6 +392,7 @@ pub trait StructOfVariantFixedTypeValues<'ctx>:
 pub trait AggregateValue<'ctx>: Value<'ctx> {
     type DiscriminantShape: IntShapeTrait + Default;
     type StructOfVariantValues: StructOfVariantValues<'ctx, Aggregate = Self>;
+    type AggregateOfVariantValues: AggregateOfVariantValues<'ctx, Aggregate = Self>;
     fn source_location() -> SourceLocation<'static>;
     fn struct_of_variant_values(aggregate: Val<'ctx, Self>) -> Self::StructOfVariantValues;
     fn visit_variants<Ctx: AsContext<'ctx>, Visitor: VariantVisitor<'ctx, Self>>(
