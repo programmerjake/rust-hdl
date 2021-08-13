@@ -6,7 +6,7 @@ use core::fmt;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{quote, quote_spanned, ToTokens};
+use quote::{format_ident, quote, quote_spanned, ToTokens};
 use rust_hdl_int::{Int, IntShape};
 use std::{
     borrow::Cow,
@@ -1606,16 +1606,43 @@ impl ValTranslator {
         } = self;
         let ExprTuple {
             attrs,
-            paren_token: _,
+            paren_token,
             elems,
         } = expr_tuple;
         assert_no_attrs(attrs)?;
         if elems.is_empty() {
-            return Ok(quote_spanned! {expr_tuple.span()=>
+            return Ok(quote_spanned! {paren_token.span=>
                 #crate_path::values::ToVal::to_val(&(), #module)
             });
         }
-        todo_err!(expr_tuple)
+        let elems = elems
+            .iter()
+            .enumerate()
+            .map(|(index, expr)| {
+                let expr = self.expr(expr)?;
+                let mut index = Index::from(index);
+                index.span = paren_token.span;
+                Ok(quote_spanned! {paren_token.span=>
+                    #index: #expr,
+                })
+            })
+            .collect::<syn::Result<Vec<_>>>()?;
+        let type_params: Vec<_> = elems
+            .iter()
+            .enumerate()
+            .map(|(index, _)| format_ident!("__T{}", index, span = paren_token.span))
+            .collect();
+        let mut end_index = Index::from(elems.len());
+        end_index.span = paren_token.span;
+        Ok(quote_spanned! {paren_token.span=>
+            #crate_path::values::aggregate::get_aggregate_of_variants_value(
+                #module,
+                {
+                    type __T<'__ctx, #(#type_params,)*> = <(#(#type_params,)*) as #crate_path::values::aggregate::AggregateValue<'__ctx>>::AggregateOfVariantValues;
+                    __T { #(#elems)* #end_index: ::core::marker::PhantomData }
+                }
+            )
+        })
     }
 
     fn expr_array(&self, expr_array: &ExprArray) -> syn::Result<TokenStream> {

@@ -1,0 +1,4 @@
+attribute \generator "rust-hdl"
+attribute \src "$FILE:$LINE-4.9"
+module \top
+end

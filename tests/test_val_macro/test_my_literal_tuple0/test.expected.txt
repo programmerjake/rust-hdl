@@ -1,0 +1,185 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-2, 9),
+    parent: <None>,
+    interface_types: [
+        Output(
+            IrAggregateType {
+                discriminant_type: IrBitVectorType {
+                    bit_count: 0,
+                    signed: false,
+                },
+                variants: [
+                    IrVariantType {
+                        name: "",
+                        discriminant: LiteralBits {
+                            value: 0x0_u0,
+                        },
+                        fields: [],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                    },
+                ],
+                flattened_fields: IrBitVectorType {
+                    bit_count: 0,
+                    signed: false,
+                },
+            },
+        ),
+    ],
+    interface: [
+        Output(
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: <None>,
+                        value_type: IrAggregateType {
+                            discriminant_type: IrBitVectorType {
+                                bit_count: 0,
+                                signed: false,
+                            },
+                            variants: [
+                                IrVariantType {
+                                    name: "",
+                                    discriminant: LiteralBits {
+                                        value: 0x0_u0,
+                                    },
+                                    fields: [],
+                                    flattened_fields: IrBitVectorType {
+                                        bit_count: 0,
+                                        signed: false,
+                                    },
+                                },
+                            ],
+                            flattened_fields: IrBitVectorType {
+                                bit_count: 0,
+                                signed: false,
+                            },
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top",
+                            index: 0,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."io",
+                    source_location: SourceLocation($FILE, $LINE-2, 9),
+                    value_type: IrAggregateType {
+                        discriminant_type: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                        variants: [
+                            IrVariantType {
+                                name: "",
+                                discriminant: LiteralBits {
+                                    value: 0x0_u0,
+                                },
+                                fields: [],
+                                flattened_fields: IrBitVectorType {
+                                    bit_count: 0,
+                                    signed: false,
+                                },
+                            },
+                        ],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                    },
+                    assigned_value: LiteralAggregateVariant {
+                        value_type: IrAggregateType {
+                            discriminant_type: IrBitVectorType {
+                                bit_count: 0,
+                                signed: false,
+                            },
+                            variants: [
+                                IrVariantType {
+                                    name: "",
+                                    discriminant: LiteralBits {
+                                        value: 0x0_u0,
+                                    },
+                                    fields: [],
+                                    flattened_fields: IrBitVectorType {
+                                        bit_count: 0,
+                                        signed: false,
+                                    },
+                                },
+                            ],
+                            flattened_fields: IrBitVectorType {
+                                bit_count: 0,
+                                signed: false,
+                            },
+                        },
+                        scope: None,
+                        variant_index: 0,
+                        field_values: [],
+                    },
+                    ..
+                },
+            },
+        ),
+    ],
+    wires: {
+        "io": IrWire {
+            source_location: SourceLocation($FILE, $LINE-2, 9),
+            value_type: IrAggregateType {
+                discriminant_type: IrBitVectorType {
+                    bit_count: 0,
+                    signed: false,
+                },
+                variants: [
+                    IrVariantType {
+                        name: "",
+                        discriminant: LiteralBits {
+                            value: 0x0_u0,
+                        },
+                        fields: [],
+                        flattened_fields: IrBitVectorType {
+                            bit_count: 0,
+                            signed: false,
+                        },
+                    },
+                ],
+                flattened_fields: IrBitVectorType {
+                    bit_count: 0,
+                    signed: false,
+                },
+            },
+            assigned_value: LiteralAggregateVariant {
+                value_type: IrAggregateType {
+                    discriminant_type: IrBitVectorType {
+                        bit_count: 0,
+                        signed: false,
+                    },
+                    variants: [
+                        IrVariantType {
+                            name: "",
+                            discriminant: LiteralBits {
+                                value: 0x0_u0,
+                            },
+                            fields: [],
+                            flattened_fields: IrBitVectorType {
+                                bit_count: 0,
+                                signed: false,
+                            },
+                        },
+                    ],
+                    flattened_fields: IrBitVectorType {
+                        bit_count: 0,
+                        signed: false,
+                    },
+                },
+                scope: None,
+                variant_index: 0,
+                field_values: [],
+            },
+            ..
+        },
+    },
+    registers: {},
+    ..
+}

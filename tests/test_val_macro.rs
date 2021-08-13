@@ -313,6 +313,49 @@ mod functions {
     ) -> ::rust_hdl::values::Val<'my_ctx, [::rust_hdl::values::UInt8; 12]> {
         ::rust_hdl::prelude::val!(my_module, b"Hello World!")
     }
+
+    #[track_caller]
+    pub fn my_literal_tuple0<'my_ctx>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, ()> {
+        ::rust_hdl::prelude::val!(my_module, ())
+    }
+
+    #[track_caller]
+    pub fn my_literal_tuple1<'my_ctx, T0: ::rust_hdl::values::Value<'my_ctx>>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T0>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, (T0,)> {
+        ::rust_hdl::prelude::val!(my_module, (v0,))
+    }
+
+    #[track_caller]
+    pub fn my_literal_tuple2<
+        'my_ctx,
+        T0: ::rust_hdl::values::Value<'my_ctx>,
+        T1: ::rust_hdl::values::Value<'my_ctx>,
+    >(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T0>,
+        v1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T1>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, (T0, T1)> {
+        ::rust_hdl::prelude::val!(my_module, (v0, v1))
+    }
+
+    #[track_caller]
+    pub fn my_literal_tuple3<
+        'my_ctx,
+        T0: ::rust_hdl::values::Value<'my_ctx>,
+        T1: ::rust_hdl::values::Value<'my_ctx>,
+        T2: ::rust_hdl::values::Value<'my_ctx>,
+    >(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T0>,
+        v1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T1>,
+        v2: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T2>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, (T0, T1, T2)> {
+        ::rust_hdl::prelude::val!(my_module, (v0, v1, v2))
+    }
 }
 
 #[track_caller]
@@ -731,5 +774,56 @@ fn test_my_byte_literal() {
         |m| functions::my_byte_literal(m),
         "test_my_byte_literal",
         "test",
+    );
+}
+
+#[test]
+fn test_my_literal_tuple0() {
+    test_nullary_fn(
+        |m| functions::my_literal_tuple0(m),
+        "test_my_literal_tuple0",
+        "test",
+    );
+}
+
+#[test]
+fn test_my_literal_tuple1() {
+    test_unary_fn(
+        |m, v0: Val<UInt8>| functions::my_literal_tuple1(m, v0),
+        "test_my_literal_tuple1",
+        "u8",
+    );
+    test_unary_fn(
+        |m, v0: Val<bool>| functions::my_literal_tuple1(m, v0),
+        "test_my_literal_tuple1",
+        "bool",
+    );
+}
+
+#[test]
+fn test_my_literal_tuple2() {
+    test_binary_fn(
+        |m, v0: Val<UInt8>, v1| functions::my_literal_tuple2(m, v0, v1),
+        "test_my_literal_tuple2",
+        "u8",
+    );
+    test_binary_fn(
+        |m, v0: Val<bool>, v1| functions::my_literal_tuple2(m, v0, v1),
+        "test_my_literal_tuple2",
+        "bool",
+    );
+}
+
+#[test]
+fn test_my_literal_tuple3() {
+    test_ternary_fn(
+        |m, v0: Val<UInt8>, v1, v2| functions::my_literal_tuple3(m, v0, v1, v2),
+        "test_my_literal_tuple3",
+        "u8",
+    );
+    test_ternary_fn(
+        |m, v0: Val<bool>, v1, v2| functions::my_literal_tuple3(m, v0, v1, v2),
+        "test_my_literal_tuple3",
+        "bool",
     );
 }

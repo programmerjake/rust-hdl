@@ -67,6 +67,18 @@ pub fn get_variant_value<'ctx, Ctx: AsContext<'ctx>, VV: VariantValue<'ctx>>(
     })
 }
 
+pub fn get_aggregate_of_variants_value<
+    'ctx,
+    Ctx: AsContext<'ctx>,
+    T: AggregateOfVariantValues<'ctx>,
+>(
+    ctx: Ctx,
+    v: T,
+) -> Val<'ctx, T::Aggregate> {
+    let ctx = ctx.ctx();
+    get_aggregate_value(ctx, |visitor| v.visit_variants(ctx, visitor))
+}
+
 pub trait VariantFixedTypeValue<'ctx>:
     VariantValue<'ctx, Aggregate = <Self as VariantFixedTypeValue<'ctx>>::Aggregate>
 {
