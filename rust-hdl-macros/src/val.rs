@@ -23,11 +23,14 @@ use syn::{
     parse_quote,
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
-    Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprField,
-    ExprGroup, ExprIf, ExprLet, ExprLit, ExprMatch, ExprParen, ExprPath, ExprRepeat, ExprTuple,
-    ExprUnary, FieldPat, Index, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat, PatIdent,
-    PatLit, PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct, PatWild, Path,
-    QSelf, RangeLimits, Stmt, Token, TypePath, UnOp,
+    Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprCall,
+    ExprCast, ExprField, ExprGroup, ExprIf, ExprIndex, ExprLet, ExprLit, ExprMatch, ExprMethodCall,
+    ExprParen, ExprPath, ExprRepeat, ExprStruct, ExprTuple, ExprUnary, FieldPat, GenericArgument,
+    GenericParam, Generics, Index, ItemType, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat,
+    PatIdent, PatLit, PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct,
+    PatWild, Path, PathSegment, QSelf, RangeLimits, Stmt, Token, Type, TypeArray, TypeBareFn,
+    TypeGroup, TypeImplTrait, TypeInfer, TypeMacro, TypeNever, TypeParen, TypePath, TypePtr,
+    TypeReference, TypeSlice, TypeTraitObject, TypeTuple, UnOp,
 };
 
 #[derive(Clone)]
@@ -1117,19 +1120,19 @@ impl PatternMatcher<'_> {
             PathKind::Const { span: _, path } => {
                 return Err(Error::new_spanned(
                     path,
-                    "a constant is not a valid tuple struct type",
+                    "a constant is not a valid struct type",
                 ))
             }
             PathKind::VarOrFn { name } => {
                 return Err(Error::new_spanned(
                     name,
-                    "a variable/function is not a valid tuple struct type",
+                    "a variable/function is not a valid struct type",
                 ))
             }
             PathKind::Function { span: _, path } => {
                 return Err(Error::new_spanned(
                     path,
-                    "a function is not a valid tuple struct type",
+                    "a function is not a valid struct type",
                 ))
             }
         };
@@ -1692,6 +1695,147 @@ impl ValTranslator {
         })
     }
 
+    fn expr_struct(&self, expr_struct: &ExprStruct) -> syn::Result<TokenStream> {
+        let Self {
+            crate_path,
+            module: _,
+            scope: _,
+        } = self;
+        let ExprStruct {
+            attrs,
+            path,
+            brace_token,
+            fields,
+            dot2_token,
+            rest,
+        } = expr_struct;
+        assert_no_attrs(attrs)?;
+        let path_kind = PathKind::get(None, path.clone())?;
+        match path_kind {
+            PathKind::EnumVariant {
+                span,
+                enum_type,
+                variant_path,
+                variant_name,
+            } => todo_err!(variant_path, "enum literals"),
+            PathKind::Type { span, path } => todo_err!(path, "literal structs"),
+            PathKind::Const { span: _, path } => {
+                return Err(Error::new_spanned(
+                    path,
+                    "a constant is not a valid struct type",
+                ))
+            }
+            PathKind::VarOrFn { name } => {
+                return Err(Error::new_spanned(
+                    name,
+                    "a variable/function is not a valid struct type",
+                ))
+            }
+            PathKind::Function { span: _, path } => {
+                return Err(Error::new_spanned(
+                    path,
+                    "a function is not a valid struct type",
+                ))
+            }
+        }
+    }
+
+    fn expr_call(&self, expr_call: &ExprCall) -> syn::Result<TokenStream> {
+        let Self {
+            crate_path,
+            module: _,
+            scope: _,
+        } = self;
+        let ExprCall {
+            attrs,
+            func,
+            paren_token,
+            args,
+        } = expr_call;
+        assert_no_attrs(attrs)?;
+        let func = unwrap_expr_groups(func)?;
+        let ExprPath { attrs, qself, path } = match func {
+            Expr::Path(v) => v,
+            _ => return Err(Error::new_spanned(func, "called function must be a path")),
+        };
+        assert_no_attrs(attrs)?;
+        let path_kind = PathKind::get(qself.clone(), path.clone())?;
+        let args = args
+            .pairs()
+            .map(|pair| {
+                Ok(Pair::new(
+                    self.expr(pair.value())?,
+                    pair.punct().copied().copied(),
+                ))
+            })
+            .collect::<syn::Result<Punctuated<TokenStream, _>>>()?;
+        match path_kind {
+            PathKind::EnumVariant {
+                span,
+                enum_type,
+                variant_path,
+                variant_name,
+            } => todo_err!(variant_path, "enum literals"),
+            PathKind::Type { span, path } => todo_err!(path, "literal structs"),
+            PathKind::Const { span: _, path } => {
+                Err(Error::new_spanned(path, "can't call constants"))
+            }
+            PathKind::VarOrFn { name } => todo_err!(name, "function calls"),
+            PathKind::Function { span, path } => todo_err!(path, "function calls"),
+        }
+    }
+
+    fn expr_cast(&self, expr_cast: &ExprCast) -> syn::Result<TokenStream> {
+        let Self {
+            crate_path,
+            module: _,
+            scope: _,
+        } = self;
+        let ExprCast {
+            attrs,
+            expr,
+            as_token,
+            ty,
+        } = expr_cast;
+        assert_no_attrs(attrs)?;
+        todo_err!(expr_cast);
+    }
+
+    fn expr_index(&self, expr_index: &ExprIndex) -> syn::Result<TokenStream> {
+        let Self {
+            crate_path,
+            module: _,
+            scope: _,
+        } = self;
+        let ExprIndex {
+            attrs,
+            expr,
+            bracket_token,
+            index,
+        } = expr_index;
+        assert_no_attrs(attrs)?;
+        todo_err!(expr_index);
+    }
+
+    fn expr_method_call(&self, expr_method_call: &ExprMethodCall) -> syn::Result<TokenStream> {
+        let Self {
+            crate_path,
+            module: _,
+            scope: _,
+        } = self;
+        let ExprMethodCall {
+            attrs,
+            receiver,
+            dot_token,
+            method,
+            turbofish,
+            paren_token,
+            args,
+        } = expr_method_call;
+        assert_no_attrs(attrs)?;
+        todo_err!(expr_method_call);
+    }
+
     fn expr(&self, expr: &Expr) -> syn::Result<TokenStream> {
         let Self {
             crate_path,
@@ -1762,8 +1906,8 @@ impl ValTranslator {
                     op => Err(Error::new_spanned(op, "unsupported binary op")),
                 }
             }
-            Expr::Call(expr) => todo_err!(expr),
-            Expr::Cast(expr) => todo_err!(expr),
+            Expr::Call(expr_call) => self.expr_call(expr_call),
+            Expr::Cast(expr_cast) => self.expr_cast(expr_cast),
             Expr::Field(ExprField {
                 attrs,
                 base,
@@ -1778,11 +1922,11 @@ impl ValTranslator {
             }
             Expr::Group(_) => unreachable!(),
             Expr::If(expr_if) => self.expr_if(expr_if),
-            Expr::Index(expr) => todo_err!(expr),
+            Expr::Index(expr_index) => self.expr_index(expr_index),
             Expr::Let(expr) => Err(Error::new_spanned(expr, "let expressions not allowed here")),
             Expr::Lit(expr) => self.expr_lit(None, expr),
             Expr::Match(expr_match) => self.expr_match(expr_match),
-            Expr::MethodCall(expr) => todo_err!(expr),
+            Expr::MethodCall(expr_method_call) => self.expr_method_call(expr_method_call),
             Expr::Paren(ExprParen {
                 attrs,
                 paren_token: _,
@@ -1798,7 +1942,7 @@ impl ValTranslator {
                 })
             }
             Expr::Repeat(expr_repeat) => self.expr_repeat(expr_repeat),
-            Expr::Struct(expr) => todo_err!(expr),
+            Expr::Struct(expr_struct) => self.expr_struct(expr_struct),
             Expr::Tuple(expr_tuple) => self.expr_tuple(expr_tuple),
             Expr::Unary(expr) => {
                 if let UnOp::Neg(op) = &expr.op {
