@@ -1709,16 +1709,37 @@ impl ValTranslator {
             dot2_token,
             rest,
         } = expr_struct;
+        todo_err!(expr_struct);
         assert_no_attrs(attrs)?;
         let path_kind = PathKind::get(None, path.clone())?;
+        let variant_of_values_type;
+        let phantom_data_field;
         match path_kind {
             PathKind::EnumVariant {
                 span,
                 enum_type,
-                variant_path,
+                variant_path: _,
                 variant_name,
-            } => todo_err!(variant_path, "enum literals"),
-            PathKind::Type { span, path } => todo_err!(path, "literal structs"),
+            } => {
+                if rest.is_some() {
+                    return Err(Error::new_spanned(
+                        dot2_token,
+                        "can't use `..` in enum variant literal",
+                    ));
+                }
+                variant_of_values_type = quote_spanned! {span=>
+                    __Type::<#enum_type>::#variant_name
+                };
+                phantom_data_field = quote! {};
+            }
+            PathKind::Type { span, path } => {
+                variant_of_values_type = quote_spanned! {span=>
+                    __Type::<#path>
+                };
+                phantom_data_field = quote_spanned! {span=>
+                    __aggregate_phantom: ::core::marker::PhantomData,
+                };
+            }
             PathKind::Const { span: _, path } => {
                 return Err(Error::new_spanned(
                     path,
@@ -1738,6 +1759,23 @@ impl ValTranslator {
                 ))
             }
         }
+        let mut field_tokens = Vec::new();
+        if let Some(rest) = rest {
+            let rest = self.expr(rest)?;
+            field_tokens.push(quote_spanned! {brace_token.span=>
+                ..#crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#rest)
+            });
+        } else {
+            field_tokens.push(phantom_data_field);
+        }
+        Ok(quote_spanned! {brace_token.span=>
+            {
+                type __Type<T> = T;
+                #variant_of_values_type {
+                    #(#field_tokens)*
+                }
+            }
+        })
     }
 
     fn expr_call(&self, expr_call: &ExprCall) -> syn::Result<TokenStream> {
