@@ -4,6 +4,22 @@ use rust_hdl::{export::rtlil::RtlilExporter, ir::module::IrModuleRef, prelude::*
 #[macro_use]
 mod common;
 
+#[derive(Value, FixedTypeValue)]
+pub struct MyStruct<T, U> {
+    f1: T,
+    f2: U,
+    f3: Int32,
+}
+
+#[derive(Value, FixedTypeValue)]
+pub struct MyTupleStruct<T, U>(T, U, Int32);
+
+#[derive(Value, FixedTypeValue)]
+pub enum MyEnum {
+    Tuple(Int32, bool),
+    Struct { f1: UInt8, f2: (bool, bool) },
+}
+
 mod functions {
     #![no_implicit_prelude]
 
@@ -355,6 +371,72 @@ mod functions {
         v2: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T2>,
     ) -> ::rust_hdl::values::Val<'my_ctx, (T0, T1, T2)> {
         ::rust_hdl::prelude::val!(my_module, (v0, v1, v2))
+    }
+
+    #[track_caller]
+    pub fn my_literal_struct<
+        'my_ctx,
+        T0: ::rust_hdl::values::Value<'my_ctx>,
+        T1: ::rust_hdl::values::Value<'my_ctx>,
+    >(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T0>,
+        v1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T1>,
+        f3: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = ::rust_hdl::values::Int32>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, super::MyStruct<T0, T1>> {
+        ::rust_hdl::prelude::val!(my_module, super::MyStruct::<_, _> { f1: v0, f2: v1, f3 })
+    }
+
+    #[track_caller]
+    pub fn my_literal_tuple_struct<
+        'my_ctx,
+        T0: ::rust_hdl::values::Value<'my_ctx>,
+        T1: ::rust_hdl::values::Value<'my_ctx>,
+    >(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T0>,
+        v1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T1>,
+        v2: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = ::rust_hdl::values::Int32>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, super::MyTupleStruct<T0, T1>> {
+        ::rust_hdl::prelude::val!(
+            my_module,
+            super::MyTupleStruct::<_, _> {
+                0: v0,
+                1: v1,
+                2: v2
+            }
+        )
+    }
+
+    #[track_caller]
+    pub fn my_literal_struct_variant<'my_ctx>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        f1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = ::rust_hdl::values::UInt8>,
+        f2: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = (bool, bool)>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, super::MyEnum> {
+        ::rust_hdl::prelude::val!(my_module, super::MyEnum::Struct { f1, f2 })
+    }
+
+    #[track_caller]
+    pub fn my_literal_tuple_struct_variant<'my_ctx>(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        v0: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = ::rust_hdl::values::Int32>,
+        v1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = bool>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, super::MyEnum> {
+        ::rust_hdl::prelude::val!(my_module, super::MyEnum::Tuple { 0: v0, 1: v1 })
+    }
+
+    #[track_caller]
+    pub fn my_literal_struct_update<
+        'my_ctx,
+        T0: ::rust_hdl::values::Value<'my_ctx>,
+        T1: ::rust_hdl::values::Value<'my_ctx>,
+    >(
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+        f1: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = T0>,
+        rest: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = super::MyStruct<T0, T1>>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, super::MyStruct<T0, T1>> {
+        ::rust_hdl::prelude::val!(my_module, super::MyStruct::<_, _> { f1, ..rest })
     }
 }
 
@@ -826,4 +908,88 @@ fn test_my_literal_tuple3() {
         "test_my_literal_tuple3",
         "bool",
     );
+}
+
+#[test]
+fn test_my_literal_struct() {
+    test_ternary_fn(
+        |m, v0, v1, v2| functions::my_literal_struct(m, v0, v1, v2),
+        "test_my_literal_struct",
+        "test",
+    );
+}
+
+#[test]
+fn test_my_literal_tuple_struct() {
+    test_ternary_fn(
+        |m, v0, v1, v2| functions::my_literal_tuple_struct(m, v0, v1, v2),
+        "test_my_literal_tuple_struct",
+        "test",
+    );
+}
+
+#[test]
+fn test_my_literal_struct_update() {
+    #[derive(IO, PlainIO)]
+    struct IO<'ctx> {
+        out: Output<'ctx, MyStruct<bool, UInt8>>,
+        field: Input<'ctx, bool>,
+        rest: Input<'ctx, MyStruct<bool, UInt8>>,
+    }
+    Context::with(|ctx| {
+        named!(let (top, io) = ctx.top_module());
+        let IO { out, field, rest } = io;
+        out.assign(functions::my_literal_struct_update(
+            &top,
+            field.get(),
+            rest.get(),
+        ));
+        assert_formats_to!(test_my_literal_struct_update, test, top);
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        assert_display_formats_to!(test_my_literal_struct_update, output, exported);
+    })
+}
+
+#[test]
+fn test_my_literal_struct_variant() {
+    #[derive(IO, PlainIO)]
+    struct IO<'ctx> {
+        out: Output<'ctx, MyEnum>,
+        f1: Input<'ctx, UInt8>,
+        f2: Input<'ctx, (bool, bool)>,
+    }
+    Context::with(|ctx| {
+        named!(let (top, io) = ctx.top_module());
+        let IO { out, f1, f2 } = io;
+        out.assign(functions::my_literal_struct_variant(
+            &top,
+            f1.get(),
+            f2.get(),
+        ));
+        assert_formats_to!(test_my_literal_struct_variant, test, top);
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        assert_display_formats_to!(test_my_literal_struct_variant, output, exported);
+    })
+}
+
+#[test]
+fn test_my_literal_tuple_struct_variant() {
+    #[derive(IO, PlainIO)]
+    struct IO<'ctx> {
+        out: Output<'ctx, MyEnum>,
+        v0: Input<'ctx, Int32>,
+        v1: Input<'ctx, bool>,
+    }
+    Context::with(|ctx| {
+        named!(let (top, io) = ctx.top_module());
+        let IO { out, v0, v1 } = io;
+        out.assign(functions::my_literal_tuple_struct_variant(
+            &top,
+            v0.get(),
+            v1.get(),
+        ));
+        assert_formats_to!(test_my_literal_tuple_struct_variant, test, top);
+        let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
+        assert_display_formats_to!(test_my_literal_tuple_struct_variant, output, exported);
+    })
 }

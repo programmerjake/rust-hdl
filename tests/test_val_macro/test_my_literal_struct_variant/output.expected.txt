@@ -1,0 +1,20 @@
+attribute \generator "rust-hdl"
+attribute \src "$FILE:$LINE-9.9"
+module \top
+  attribute \src "$FILE:$LINE-9.9"
+  wire width 1 output 1 \io.out.$discriminant
+  attribute \src "$FILE:$LINE-9.9"
+  wire width 33 output 2 \io.out.$fields
+  attribute \src "$FILE:$LINE-9.9"
+  wire width 8 input 3 \io.f1
+  attribute \src "$FILE:$LINE-9.9"
+  wire width 1 input 4 \io.f2.0
+  attribute \src "$FILE:$LINE-9.9"
+  wire width 1 input 5 \io.f2.1
+  wire width 1 $0
+  connect $0 1'1
+  wire width 33 $1
+  connect $1 { 23'xxxxxxxxxxxxxxxxxxxxxxx \io.f2.1 \io.f2.0 \io.f1 }
+  connect \io.out.$discriminant $0
+  connect \io.out.$fields $1
+end

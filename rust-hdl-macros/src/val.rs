@@ -25,12 +25,12 @@ use syn::{
     spanned::Spanned,
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprCall,
     ExprCast, ExprField, ExprGroup, ExprIf, ExprIndex, ExprLet, ExprLit, ExprMatch, ExprMethodCall,
-    ExprParen, ExprPath, ExprRepeat, ExprStruct, ExprTuple, ExprUnary, FieldPat, GenericArgument,
-    GenericParam, Generics, ItemType, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Member,
-    Pat, PatIdent, PatLit, PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct,
-    PatWild, Path, PathSegment, QSelf, RangeLimits, Stmt, Token, Type, TypeArray, TypeBareFn,
-    TypeGroup, TypeImplTrait, TypeInfer, TypeMacro, TypeNever, TypeParen, TypePath, TypePtr,
-    TypeReference, TypeSlice, TypeTraitObject, TypeTuple, UnOp,
+    ExprParen, ExprPath, ExprRepeat, ExprStruct, ExprTuple, ExprUnary, FieldPat, FieldValue,
+    GenericArgument, GenericParam, Generics, ItemType, Lit, LitBool, LitByte, LitByteStr, LitInt,
+    Local, Member, Pat, PatIdent, PatLit, PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple,
+    PatTupleStruct, PatWild, Path, PathSegment, QSelf, RangeLimits, Stmt, Token, Type, TypeArray,
+    TypeBareFn, TypeGroup, TypeImplTrait, TypeInfer, TypeMacro, TypeNever, TypeParen, TypePath,
+    TypePtr, TypeReference, TypeSlice, TypeTraitObject, TypeTuple, UnOp,
 };
 
 #[derive(Clone)]
@@ -1695,7 +1695,7 @@ impl ValTranslator {
     fn expr_struct(&self, expr_struct: &ExprStruct) -> syn::Result<TokenStream> {
         let Self {
             crate_path,
-            module: _,
+            module,
             scope: _,
         } = self;
         let ExprStruct {
@@ -1706,7 +1706,6 @@ impl ValTranslator {
             dot2_token,
             rest,
         } = expr_struct;
-        todo_err!(expr_struct);
         assert_no_attrs(attrs)?;
         let path_kind = PathKind::get(None, path.clone())?;
         let variant_of_values_type;
@@ -1757,6 +1756,20 @@ impl ValTranslator {
             }
         }
         let mut field_tokens = Vec::new();
+        for FieldValue {
+            attrs,
+            member,
+            colon_token: _,
+            expr,
+        } in fields
+        {
+            assert_no_attrs(attrs)?;
+            let generated_name = VariantField::generate_name(member.clone());
+            let expr = self.expr(expr)?;
+            field_tokens.push(quote_spanned! {member.span()=>
+                #generated_name: #expr,
+            });
+        }
         if let Some(rest) = rest {
             let rest = self.expr(rest)?;
             field_tokens.push(quote_spanned! {brace_token.span=>
@@ -1767,10 +1780,13 @@ impl ValTranslator {
         }
         Ok(quote_spanned! {brace_token.span=>
             {
-                type __Type<T> = T;
-                #variant_of_values_type {
-                    #(#field_tokens)*
-                }
+                type __Type<'ctx, T> = <T as #crate_path::values::aggregate::AggregateValue<'ctx>>::AggregateOfVariantValues;
+                #crate_path::values::aggregate::get_aggregate_of_variants_value(
+                    #module,
+                    #variant_of_values_type {
+                        #(#field_tokens)*
+                    },
+                )
             }
         })
     }
