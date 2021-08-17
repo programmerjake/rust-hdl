@@ -13,15 +13,15 @@ use crate::{
     values::{val, FixedTypeValue, ToVal, Val, Value, ValueType},
 };
 use alloc::borrow::Cow;
-use core::{fmt, marker::PhantomData, ops::Deref};
+use core::{fmt, marker::PhantomData};
 
-pub struct WireRef<'ctx, T: Value<'ctx>> {
+pub struct Wire<'ctx, T: Value<'ctx>> {
     read_value: IrValueRef<'ctx>,
     ir: IrWireRef<'ctx>,
     _phantom: PhantomData<fn(T) -> T>,
 }
 
-impl<'ctx, T: Value<'ctx>> fmt::Debug for WireRef<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> fmt::Debug for Wire<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Wire")
             .field("ir", self.ir)
@@ -29,15 +29,15 @@ impl<'ctx, T: Value<'ctx>> fmt::Debug for WireRef<'ctx, T> {
     }
 }
 
-impl<'ctx, T: Value<'ctx>> Copy for WireRef<'ctx, T> {}
+impl<'ctx, T: Value<'ctx>> Copy for Wire<'ctx, T> {}
 
-impl<'ctx, T: Value<'ctx>> Clone for WireRef<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Clone for Wire<'ctx, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'ctx, T: Value<'ctx>> WireRef<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
     pub fn from_ir_unchecked(ir: IrWireRef<'ctx>) -> Self {
         Self {
             ir,
@@ -54,29 +54,7 @@ impl<'ctx, T: Value<'ctx>> WireRef<'ctx, T> {
             ValueType::from_ir_unchecked(self.ir.ctx(), self.ir.value_type()),
         )
     }
-}
-
-#[must_use]
-pub struct Wire<'ctx, T: Value<'ctx>>(WireRef<'ctx, T>);
-
-impl<'ctx, T: Value<'ctx>> fmt::Debug for Wire<'ctx, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl<'ctx, T: Value<'ctx>> Deref for Wire<'ctx, T> {
-    type Target = WireRef<'ctx, T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
-    pub fn from_ir_unchecked(ir: IrWireRef<'ctx>) -> Self {
-        Self(WireRef::from_ir_unchecked(ir))
-    }
+    #[must_use]
     #[track_caller]
     pub fn with_type<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
@@ -90,6 +68,7 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
             value_type.ir(),
         ))
     }
+    #[must_use]
     #[track_caller]
     pub fn new<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(module: M, name: N) -> Self
     where
@@ -99,19 +78,18 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
         Self::with_type(module, name.into(), T::static_value_type(module.ctx()))
     }
     #[track_caller]
-    pub fn assign(self, assigned_value: Val<'ctx, T>) -> WireRef<'ctx, T> {
-        self.0.ir.assign(assigned_value.ir());
-        self.0
+    pub fn assign(self, assigned_value: Val<'ctx, T>) {
+        self.ir.assign(assigned_value.ir());
     }
 }
 
-pub struct RegRef<'ctx, T: Value<'ctx>> {
+pub struct Reg<'ctx, T: Value<'ctx>> {
     output_value: IrValueRef<'ctx>,
     ir: IrRegRef<'ctx>,
     _phantom: PhantomData<fn(T) -> T>,
 }
 
-impl<'ctx, T: Value<'ctx>> fmt::Debug for RegRef<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> fmt::Debug for Reg<'ctx, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Reg")
             .field("ir", self.ir)
@@ -119,15 +97,15 @@ impl<'ctx, T: Value<'ctx>> fmt::Debug for RegRef<'ctx, T> {
     }
 }
 
-impl<'ctx, T: Value<'ctx>> Copy for RegRef<'ctx, T> {}
+impl<'ctx, T: Value<'ctx>> Copy for Reg<'ctx, T> {}
 
-impl<'ctx, T: Value<'ctx>> Clone for RegRef<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Clone for Reg<'ctx, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'ctx, T: Value<'ctx>> RegRef<'ctx, T> {
+impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
     pub fn from_ir_unchecked(ir: IrRegRef<'ctx>) -> Self {
         let output_value = ir.output();
         Self {
@@ -145,15 +123,7 @@ impl<'ctx, T: Value<'ctx>> RegRef<'ctx, T> {
             ValueType::from_ir_unchecked(self.ir.module().ctx(), self.ir.value_type()),
         )
     }
-}
-
-#[must_use]
-pub struct Reg<'ctx, T: Value<'ctx>>(RegRef<'ctx, T>);
-
-impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
-    pub fn from_ir_unchecked(ir: IrRegRef<'ctx>) -> Self {
-        Self(RegRef::from_ir_unchecked(ir))
-    }
+    #[must_use]
     #[track_caller]
     pub fn with_type_without_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
@@ -171,6 +141,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
             None,
         ))
     }
+    #[must_use]
     #[track_caller]
     pub fn without_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
@@ -183,6 +154,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
         let module = module.as_ir_module();
         Self::with_type_without_reset(module, name.into(), clk, T::static_value_type(module.ctx()))
     }
+    #[must_use]
     #[track_caller]
     pub fn with_reset<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
@@ -204,6 +176,7 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
             }),
         ))
     }
+    #[must_use]
     #[track_caller]
     pub fn new<'a, M: AsIrModule<'ctx>, N: Into<Cow<'a, str>>>(
         module: M,
@@ -221,26 +194,8 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
         )
     }
     #[track_caller]
-    pub fn assign_data_in(
-        self,
-        assigned_value: impl ToVal<'ctx, ValueType = T>,
-    ) -> RegRef<'ctx, T> {
+    pub fn assign_data_in(self, assigned_value: impl ToVal<'ctx, ValueType = T>) {
         self.ir
             .assign_data_in(assigned_value.to_val(self.ir.ctx()).ir());
-        self.0
-    }
-}
-
-impl<'ctx, T: Value<'ctx>> Deref for Reg<'ctx, T> {
-    type Target = RegRef<'ctx, T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'ctx, T: Value<'ctx>> fmt::Debug for Reg<'ctx, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
     }
 }

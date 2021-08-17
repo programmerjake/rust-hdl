@@ -19,7 +19,7 @@ fn test_reg() {
         assert_formats_to!(test_reg, top_0, top);
         assert_formats_to!(test_reg, reg_0, reg);
         io.output.assign(reg.output());
-        let reg = reg.assign_data_in(io.input.get());
+        reg.assign_data_in(io.input.get());
         assert_formats_to!(test_reg, reg_output_0, reg.output());
         assert_formats_to!(test_reg, reg_1, reg);
         assert_formats_to!(test_reg, top_1, top);

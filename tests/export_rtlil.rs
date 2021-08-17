@@ -94,10 +94,10 @@ fn export_rtlil() {
             reg_output,
         } = io;
         named!(let wire = top.wire());
-        let wire = wire.assign(input.get());
+        wire.assign(input.get());
         wire_output.assign(wire.read());
         named!(let reg = top.reg(cd.get(), MyValue::default_val(ctx)));
-        let reg = reg.assign_data_in(input.get());
+        reg.assign_data_in(input.get());
         reg_output.assign(reg.output());
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(export_rtlil, output, exported);
@@ -116,10 +116,10 @@ fn export_rtlil_submodule() {
             reg_output,
         } = io;
         named!(let wire = submodule.wire());
-        let wire = wire.assign(input.get());
+        wire.assign(input.get());
         wire_output.assign(wire.read());
         named!(let reg = submodule.reg(cd.get(), MyValue::default_val(ctx)));
-        let reg = reg.assign_data_in(input.get());
+        reg.assign_data_in(input.get());
         reg_output.assign(reg.output());
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(export_rtlil_submodule, output, exported);

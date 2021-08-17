@@ -18,7 +18,7 @@ pub fn blinky<'ctx>(parent: &Module<'ctx>, io: BlinkyIO<'ctx>) {
     counter.assign_data_in(val!(m, if overflowed { 0 } else { counter_output + 1 }));
     named!(let led_toggle = m.reg(io.cd.get(), val!(m, false)));
     let led_toggle_output = led_toggle.output();
-    let led_toggle = led_toggle.assign_data_in(val!(m, led_toggle_output ^ overflowed));
+    led_toggle.assign_data_in(val!(m, led_toggle_output ^ overflowed));
     io.led0.assign(led_toggle.output());
 }
 

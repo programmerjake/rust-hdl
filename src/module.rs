@@ -99,6 +99,7 @@ impl<'ctx> Module<'ctx> {
     pub fn ir(&self) -> IrModuleRef<'ctx> {
         self.ir
     }
+    #[must_use]
     #[track_caller]
     pub fn wire<'a, N: Into<Cow<'a, str>>, T: FixedTypeValue<'ctx>>(
         &self,
@@ -106,6 +107,7 @@ impl<'ctx> Module<'ctx> {
     ) -> Wire<'ctx, T> {
         Wire::new(self, name)
     }
+    #[must_use]
     #[track_caller]
     pub fn wire_with_type<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
@@ -114,15 +116,18 @@ impl<'ctx> Module<'ctx> {
     ) -> Wire<'ctx, T> {
         Wire::with_type(self, name, value_type)
     }
+    #[must_use]
     pub fn output<'a, T: FixedTypeValue<'ctx>>(&self) -> Output<'ctx, T> {
         Output::new(self)
     }
+    #[must_use]
     pub fn output_with_type<'a, T: Value<'ctx>>(
         &self,
         value_type: ValueType<'ctx, T>,
     ) -> Output<'ctx, T> {
         Output::with_type(self, value_type)
     }
+    #[must_use]
     #[track_caller]
     pub fn reg<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
@@ -132,6 +137,7 @@ impl<'ctx> Module<'ctx> {
     ) -> Reg<'ctx, T> {
         Reg::new(self, name, clock_domain, reset_value)
     }
+    #[must_use]
     #[track_caller]
     pub fn reg_without_reset<'a, N: Into<Cow<'a, str>>, T: FixedTypeValue<'ctx>>(
         &self,
@@ -140,6 +146,7 @@ impl<'ctx> Module<'ctx> {
     ) -> Reg<'ctx, T> {
         Reg::without_reset(self, name, clk)
     }
+    #[must_use]
     #[track_caller]
     pub fn reg_with_type_without_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
@@ -149,6 +156,7 @@ impl<'ctx> Module<'ctx> {
     ) -> Reg<'ctx, T> {
         Reg::with_type_without_reset(self, name, clk, value_type)
     }
+    #[must_use]
     #[track_caller]
     pub fn reg_with_reset<'a, N: Into<Cow<'a, str>>, T: Value<'ctx>>(
         &self,
