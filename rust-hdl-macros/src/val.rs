@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
-use crate::{AttributesFor, RustHdlAttributes};
+use crate::{AttributesFor, RustHdlAttributes, VariantField};
 use core::fmt;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
@@ -26,8 +26,8 @@ use syn::{
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprCall,
     ExprCast, ExprField, ExprGroup, ExprIf, ExprIndex, ExprLet, ExprLit, ExprMatch, ExprMethodCall,
     ExprParen, ExprPath, ExprRepeat, ExprStruct, ExprTuple, ExprUnary, FieldPat, GenericArgument,
-    GenericParam, Generics, Index, ItemType, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Pat,
-    PatIdent, PatLit, PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct,
+    GenericParam, Generics, ItemType, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Member,
+    Pat, PatIdent, PatLit, PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct,
     PatWild, Path, PathSegment, QSelf, RangeLimits, Stmt, Token, Type, TypeArray, TypeBareFn,
     TypeGroup, TypeImplTrait, TypeInfer, TypeMacro, TypeNever, TypeParen, TypePath, TypePtr,
     TypeReference, TypeSlice, TypeTraitObject, TypeTuple, UnOp,
@@ -852,9 +852,9 @@ impl PatternMatcher<'_> {
                 continue;
             }
             let field_variable = self.temp_name_maker.make_temp_name(last_separator_span);
-            let index = Index::from(index);
+            let generated_name = VariantField::generate_name(index.into());
             self.tokens.extend(quote_spanned! {paren_token.span=>
-                let #field_variable = #fields.#index;
+                let #field_variable = #fields.#generated_name;
             });
             let PatternMatchResult {
                 condition: field_condition,
@@ -1623,10 +1623,9 @@ impl ValTranslator {
             .enumerate()
             .map(|(index, expr)| {
                 let expr = self.expr(expr)?;
-                let mut index = Index::from(index);
-                index.span = paren_token.span;
+                let generated_name = VariantField::generate_name(index.into());
                 Ok(quote_spanned! {paren_token.span=>
-                    #index: #expr,
+                    #generated_name: #expr,
                 })
             })
             .collect::<syn::Result<Vec<_>>>()?;
@@ -1635,14 +1634,12 @@ impl ValTranslator {
             .enumerate()
             .map(|(index, _)| format_ident!("__T{}", index, span = paren_token.span))
             .collect();
-        let mut end_index = Index::from(elems.len());
-        end_index.span = paren_token.span;
         Ok(quote_spanned! {paren_token.span=>
             #crate_path::values::aggregate::get_aggregate_of_variants_value(
                 #module,
                 {
                     type __T<'__ctx, #(#type_params,)*> = <(#(#type_params,)*) as #crate_path::values::aggregate::AggregateValue<'__ctx>>::AggregateOfVariantValues;
-                    __T { #(#elems)* #end_index: ::core::marker::PhantomData }
+                    __T { #(#elems)* __aggregate_phantom: ::core::marker::PhantomData }
                 }
             )
         })
@@ -1954,8 +1951,9 @@ impl ValTranslator {
             }) => {
                 assert_no_attrs(attrs)?;
                 let base = self.expr(base)?;
+                let generated_name = VariantField::generate_name(member.clone());
                 Ok(quote_spanned! {dot_token.span=>
-                    #crate_path::values::ops::assert_arg_is_val(#crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#base) #dot_token #member)
+                    #crate_path::values::ops::assert_arg_is_val(#crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#base) #dot_token #generated_name)
                 })
             }
             Expr::Group(_) => unreachable!(),
