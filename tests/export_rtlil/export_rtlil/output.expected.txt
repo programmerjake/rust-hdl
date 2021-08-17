@@ -135,7 +135,7 @@ module \top
   wire width 2 $5
   connect $5 2'00
   wire width 2 $6
-  connect $6 { }
+  connect $6 { 2'xx }
   wire width 1 $7
   cell $mux $8
     parameter \WIDTH 1

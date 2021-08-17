@@ -180,6 +180,21 @@ impl fmt::Display for RtlilLiteral<'_> {
     }
 }
 
+struct RtlilLiteralX {
+    bit_count: NonZeroU32,
+}
+
+impl fmt::Display for RtlilLiteralX {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{bit_count}'{value:x<bit_count$}",
+            bit_count = usize::try_from(self.bit_count.get()).expect("value too big to write"),
+            value = "",
+        )
+    }
+}
+
 struct RtlilLocation<'ctx>(SourceLocation<'ctx>);
 
 impl fmt::Display for RtlilLocation<'_> {
@@ -673,6 +688,12 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                         wires.extend_from_slice(&self.get_wires_for_value(module, field_value)?);
                     }
                     write!(self.writer, "  connect {} {{", name)?;
+                    if let Some(bit_count) = NonZeroU32::new(
+                        v.value_type().flattened_fields().bit_count
+                            - v.variant().flattened_fields().bit_count,
+                    ) {
+                        write!(self.writer, " {}", RtlilLiteralX { bit_count })?;
+                    }
                     for wire in wires.iter().rev() {
                         write!(self.writer, " {}", wire.name)?;
                     }
