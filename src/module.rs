@@ -3,7 +3,7 @@
 
 use crate::{
     clocking::ClockDomain,
-    context::{AsContext, Context, ContextRef},
+    context::{AsContext, Context, ContextRef, Internable, Interned},
     export::Exporter,
     io::{Output, PlainIO, IO},
     ir::{
@@ -29,6 +29,12 @@ impl<'ctx> AsIrModule<'ctx> for IrModuleRef<'ctx> {
 impl<'ctx, T: ?Sized + AsIrModule<'ctx>> AsIrModule<'ctx> for &'_ T {
     fn as_ir_module(&self) -> IrModuleRef<'ctx> {
         T::as_ir_module(*self)
+    }
+}
+
+impl<'ctx, T: ?Sized + AsIrModule<'ctx> + Internable<'ctx>> AsIrModule<'ctx> for Interned<'ctx, T> {
+    fn as_ir_module(&self) -> IrModuleRef<'ctx> {
+        T::as_ir_module(self)
     }
 }
 

@@ -368,3 +368,9 @@ impl<'ctx, T: ?Sized + AsContext<'ctx>> AsContext<'ctx> for Box<T> {
         T::ctx(self)
     }
 }
+
+impl<'ctx, T: ?Sized + AsContext<'ctx> + Internable<'ctx>> AsContext<'ctx> for Interned<'ctx, T> {
+    fn ctx(&self) -> ContextRef<'ctx> {
+        T::ctx(self)
+    }
+}

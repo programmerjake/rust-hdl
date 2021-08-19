@@ -25,12 +25,10 @@ use syn::{
     spanned::Spanned,
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprCall,
     ExprCast, ExprField, ExprGroup, ExprIf, ExprIndex, ExprLet, ExprLit, ExprMatch, ExprMethodCall,
-    ExprParen, ExprPath, ExprRepeat, ExprStruct, ExprTuple, ExprUnary, FieldPat, FieldValue,
-    GenericArgument, GenericParam, Generics, ItemType, Lit, LitBool, LitByte, LitByteStr, LitInt,
-    Local, Member, Pat, PatIdent, PatLit, PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple,
-    PatTupleStruct, PatWild, Path, PathSegment, QSelf, RangeLimits, Stmt, Token, Type, TypeArray,
-    TypeBareFn, TypeGroup, TypeImplTrait, TypeInfer, TypeMacro, TypeNever, TypeParen, TypePath,
-    TypePtr, TypeReference, TypeSlice, TypeTraitObject, TypeTuple, UnOp,
+    ExprParen, ExprPath, ExprRepeat, ExprStruct, ExprTuple, ExprUnary, FieldPat, FieldValue, Index,
+    Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Member, Pat, PatIdent, PatLit, PatOr,
+    PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct, PatWild, Path, QSelf,
+    RangeLimits, Stmt, Token, TypePath, UnOp,
 };
 
 #[derive(Clone)]
@@ -458,6 +456,15 @@ impl PathKind {
                 }
                 [] => unreachable!(),
             }
+        }
+    }
+    fn span(&self) -> Span {
+        match *self {
+            PathKind::EnumVariant { span, .. } => span,
+            PathKind::Type { span, .. } => span,
+            PathKind::Const { span, .. } => span,
+            PathKind::VarOrFn { ref name } => name.span(),
+            PathKind::Function { span, .. } => span,
         }
     }
 }
@@ -1692,32 +1699,28 @@ impl ValTranslator {
         })
     }
 
-    fn expr_struct(&self, expr_struct: &ExprStruct) -> syn::Result<TokenStream> {
+    fn literal_struct_or_enum_variant<'a>(
+        &self,
+        path_kind: PathKind,
+        fields: impl IntoIterator<Item = syn::Result<(Member, &'a Expr)>>,
+        rest: Option<(Token![..], &Expr)>,
+    ) -> syn::Result<TokenStream> {
         let Self {
             crate_path,
             module,
             scope: _,
         } = self;
-        let ExprStruct {
-            attrs,
-            path,
-            brace_token,
-            fields,
-            dot2_token,
-            rest,
-        } = expr_struct;
-        assert_no_attrs(attrs)?;
-        let path_kind = PathKind::get(None, path.clone())?;
         let variant_of_values_type;
         let phantom_data_field;
+        let span = path_kind.span();
         match path_kind {
             PathKind::EnumVariant {
-                span,
+                span: _,
                 enum_type,
                 variant_path: _,
                 variant_name,
             } => {
-                if rest.is_some() {
+                if let Some((dot2_token, _)) = rest {
                     return Err(Error::new_spanned(
                         dot2_token,
                         "can't use `..` in enum variant literal",
@@ -1728,7 +1731,7 @@ impl ValTranslator {
                 };
                 phantom_data_field = quote! {};
             }
-            PathKind::Type { span, path } => {
+            PathKind::Type { span: _, path } => {
                 variant_of_values_type = quote_spanned! {span=>
                     __Type::<#path>
                 };
@@ -1756,29 +1759,24 @@ impl ValTranslator {
             }
         }
         let mut field_tokens = Vec::new();
-        for FieldValue {
-            attrs,
-            member,
-            colon_token: _,
-            expr,
-        } in fields
-        {
-            assert_no_attrs(attrs)?;
-            let generated_name = VariantField::generate_name(member.clone());
+        for field in fields {
+            let (member, expr) = field?;
+            let member_span = member.span();
+            let generated_name = VariantField::generate_name(member);
             let expr = self.expr(expr)?;
-            field_tokens.push(quote_spanned! {member.span()=>
+            field_tokens.push(quote_spanned! {member_span=>
                 #generated_name: #expr,
             });
         }
-        if let Some(rest) = rest {
+        if let Some((_, rest)) = rest {
             let rest = self.expr(rest)?;
-            field_tokens.push(quote_spanned! {brace_token.span=>
+            field_tokens.push(quote_spanned! {span=>
                 ..#crate_path::values::aggregate::AggregateValue::struct_of_variant_values(#rest)
             });
         } else {
             field_tokens.push(phantom_data_field);
         }
-        Ok(quote_spanned! {brace_token.span=>
+        Ok(quote_spanned! {span=>
             {
                 type __Type<'ctx, T> = <T as #crate_path::values::aggregate::AggregateValue<'ctx>>::AggregateOfVariantValues;
                 #crate_path::values::aggregate::get_aggregate_of_variants_value(
@@ -1791,11 +1789,39 @@ impl ValTranslator {
         })
     }
 
+    fn expr_struct(&self, expr_struct: &ExprStruct) -> syn::Result<TokenStream> {
+        let ExprStruct {
+            attrs,
+            path,
+            brace_token: _,
+            fields,
+            dot2_token,
+            rest,
+        } = expr_struct;
+        assert_no_attrs(attrs)?;
+        self.literal_struct_or_enum_variant(
+            PathKind::get(None, path.clone())?,
+            fields.iter().map(
+                |FieldValue {
+                     attrs,
+                     member,
+                     colon_token: _,
+                     expr,
+                 }| {
+                    assert_no_attrs(attrs)?;
+                    Ok((member.clone(), expr))
+                },
+            ),
+            rest.as_ref()
+                .map(|rest| (dot2_token.unwrap_or_default(), &**rest)),
+        )
+    }
+
     fn expr_call(&self, expr_call: &ExprCall) -> syn::Result<TokenStream> {
         let Self {
             crate_path,
-            module: _,
-            scope: _,
+            module,
+            scope,
         } = self;
         let ExprCall {
             attrs,
@@ -1811,28 +1837,35 @@ impl ValTranslator {
         };
         assert_no_attrs(attrs)?;
         let path_kind = PathKind::get(qself.clone(), path.clone())?;
-        let args = args
-            .pairs()
-            .map(|pair| {
-                Ok(Pair::new(
-                    self.expr(pair.value())?,
-                    pair.punct().copied().copied(),
-                ))
-            })
-            .collect::<syn::Result<Punctuated<TokenStream, _>>>()?;
         match path_kind {
-            PathKind::EnumVariant {
-                span,
-                enum_type,
-                variant_path,
-                variant_name,
-            } => todo_err!(variant_path, "enum literals"),
-            PathKind::Type { span, path } => todo_err!(path, "literal structs"),
+            PathKind::EnumVariant { .. } | PathKind::Type { .. } => self
+                .literal_struct_or_enum_variant(
+                    path_kind,
+                    args.iter().enumerate().map(|(index, expr)| {
+                        let mut index = Index::from(index);
+                        index.span = paren_token.span;
+                        Ok((index.into(), expr))
+                    }),
+                    None,
+                ),
             PathKind::Const { span: _, path } => {
                 Err(Error::new_spanned(path, "can't call constants"))
             }
-            PathKind::VarOrFn { name } => todo_err!(name, "function calls"),
-            PathKind::Function { span, path } => todo_err!(path, "function calls"),
+            PathKind::VarOrFn { .. } | PathKind::Function { .. } => {
+                let mut args = args
+                    .pairs()
+                    .map(|pair| {
+                        Ok(Pair::new(
+                            self.expr(pair.value())?,
+                            Some(**pair.punct().unwrap_or(&&Token![,](paren_token.span))),
+                        ))
+                    })
+                    .collect::<syn::Result<Punctuated<TokenStream, _>>>()?;
+                args.push(scope.to_token_stream());
+                Ok(quote_spanned! {paren_token.span=>
+                    #crate_path::values::ToVal::to_val(&#func(#args), #module)
+                })
+            }
         }
     }
 
@@ -1871,8 +1904,8 @@ impl ValTranslator {
     fn expr_method_call(&self, expr_method_call: &ExprMethodCall) -> syn::Result<TokenStream> {
         let Self {
             crate_path,
-            module: _,
-            scope: _,
+            module,
+            scope,
         } = self;
         let ExprMethodCall {
             attrs,
@@ -1884,7 +1917,20 @@ impl ValTranslator {
             args,
         } = expr_method_call;
         assert_no_attrs(attrs)?;
-        todo_err!(expr_method_call);
+        let receiver = self.expr(receiver)?;
+        let mut args = args
+            .pairs()
+            .map(|pair| {
+                Ok(Pair::new(
+                    self.expr(pair.value())?,
+                    Some(**pair.punct().unwrap_or(&&Token![,](paren_token.span))),
+                ))
+            })
+            .collect::<syn::Result<Punctuated<TokenStream, _>>>()?;
+        args.push(scope.to_token_stream());
+        Ok(quote_spanned! {paren_token.span=>
+            #crate_path::values::ToVal::to_val(&#receiver #dot_token #method #turbofish(#args), #module)
+        })
     }
 
     fn expr(&self, expr: &Expr) -> syn::Result<TokenStream> {

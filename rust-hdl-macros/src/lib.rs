@@ -10,7 +10,7 @@ use syn::{
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
     Attribute, Data, DataEnum, DataStruct, DeriveInput, Error, Field, Fields, GenericParam,
-    Generics, Index, Lifetime, LifetimeDef, LitStr, Member, Path, Token, Variant, VisRestricted,
+    Generics, Index, Lifetime, LifetimeDef, Member, Path, Token, Variant, VisRestricted,
     Visibility, WhereClause, WherePredicate,
 };
 
