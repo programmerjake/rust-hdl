@@ -1168,7 +1168,7 @@ impl<'ctx, W: ?Sized + Write> RtlilExporter<'ctx, W> {
                 if v.value_type() == v.input_type() {
                     self.get_wires_for_value(module, v.input())?
                 } else if let Some(bit_count) = NonZeroU32::new(v.value_type().bit_count) {
-                    if let Some(input_wire) = self.get_int_wire_for_value(module, value)? {
+                    if let Some(input_wire) = self.get_int_wire_for_value(module, v.input())? {
                         let name = self.new_anonymous_symbol(module);
                         writeln!(self.writer, "  wire width {} {}", bit_count, name)?;
                         let cell_name = self.new_anonymous_symbol(module);

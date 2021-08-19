@@ -499,6 +499,18 @@ mod functions {
     ) -> ::rust_hdl::values::Val<'my_ctx, super::MyStruct<T0, T1>> {
         ::rust_hdl::prelude::val!(my_module, f1.my_method(rest))
     }
+
+    #[track_caller]
+    pub fn my_cast<
+        'my_ctx,
+        Src: ::rust_hdl::values::Value<'my_ctx> + ::rust_hdl::values::ops::HdlCastTo<'my_ctx, Dest>,
+        Dest: ::rust_hdl::values::Value<'my_ctx>,
+    >(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = Src>,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, Dest> {
+        ::rust_hdl::prelude::val!(my_module, value as Dest)
+    }
 }
 
 #[track_caller]
@@ -1084,4 +1096,68 @@ fn test_my_literal_tuple_variant() {
         let exported = top.export(RtlilExporter::new_str()).unwrap().into_output();
         assert_display_formats_to!(test_my_literal_tuple_variant, output, exported);
     })
+}
+
+#[test]
+fn test_my_cast() {
+    test_unary_fn(
+        |v0: Val<UInt16>, m| -> Val<Int8> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "u16_to_i8",
+    );
+    test_unary_fn(
+        |v0: Val<UInt16>, m| -> Val<UInt8> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "u16_to_u8",
+    );
+    test_unary_fn(
+        |v0: Val<UInt16>, m| -> Val<UInt16> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "u16_to_u16",
+    );
+    test_unary_fn(
+        |v0: Val<UInt16>, m| -> Val<Int16> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "u16_to_i16",
+    );
+    test_unary_fn(
+        |v0: Val<UInt16>, m| -> Val<UInt32> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "u16_to_u32",
+    );
+    test_unary_fn(
+        |v0: Val<UInt16>, m| -> Val<Int32> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "u16_to_i32",
+    );
+    test_unary_fn(
+        |v0: Val<Int16>, m| -> Val<Int8> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "i16_to_i8",
+    );
+    test_unary_fn(
+        |v0: Val<Int16>, m| -> Val<UInt8> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "i16_to_u8",
+    );
+    test_unary_fn(
+        |v0: Val<Int16>, m| -> Val<UInt16> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "i16_to_u16",
+    );
+    test_unary_fn(
+        |v0: Val<Int16>, m| -> Val<Int16> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "i16_to_i16",
+    );
+    test_unary_fn(
+        |v0: Val<Int16>, m| -> Val<UInt32> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "i16_to_u32",
+    );
+    test_unary_fn(
+        |v0: Val<Int16>, m| -> Val<Int32> { functions::my_cast(v0, m) },
+        "test_my_cast",
+        "i16_to_i32",
+    );
 }

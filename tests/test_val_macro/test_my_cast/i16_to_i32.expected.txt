@@ -1,0 +1,116 @@
+IrModule {
+    path: "top",
+    source_location: SourceLocation($FILE, $LINE-3, 9),
+    parent: <None>,
+    interface_types: [
+        Input(
+            IrBitVectorType {
+                bit_count: 16,
+                signed: true,
+            },
+        ),
+        Output(
+            IrBitVectorType {
+                bit_count: 32,
+                signed: true,
+            },
+        ),
+    ],
+    interface: [
+        Input(
+            IrModuleInputData {
+                external_value: ExternalInput {
+                    value_type: IrBitVectorType {
+                        bit_count: 16,
+                        signed: true,
+                    },
+                },
+                module_input: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io.input",
+                    value_type: IrBitVectorType {
+                        bit_count: 16,
+                        signed: true,
+                    },
+                },
+            },
+        ),
+        Output(
+            IrModuleOutputData {
+                output_read: IrOutputRead(
+                    IrOutputReadData {
+                        module: <None>,
+                        value_type: IrBitVectorType {
+                            bit_count: 32,
+                            signed: true,
+                        },
+                        write_data: IrOutputWriteData {
+                            writing_module: "top",
+                            index: 1,
+                        },
+                    },
+                ),
+                wire: IrWire {
+                    path: "top"."io.out",
+                    source_location: SourceLocation($FILE, $LINE-3, 9),
+                    value_type: IrBitVectorType {
+                        bit_count: 32,
+                        signed: true,
+                    },
+                    assigned_value: ConvertIntWrapping {
+                        value_type: IrBitVectorType {
+                            bit_count: 32,
+                            signed: true,
+                        },
+                        input_type: IrBitVectorType {
+                            bit_count: 16,
+                            signed: true,
+                        },
+                        input: IrModuleInput {
+                            module: "top",
+                            index: 0,
+                            path: "io.input",
+                            value_type: IrBitVectorType {
+                                bit_count: 16,
+                                signed: true,
+                            },
+                        },
+                    },
+                    ..
+                },
+            },
+        ),
+    ],
+    wires: {
+        "io.out": IrWire {
+            source_location: SourceLocation($FILE, $LINE-3, 9),
+            value_type: IrBitVectorType {
+                bit_count: 32,
+                signed: true,
+            },
+            assigned_value: ConvertIntWrapping {
+                value_type: IrBitVectorType {
+                    bit_count: 32,
+                    signed: true,
+                },
+                input_type: IrBitVectorType {
+                    bit_count: 16,
+                    signed: true,
+                },
+                input: IrModuleInput {
+                    module: "top",
+                    index: 0,
+                    path: "io.input",
+                    value_type: IrBitVectorType {
+                        bit_count: 16,
+                        signed: true,
+                    },
+                },
+            },
+            ..
+        },
+    },
+    registers: {},
+    ..
+}

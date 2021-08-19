@@ -1882,7 +1882,10 @@ impl ValTranslator {
             ty,
         } = expr_cast;
         assert_no_attrs(attrs)?;
-        todo_err!(expr_cast);
+        let expr = self.expr(expr)?;
+        Ok(quote_spanned! {as_token.span=>
+            #crate_path::values::ops::HdlCastTo::<#ty>::cast_to(#expr)
+        })
     }
 
     fn expr_index(&self, expr_index: &ExprIndex) -> syn::Result<TokenStream> {

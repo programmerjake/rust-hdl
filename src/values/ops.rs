@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
+use rust_hdl_int::FixedIntShape;
+
 use crate::{
     context::{AsContext, Intern},
     ir::{
         scope::ScopeRef,
         values::{
-            BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ExpandScope,
-            ExtractAggregateField, IrValue, IsAggregateVariant, LiteralArray, Mux, SameSizeBinOp,
-            SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind, ShrinkScope,
+            BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ConvertIntWrapping,
+            ExpandScope, ExtractAggregateField, IrValue, IsAggregateVariant, LiteralArray, Mux,
+            SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind, ShrinkScope,
         },
         SourceLocation,
     },
@@ -84,6 +86,43 @@ fn bool_out_un_op_unchecked<'ctx, T: Value<'ctx>, O: Value<'ctx>>(
         input.ctx(),
         IrValue::from(BoolOutUnOp::new(input.ctx(), kind, input.ir(), caller)).intern(input.ctx()),
     )
+}
+
+pub trait HdlCastTo<'ctx, T: Value<'ctx> + ?Sized>: Value<'ctx> {
+    #[track_caller]
+    fn cast_to(value: Val<'ctx, Self>) -> Val<'ctx, T>;
+}
+
+pub trait HdlCastFrom<'ctx, T: Value<'ctx> + ?Sized>: Value<'ctx> {
+    #[track_caller]
+    fn cast_from(value: Val<'ctx, T>) -> Val<'ctx, Self>;
+}
+
+impl<'ctx, Src: Value<'ctx> + ?Sized, Dest: Value<'ctx> + HdlCastFrom<'ctx, Src> + ?Sized>
+    HdlCastTo<'ctx, Dest> for Src
+{
+    #[track_caller]
+    fn cast_to(value: Val<'ctx, Self>) -> Val<'ctx, Dest> {
+        HdlCastFrom::cast_from(value)
+    }
+}
+
+impl<'ctx, SrcShape: IntShapeTrait, DestShape: FixedIntShape> HdlCastFrom<'ctx, Int<SrcShape>>
+    for Int<DestShape>
+{
+    #[track_caller]
+    fn cast_from(value: Val<'ctx, Int<SrcShape>>) -> Val<'ctx, Self> {
+        Val::from_ir_unchecked(
+            value.ctx(),
+            IrValue::from(ConvertIntWrapping::new(
+                value.ctx(),
+                DestShape::default().shape().into(),
+                value.ir(),
+                &SourceLocation::caller(),
+            ))
+            .intern(value.ctx()),
+        )
+    }
 }
 
 macro_rules! trait_binary {
