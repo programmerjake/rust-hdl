@@ -13,12 +13,10 @@ pub fn blinky<'ctx>(parent: &Module<'ctx>, io: BlinkyIO<'ctx>) {
     let (m, io) = parent.submodule("blinky", io);
     named!(let counter = m.reg(io.cd.get(), val!(m, 0)));
 
-    let counter_output = counter.output();
-    let overflowed = val!(m, counter_output >= 1_000_000_u20);
-    counter.assign_data_in(val!(m, if overflowed { 0 } else { counter_output + 1 }));
+    let overflowed = val!(m, counter >= 1_000_000_u20);
+    counter.assign_data_in(val!(m, if overflowed { 0 } else { counter + 1 }));
     named!(let led_toggle = m.reg(io.cd.get(), val!(m, false)));
-    let led_toggle_output = led_toggle.output();
-    led_toggle.assign_data_in(val!(m, led_toggle_output ^ overflowed));
+    led_toggle.assign_data_in(val!(m, led_toggle ^ overflowed));
     io.led0.assign(led_toggle.output());
 }
 

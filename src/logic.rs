@@ -83,6 +83,14 @@ impl<'ctx, T: Value<'ctx>> Wire<'ctx, T> {
     }
 }
 
+impl<'ctx, T: Value<'ctx>> ToVal<'ctx> for Wire<'ctx, T> {
+    type ValueType = T;
+
+    fn to_val<Ctx: AsContext<'ctx>>(&self, _ctx: Ctx) -> Val<'ctx, Self::ValueType> {
+        self.read()
+    }
+}
+
 pub struct Reg<'ctx, T: Value<'ctx>> {
     output_value: IrValueRef<'ctx>,
     ir: IrRegRef<'ctx>,
@@ -197,5 +205,13 @@ impl<'ctx, T: Value<'ctx>> Reg<'ctx, T> {
     pub fn assign_data_in(self, assigned_value: impl ToVal<'ctx, ValueType = T>) {
         self.ir
             .assign_data_in(assigned_value.to_val(self.ir.ctx()).ir());
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> ToVal<'ctx> for Reg<'ctx, T> {
+    type ValueType = T;
+
+    fn to_val<Ctx: AsContext<'ctx>>(&self, _ctx: Ctx) -> Val<'ctx, Self::ValueType> {
+        self.output()
     }
 }

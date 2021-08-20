@@ -498,3 +498,19 @@ impl<'ctx, T: FixedTypeValue<'ctx>> PlainIO<'ctx> for Output<'ctx, T> {
         ctx.ctx().external_output()
     }
 }
+
+impl<'ctx, T: Value<'ctx>> ToVal<'ctx> for Input<'ctx, T> {
+    type ValueType = T;
+
+    fn to_val<Ctx: AsContext<'ctx>>(&self, _ctx: Ctx) -> Val<'ctx, Self::ValueType> {
+        self.get()
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> ToVal<'ctx> for Output<'ctx, T> {
+    type ValueType = T;
+
+    fn to_val<Ctx: AsContext<'ctx>>(&self, _ctx: Ctx) -> Val<'ctx, Self::ValueType> {
+        self.read()
+    }
+}
