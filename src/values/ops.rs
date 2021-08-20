@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // See Notices.txt for copyright information
 
+use alloc::{boxed::Box, vec::Vec};
 use rust_hdl_int::FixedIntShape;
 
 use crate::{
@@ -9,8 +10,9 @@ use crate::{
         scope::ScopeRef,
         values::{
             BoolOutBinOp, BoolOutBinOpKind, BoolOutUnOp, BoolOutUnOpKind, ConvertIntWrapping,
-            ExpandScope, ExtractAggregateField, IrValue, IsAggregateVariant, LiteralArray, Mux,
-            SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind, ShrinkScope,
+            ExpandScope, ExtractAggregateField, ExtractArrayElement, IrValue, IsAggregateVariant,
+            LiteralArray, Mux, SameSizeBinOp, SameSizeBinOpKind, SameSizeUnOp, SameSizeUnOpKind,
+            ShrinkScope, SliceArray,
         },
         SourceLocation,
     },
@@ -25,7 +27,8 @@ use crate::{
 };
 use core::{
     convert::{Infallible, TryInto},
-    ops::{Range, RangeInclusive},
+    fmt,
+    ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive},
 };
 
 fn same_size_bin_op_unchecked<'ctx, T: Value<'ctx>>(
@@ -840,4 +843,212 @@ pub fn literal_byte_array<'ctx, Ctx: AsContext<'ctx>, const N: usize>(
 /// make a fake `bool` for use in `val!`'s `match` checking, only intended for use in code that isn't ever run.
 pub fn match_fake_condition() -> bool {
     panic!("match_fake_condition called")
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct IndexLengthUnknown;
+
+#[derive(Default, Clone, Copy)]
+pub struct IndexLengthKnown<const LENGTH: usize>;
+
+impl<const LENGTH: usize> fmt::Debug for IndexLengthKnown<LENGTH> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "IndexLengthKnown<{}>", LENGTH)
+    }
+}
+
+mod index_length_sealed {
+    pub trait Sealed {}
+}
+
+pub trait IndexLength: index_length_sealed::Sealed + Default + Copy + 'static + fmt::Debug {
+    const LENGTH: Option<usize>;
+}
+
+impl index_length_sealed::Sealed for IndexLengthUnknown {}
+
+impl<const LENGTH: usize> index_length_sealed::Sealed for IndexLengthKnown<LENGTH> {}
+
+impl IndexLength for IndexLengthUnknown {
+    const LENGTH: Option<usize> = None;
+}
+
+impl<const LENGTH: usize> IndexLength for IndexLengthKnown<LENGTH> {
+    const LENGTH: Option<usize> = Some(LENGTH);
+}
+
+pub trait HdlIndex<'ctx, Index, OutputLength: IndexLength>: Value<'ctx> {
+    type Output: Value<'ctx> + ?Sized;
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        index: Index,
+        _output_length: OutputLength,
+    ) -> Val<'ctx, Self::Output>;
+}
+
+impl<'ctx, T: Value<'ctx>, Index, OutputLength: IndexLength, const INPUT_LENGTH: usize>
+    HdlIndex<'ctx, Index, OutputLength> for [T; INPUT_LENGTH]
+where
+    Vec<T>: HdlIndex<'ctx, Index, OutputLength>,
+{
+    type Output = <Vec<T> as HdlIndex<'ctx, Index, OutputLength>>::Output;
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        index: Index,
+        output_length: OutputLength,
+    ) -> Val<'ctx, Self::Output> {
+        HdlIndex::index(Val::<Vec<T>>::from(base), index, output_length)
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, Index, OutputLength: IndexLength> HdlIndex<'ctx, Index, OutputLength>
+    for Box<[T]>
+where
+    Vec<T>: HdlIndex<'ctx, Index, OutputLength>,
+{
+    type Output = <Vec<T> as HdlIndex<'ctx, Index, OutputLength>>::Output;
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        index: Index,
+        output_length: OutputLength,
+    ) -> Val<'ctx, Self::Output> {
+        HdlIndex::index(Val::<Vec<T>>::from(base), index, output_length)
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, OutputLength: IndexLength> HdlIndex<'ctx, usize, OutputLength>
+    for Vec<T>
+{
+    type Output = T;
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        index: usize,
+        _output_length: OutputLength,
+    ) -> Val<'ctx, Self::Output> {
+        OutputLength::LENGTH.map(|output_length| assert_eq!(output_length, 1));
+        Val::from_ir_unchecked(
+            base.ctx(),
+            IrValue::from(ExtractArrayElement::new(
+                base.ctx(),
+                base.ir(),
+                index,
+                &SourceLocation::caller(),
+            ))
+            .intern(base.ctx()),
+        )
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> HdlIndex<'ctx, Range<usize>, IndexLengthUnknown> for Vec<T> {
+    type Output = Vec<T>;
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        index: Range<usize>,
+        _output_length: IndexLengthUnknown,
+    ) -> Val<'ctx, Self::Output> {
+        Val::from_ir_unchecked(
+            base.ctx(),
+            IrValue::from(SliceArray::new(
+                base.ctx(),
+                base.ir(),
+                index,
+                &SourceLocation::caller(),
+            ))
+            .intern(base.ctx()),
+        )
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> HdlIndex<'ctx, RangeFrom<usize>, IndexLengthUnknown> for Vec<T> {
+    type Output = Vec<T>;
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        index: RangeFrom<usize>,
+        output_length: IndexLengthUnknown,
+    ) -> Val<'ctx, Self::Output> {
+        HdlIndex::index(base, index.start..base.len(), output_length)
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> HdlIndex<'ctx, RangeFull, IndexLengthUnknown> for Vec<T> {
+    type Output = Vec<T>;
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        _index: RangeFull,
+        _output_length: IndexLengthUnknown,
+    ) -> Val<'ctx, Self::Output> {
+        base
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> HdlIndex<'ctx, RangeInclusive<usize>, IndexLengthUnknown> for Vec<T> {
+    type Output = Vec<T>;
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        index: RangeInclusive<usize>,
+        output_length: IndexLengthUnknown,
+    ) -> Val<'ctx, Self::Output> {
+        HdlIndex::index(
+            base,
+            *index.start()..index.end().checked_add(1).expect("end index too big"),
+            output_length,
+        )
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> HdlIndex<'ctx, RangeTo<usize>, IndexLengthUnknown> for Vec<T> {
+    type Output = Vec<T>;
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        index: RangeTo<usize>,
+        output_length: IndexLengthUnknown,
+    ) -> Val<'ctx, Self::Output> {
+        HdlIndex::index(base, 0..index.end, output_length)
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> HdlIndex<'ctx, RangeToInclusive<usize>, IndexLengthUnknown> for Vec<T> {
+    type Output = Vec<T>;
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        index: RangeToInclusive<usize>,
+        output_length: IndexLengthUnknown,
+    ) -> Val<'ctx, Self::Output> {
+        HdlIndex::index(
+            base,
+            0..index.end.checked_add(1).expect("end index too big"),
+            output_length,
+        )
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, Index, const OUTPUT_LENGTH: usize>
+    HdlIndex<'ctx, Index, IndexLengthKnown<OUTPUT_LENGTH>> for Vec<T>
+where
+    Vec<T>: HdlIndex<'ctx, Index, IndexLengthUnknown, Output = Vec<T>>,
+{
+    type Output = [T; OUTPUT_LENGTH];
+    #[track_caller]
+    fn index(
+        base: Val<'ctx, Self>,
+        index: Index,
+        _output_length: IndexLengthKnown<OUTPUT_LENGTH>,
+    ) -> Val<'ctx, Self::Output> {
+        let retval = HdlIndex::index(base, index, IndexLengthUnknown);
+        assert_eq!(retval.len(), OUTPUT_LENGTH);
+        Val::from_ir_and_type_unchecked(
+            retval.ir(),
+            ValueType::from_ir_unchecked(retval.ctx(), retval.value_type().ir()),
+        )
+    }
 }

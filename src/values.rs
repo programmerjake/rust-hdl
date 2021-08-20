@@ -12,6 +12,7 @@ use crate::{
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
+    convert::{TryFrom, TryInto},
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -393,5 +394,97 @@ impl<'ctx> From<Val<'ctx, bool>> for Val<'ctx, UInt1> {
     #[must_use]
     fn from(v: Val<'ctx, bool>) -> Self {
         Self::from_ir_unchecked(v.ctx(), v.ir())
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> ValueType<'ctx, Vec<T>> {
+    pub fn len(self) -> usize {
+        self.ir().array().unwrap().length
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> ValueType<'ctx, Box<[T]>> {
+    pub fn len(self) -> usize {
+        self.ir().array().unwrap().length
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, const LENGTH: usize> ValueType<'ctx, [T; LENGTH]> {
+    pub fn len(self) -> usize {
+        LENGTH
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> Val<'ctx, Vec<T>> {
+    pub fn len(self) -> usize {
+        self.value_type().len()
+    }
+}
+
+impl<'ctx, T: Value<'ctx>> Val<'ctx, Box<[T]>> {
+    pub fn len(self) -> usize {
+        self.value_type().len()
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, const LENGTH: usize> Val<'ctx, [T; LENGTH]> {
+    pub fn len(self) -> usize {
+        LENGTH
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, const LENGTH: usize> TryFrom<Val<'ctx, Vec<T>>>
+    for Val<'ctx, [T; LENGTH]>
+{
+    type Error = Val<'ctx, Vec<T>>;
+
+    fn try_from(value: Val<'ctx, Vec<T>>) -> Result<Self, Self::Error> {
+        if let Ok(value_type) = value.value_type().try_into() {
+            Ok(Val::from_ir_and_type_unchecked(value.ir(), value_type))
+        } else {
+            Err(value)
+        }
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, const LENGTH: usize> TryFrom<Val<'ctx, Box<[T]>>>
+    for Val<'ctx, [T; LENGTH]>
+{
+    type Error = Val<'ctx, Box<[T]>>;
+
+    fn try_from(value: Val<'ctx, Box<[T]>>) -> Result<Self, Self::Error> {
+        if let Ok(value_type) = value.value_type().try_into() {
+            Ok(Val::from_ir_and_type_unchecked(value.ir(), value_type))
+        } else {
+            Err(value)
+        }
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, const LENGTH: usize> TryFrom<ValueType<'ctx, Vec<T>>>
+    for ValueType<'ctx, [T; LENGTH]>
+{
+    type Error = ValueType<'ctx, Vec<T>>;
+
+    fn try_from(value: ValueType<'ctx, Vec<T>>) -> Result<Self, Self::Error> {
+        if value.len() == LENGTH {
+            Ok(ValueType::from_ir_unchecked(value.ctx(), value.ir()))
+        } else {
+            Err(value)
+        }
+    }
+}
+
+impl<'ctx, T: Value<'ctx>, const LENGTH: usize> TryFrom<ValueType<'ctx, Box<[T]>>>
+    for ValueType<'ctx, [T; LENGTH]>
+{
+    type Error = ValueType<'ctx, Box<[T]>>;
+
+    fn try_from(value: ValueType<'ctx, Box<[T]>>) -> Result<Self, Self::Error> {
+        if value.len() == LENGTH {
+            Ok(ValueType::from_ir_unchecked(value.ctx(), value.ir()))
+        } else {
+            Err(value)
+        }
     }
 }

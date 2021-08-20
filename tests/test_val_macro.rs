@@ -3,6 +3,7 @@
 use rust_hdl::{export::rtlil::RtlilExporter, ir::module::IrModuleRef, prelude::*};
 #[macro_use]
 mod common;
+use std::convert::TryFrom;
 
 #[derive(Value, FixedTypeValue)]
 pub struct MyStruct<T, U> {
@@ -510,6 +511,125 @@ mod functions {
         my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
     ) -> ::rust_hdl::values::Val<'my_ctx, Dest> {
         ::rust_hdl::prelude::val!(my_module, value as Dest)
+    }
+
+    #[track_caller]
+    pub fn my_array_index_0<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, T> {
+        ::rust_hdl::prelude::val!(my_module, value[0])
+    }
+
+    #[track_caller]
+    pub fn my_array_index_3<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, T> {
+        ::rust_hdl::prelude::val!(my_module, value[3])
+    }
+
+    #[track_caller]
+    pub fn my_array_index<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        index: usize,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, T> {
+        ::rust_hdl::prelude::val!(my_module, value[index])
+    }
+
+    #[track_caller]
+    pub fn my_array_slice_full<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, ::std::vec::Vec<T>> {
+        ::rust_hdl::prelude::val!(my_module, value[..])
+    }
+
+    #[track_caller]
+    pub fn my_array_slice_1_to<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, ::std::vec::Vec<T>> {
+        ::rust_hdl::prelude::val!(my_module, value[1..])
+    }
+
+    #[track_caller]
+    pub fn my_array_slice_to_3<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, [T; 3]> {
+        ::rust_hdl::prelude::val!(my_module, value[..3])
+    }
+
+    #[track_caller]
+    pub fn my_array_slice_1_to_3<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, [T; 2]> {
+        ::rust_hdl::prelude::val!(my_module, value[1..3])
+    }
+
+    #[track_caller]
+    pub fn my_array_slice_thru_3<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, [T; 4]> {
+        ::rust_hdl::prelude::val!(my_module, value[..=3])
+    }
+    #[track_caller]
+    pub fn my_array_slice_1_thru_3<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, [T; 3]> {
+        ::rust_hdl::prelude::val!(my_module, value[1..=3])
+    }
+
+    #[track_caller]
+    pub fn my_array_slice_start_to<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        start: usize,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, ::std::vec::Vec<T>> {
+        ::rust_hdl::prelude::val!(my_module, value[start..])
+    }
+
+    #[track_caller]
+    pub fn my_array_slice_to_end<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        end: usize,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, ::std::vec::Vec<T>> {
+        ::rust_hdl::prelude::val!(my_module, value[..end])
+    }
+
+    #[track_caller]
+    pub fn my_array_slice_start_to_end<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        start: usize,
+        end: usize,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, ::std::vec::Vec<T>> {
+        ::rust_hdl::prelude::val!(my_module, value[start..end])
+    }
+
+    #[track_caller]
+    pub fn my_array_slice_thru_end<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        end: usize,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, ::std::vec::Vec<T>> {
+        ::rust_hdl::prelude::val!(my_module, value[..=end])
+    }
+
+    #[track_caller]
+    pub fn my_array_slice_start_thru_end<'my_ctx, T: ::rust_hdl::values::Value<'my_ctx>>(
+        value: impl ::rust_hdl::values::ToVal<'my_ctx, ValueType = [T; 5]>,
+        start: usize,
+        end: usize,
+        my_module: impl ::rust_hdl::module::AsIrModule<'my_ctx>,
+    ) -> ::rust_hdl::values::Val<'my_ctx, ::std::vec::Vec<T>> {
+        ::rust_hdl::prelude::val!(my_module, value[start..=end])
     }
 }
 
@@ -1159,5 +1279,94 @@ fn test_my_cast() {
         |v0: Val<Int16>, m| -> Val<Int32> { functions::my_cast(v0, m) },
         "test_my_cast",
         "i16_to_i32",
+    );
+}
+
+#[test]
+fn test_index() {
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| functions::my_array_index_0(v, m),
+        "test_index",
+        "index_0",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| functions::my_array_index_3(v, m),
+        "test_index",
+        "index_3",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| functions::my_array_index(v, 4, m),
+        "test_index",
+        "index_4",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| {
+            Val::<[bool; 5]>::try_from(functions::my_array_slice_full(v, m)).unwrap()
+        },
+        "test_index",
+        "slice_full",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| {
+            Val::<[bool; 4]>::try_from(functions::my_array_slice_1_to(v, m)).unwrap()
+        },
+        "test_index",
+        "slice_1_to",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| functions::my_array_slice_to_3(v, m),
+        "test_index",
+        "slice_to_3",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| functions::my_array_slice_1_to_3(v, m),
+        "test_index",
+        "slice_1_to_3",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| functions::my_array_slice_thru_3(v, m),
+        "test_index",
+        "slice_thru_3",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| functions::my_array_slice_1_thru_3(v, m),
+        "test_index",
+        "slice_1_thru_3",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| {
+            Val::<[bool; 2]>::try_from(functions::my_array_slice_start_to(v, 3, m)).unwrap()
+        },
+        "test_index",
+        "slice_start_to",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| {
+            Val::<[bool; 3]>::try_from(functions::my_array_slice_to_end(v, 3, m)).unwrap()
+        },
+        "test_index",
+        "slice_to_end",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| {
+            Val::<[bool; 0]>::try_from(functions::my_array_slice_start_to_end(v, 3, 3, m)).unwrap()
+        },
+        "test_index",
+        "slice_start_to_end",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| {
+            Val::<[bool; 4]>::try_from(functions::my_array_slice_thru_end(v, 3, m)).unwrap()
+        },
+        "test_index",
+        "slice_thru_end",
+    );
+    test_unary_fn(
+        |v: Val<[bool; 5]>, m| {
+            Val::<[bool; 1]>::try_from(functions::my_array_slice_start_thru_end(v, 3, 3, m))
+                .unwrap()
+        },
+        "test_index",
+        "slice_start_thru_end",
     );
 }

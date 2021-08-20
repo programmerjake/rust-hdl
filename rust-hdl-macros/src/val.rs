@@ -25,10 +25,10 @@ use syn::{
     spanned::Spanned,
     Arm, Attribute, BinOp, Block, Error, Expr, ExprArray, ExprBinary, ExprBlock, ExprCall,
     ExprCast, ExprField, ExprGroup, ExprIf, ExprIndex, ExprLet, ExprLit, ExprMatch, ExprMethodCall,
-    ExprParen, ExprPath, ExprRepeat, ExprStruct, ExprTuple, ExprUnary, FieldPat, FieldValue, Index,
-    Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Member, Pat, PatIdent, PatLit, PatOr,
-    PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct, PatWild, Path, QSelf,
-    RangeLimits, Stmt, Token, TypePath, UnOp,
+    ExprParen, ExprPath, ExprRange, ExprRepeat, ExprStruct, ExprTuple, ExprUnary, FieldPat,
+    FieldValue, Index, Lit, LitBool, LitByte, LitByteStr, LitInt, Local, Member, Pat, PatIdent,
+    PatLit, PatOr, PatPath, PatRange, PatRest, PatStruct, PatTuple, PatTupleStruct, PatWild, Path,
+    QSelf, RangeLimits, Stmt, Token, TypePath, UnOp,
 };
 
 #[derive(Clone)]
@@ -1888,6 +1888,99 @@ impl ValTranslator {
         })
     }
 
+    fn get_const_int_expr(&self, expr: &Expr) -> syn::Result<Option<TokenStream>> {
+        let expr = unwrap_expr_groups(expr)?;
+        let (neg, expr_lit) = match expr {
+            Expr::Lit(expr_lit) => (None, expr_lit),
+            Expr::Unary(ExprUnary {
+                attrs,
+                op: UnOp::Neg(neg),
+                expr,
+            }) => {
+                assert_no_attrs(attrs)?;
+                if let Expr::Lit(expr_lit) = unwrap_expr_groups(expr)? {
+                    (Some(neg), expr_lit)
+                } else {
+                    return Ok(None);
+                }
+            }
+            Expr::Path(ExprPath { attrs, qself, path }) => {
+                assert_no_attrs(attrs)?;
+                return match PathKind::get(qself.clone(), path.clone())? {
+                    PathKind::EnumVariant { .. }
+                    | PathKind::Type { .. }
+                    | PathKind::Const { .. } => Ok(Some(quote! { #expr })),
+                    PathKind::VarOrFn { .. } | PathKind::Function { .. } => Ok(None),
+                };
+            }
+            _ => return Ok(None),
+        };
+        let ExprLit { attrs, lit } = expr_lit;
+        assert_no_attrs(attrs)?;
+        if let Lit::Int(lit) = lit {
+            Ok(Some(quote! { #neg #lit }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn get_const_range_len(&self, expr_range: &ExprRange) -> syn::Result<Option<ExprBlock>> {
+        let ExprRange {
+            attrs,
+            from,
+            limits,
+            to,
+        } = expr_range;
+        assert_no_attrs(attrs)?;
+        let const_from = match from
+            .as_deref()
+            .map(|expr| self.get_const_int_expr(expr))
+            .transpose()?
+        {
+            None => None,
+            Some(Some(v)) => Some(v),
+            Some(None) => return Ok(None),
+        };
+        let const_to = if let Some(Some(const_to)) = to
+            .as_deref()
+            .map(|expr| self.get_const_int_expr(expr))
+            .transpose()?
+        {
+            const_to
+        } else {
+            return Ok(None);
+        };
+        let tokens = match (&const_from, limits) {
+            (None, RangeLimits::HalfOpen(limits)) => quote_spanned! {limits.span()=>
+                {
+                    let __to: usize = #const_to;
+                    __to
+                }
+            },
+            (None, RangeLimits::Closed(limits)) => quote_spanned! {limits.span()=>
+                {
+                    let __to: usize = #const_to;
+                    __to + 1
+                }
+            },
+            (Some(_), RangeLimits::HalfOpen(limits)) => quote_spanned! {limits.span()=>
+                {
+                    let __from: usize = #const_from;
+                    let __to: usize = #const_to;
+                    __to - __from
+                }
+            },
+            (Some(_), RangeLimits::Closed(limits)) => quote_spanned! {limits.span()=>
+                {
+                    let __from: usize = #const_from;
+                    let __to: usize = #const_to;
+                    __to + 1 - __from
+                }
+            },
+        };
+        Ok(Some(parse_quote! { #tokens }))
+    }
+
     fn expr_index(&self, expr_index: &ExprIndex) -> syn::Result<TokenStream> {
         let Self {
             crate_path,
@@ -1901,7 +1994,24 @@ impl ValTranslator {
             index,
         } = expr_index;
         assert_no_attrs(attrs)?;
-        todo_err!(expr_index);
+        let expr = self.expr(expr)?;
+        let const_range_len = if let Expr::Range(expr_range) = unwrap_expr_groups(index)? {
+            self.get_const_range_len(expr_range)?
+        } else {
+            None
+        };
+        let output_length = if let Some(const_range_len) = const_range_len {
+            quote_spanned! {bracket_token.span=>
+                #crate_path::values::ops::IndexLengthKnown::<#const_range_len>
+            }
+        } else {
+            quote_spanned! {bracket_token.span=>
+                #crate_path::values::ops::IndexLengthUnknown
+            }
+        };
+        Ok(quote_spanned! {bracket_token.span=>
+            #crate_path::values::ops::HdlIndex::index(#expr, #index, #output_length)
+        })
     }
 
     fn expr_method_call(&self, expr_method_call: &ExprMethodCall) -> syn::Result<TokenStream> {
